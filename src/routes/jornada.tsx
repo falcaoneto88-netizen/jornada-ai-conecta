@@ -136,7 +136,9 @@ function Jornada() {
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Arraste os cartões entre etapas. Em modo demonstração, as automações são apenas simuladas." />
+        {demo && (
+          <DemoNotice texto="Arraste os cartões entre etapas. Em modo demonstração, as automações são apenas simuladas." />
+        )}
 
         <div className="flex gap-4 overflow-x-auto pb-4">
           {journeyStages.map((etapa) => {
