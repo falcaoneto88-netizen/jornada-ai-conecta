@@ -16,14 +16,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { mascararTelefone, type Contact, type StageId } from "@/lib/demo-data";
 import {
-  automations,
-  contacts as demoContacts,
-  journeyStages,
-  mascararTelefone,
-  type Contact,
-  type StageId,
-} from "@/lib/demo-data";
+  useAutomacoes,
+  useContactos,
+  useEtapas,
+  useGuardarMapeamentoEtapa,
+  useModoDados,
+  useMoverContacto,
+} from "@/lib/repo";
 
 export const Route = createFileRoute("/jornada")({
   head: () => ({
