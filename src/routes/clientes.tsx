@@ -67,7 +67,7 @@ function Clientes() {
         c.telefone.includes(termo);
       return bate && (etapa === "todas" || c.etapa === etapa);
     });
-  }, [busca, etapa]);
+  }, [busca, etapa, contacts]);
 
   function exportarCsv() {
     const linhas = [
