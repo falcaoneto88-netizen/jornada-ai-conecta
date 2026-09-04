@@ -18,8 +18,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAppMode } from "@/lib/app-mode";
-import { automationRuns, automations, type Automation, type AutomationStatus } from "@/lib/demo-data";
+import { type Automation, type AutomationStatus } from "@/lib/demo-data";
+import {
+  useAlterarEstadoAutomacao,
+  useAutomacoes,
+  useContactos,
+  useExecucoes,
+  useGuardarAutomacao,
+  useModoDados,
+  useTestarAutomacao,
+} from "@/lib/repo";
 
 export const Route = createFileRoute("/automacoes")({
   head: () => ({
@@ -80,10 +88,74 @@ function statusBadge(status: AutomationStatus, demo: boolean) {
 }
 
 function Automacoes() {
-  const modo = useAppMode();
-  const demo = modo !== "conectado";
+  const { demo } = useModoDados();
+  const { data: automations = [], isLoading } = useAutomacoes();
+  const { data: automationRuns = [], isLoading: aCarregarLogs } = useExecucoes();
+  const { data: contactos = [] } = useContactos();
+  const guardar = useGuardarAutomacao();
+  const alterarEstado = useAlterarEstadoAutomacao();
+  const testar = useTestarAutomacao();
+
   const [detalhe, setDetalhe] = useState<Automation | null>(null);
   const [novo, setNovo] = useState(false);
+  const [nomeNovo, setNomeNovo] = useState("");
+  const [gatilhoNovo, setGatilhoNovo] = useState("");
+
+  async function criarRascunho() {
+    if (!nomeNovo.trim() || !gatilhoNovo) {
+      toast.error("Indique o nome e o gatilho da automação.");
+      return;
+    }
+    if (demo) {
+      toast.error("Criar automações exige conta iniciada.");
+      return;
+    }
+    try {
+      await guardar.mutateAsync({ nome: nomeNovo.trim(), gatilho: gatilhoNovo, passos: [], status: "rascunho" });
+      toast.success("Automação criada como rascunho.");
+      setNomeNovo("");
+      setGatilhoNovo("");
+      setNovo(false);
+    } catch {
+      toast.error("Não foi possível criar a automação.");
+    }
+  }
+
+  async function testarAutomacao(a: Automation) {
+    if (demo) {
+      toast.success("Teste executado com cliente de demonstração.", {
+        description: `${a.nome} — simulação concluída sem envios reais.`,
+      });
+      return;
+    }
+    const cliente = contactos[0];
+    try {
+      await testar.mutateAsync({
+        automacao: a,
+        contactoId: cliente?.id ?? null,
+        contactoNome: cliente?.nome ?? "Cliente de teste",
+      });
+      toast.success("Simulação registada no log de execuções.", {
+        description: "Nenhuma mensagem foi enviada ao GoHighLevel.",
+      });
+    } catch {
+      toast.error("Não foi possível executar o teste.");
+    }
+  }
+
+  async function alternarEstado(a: Automation) {
+    if (demo) {
+      toast.error("Alterar o estado exige conta iniciada.");
+      return;
+    }
+    const novoEstado: AutomationStatus = a.status === "ativa" ? "pausada" : "ativa";
+    try {
+      await alterarEstado.mutateAsync({ id: a.id, status: novoEstado });
+      toast.success(novoEstado === "ativa" ? "Automação ativada." : "Automação pausada.");
+    } catch {
+      toast.error("Não foi possível alterar o estado.");
+    }
+  }
 
   return (
     <AppShell
@@ -96,7 +168,13 @@ function Automacoes() {
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Em modo demonstração as automações aparecem como «Simulação». Nenhuma execução chega ao GoHighLevel." />
+        <DemoNotice
+          texto={
+            demo
+              ? "Em modo demonstração as automações aparecem como «Simulação». Nenhuma execução chega ao GoHighLevel."
+              : "As execuções correm em simulação até a ligação ao GoHighLevel ser validada e a escrita ser ativada."
+          }
+        />
 
         <Tabs defaultValue="lista">
           <TabsList>
@@ -138,17 +216,29 @@ function Automacoes() {
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() =>
-                        toast.success("Teste executado com cliente de demonstração.", {
-                          description: `${a.nome} — simulação concluída sem envios reais.`,
-                        })
-                      }
+                      onClick={() => void testarAutomacao(a)}
+                      disabled={testar.isPending}
                     >
                       <PlayCircle className="size-3.5" /> Testar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void alternarEstado(a)}
+                      disabled={demo || alterarEstado.isPending}
+                    >
+                      {a.status === "ativa" ? "Pausar" : "Ativar"}
                     </Button>
                   </div>
                 </article>
               ))}
+              {automations.length === 0 && (
+                <p className="surface-card p-8 text-center text-sm text-muted-foreground lg:col-span-2">
+                  {isLoading
+                    ? "A carregar automações…"
+                    : "Ainda não há automações. Crie a primeira ou carregue os dados DEMO em Configurações."}
+                </p>
+              )}
             </div>
           </TabsContent>
 
@@ -199,6 +289,13 @@ function Automacoes() {
                       <td className="px-4 py-3 text-muted-foreground">{r.detalhe}</td>
                     </tr>
                   ))}
+                  {automationRuns.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
+                        {aCarregarLogs ? "A carregar execuções…" : "Ainda não há execuções registadas."}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -236,8 +333,13 @@ function Automacoes() {
             <DialogDescription>Comece pelo nome e pelo gatilho; os passos são adicionados a seguir.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="Nome da automação" aria-label="Nome da automação" />
-            <Select>
+            <Input
+              placeholder="Nome da automação"
+              aria-label="Nome da automação"
+              value={nomeNovo}
+              onChange={(e) => setNomeNovo(e.target.value)}
+            />
+            <Select value={gatilhoNovo} onValueChange={setGatilhoNovo}>
               <SelectTrigger aria-label="Gatilho">
                 <SelectValue placeholder="Escolher gatilho" />
               </SelectTrigger>
@@ -254,13 +356,8 @@ function Automacoes() {
             <Button variant="outline" onClick={() => setNovo(false)}>
               Cancelar
             </Button>
-            <Button
-              onClick={() => {
-                toast.success("Automação criada como rascunho (demonstração).");
-                setNovo(false);
-              }}
-            >
-              Criar rascunho
+            <Button onClick={() => void criarRascunho()} disabled={guardar.isPending || demo}>
+              {guardar.isPending ? "A criar…" : "Criar rascunho"}
             </Button>
           </DialogFooter>
         </DialogContent>
