@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Inbox,
@@ -12,11 +12,15 @@ import {
   PanelLeftOpen,
   Menu,
   X,
+  LogOut,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { useAppMode } from "@/lib/app-mode";
+import { supabase } from "@/integrations/supabase/client";
+import { desativarDemo, useSessao } from "@/lib/session";
 
 const navItems = [
   { to: "/", label: "Visão Geral", icon: LayoutDashboard },
@@ -42,7 +46,25 @@ export function ConnectionBadge() {
       )}
     >
       <span className={cn("size-1.5 rounded-full", conectado ? "bg-success" : "bg-primary")} />
-      {conectado ? "GoHighLevel conectado" : "Modo demonstração"}
+      {conectado ? "GoHighLevel conectado" : "GoHighLevel não ligado"}
+    </span>
+  );
+}
+
+export function ModoBadge() {
+  const { modo } = useSessao();
+  if (modo === "conta") {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success">
+        <span className="size-1.5 rounded-full bg-success" />
+        Conta ativa
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium text-accent-foreground">
+      <span className="size-1.5 rounded-full bg-primary" />
+      Modo demonstração
     </span>
   );
 }
@@ -84,6 +106,33 @@ export function AppShell({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { modo, carregando } = useSessao();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!carregando && modo === "anonimo") {
+      void navigate({ to: "/auth", replace: true });
+    }
+  }, [carregando, modo, navigate]);
+
+  async function sair() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    desativarDemo();
+    await supabase.auth.signOut();
+    void navigate({ to: "/auth", replace: true });
+  }
+
+  if (carregando || modo === "anonimo") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground" role="status">
+          A carregar…
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -158,9 +207,19 @@ export function AppShell({
               <h1 className="display-title truncate text-xl sm:text-2xl">{title}</h1>
               {description && <p className="mt-0.5 truncate text-sm text-muted-foreground">{description}</p>}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <ModoBadge />
               <ConnectionBadge />
               {actions}
+              <button
+                type="button"
+                onClick={() => void sair()}
+                aria-label="Terminar sessão"
+                title="Terminar sessão"
+                className="rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-heading"
+              >
+                <LogOut className="size-4" aria-hidden />
+              </button>
             </div>
           </div>
         </header>

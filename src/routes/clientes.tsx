@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useAppMode } from "@/lib/app-mode";
-import { contacts, journeyStages, mascararTelefone, stageName, type Contact } from "@/lib/demo-data";
+import { mascararTelefone, stageName, type Contact } from "@/lib/demo-data";
+import { useContactos, useEtapas, useModoDados } from "@/lib/repo";
+import { syncGhl } from "@/lib/ghl.functions";
+import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/clientes")({
   head: () => ({
@@ -29,10 +31,31 @@ export const Route = createFileRoute("/clientes")({
 });
 
 function Clientes() {
-  const modo = useAppMode();
+  const { demo } = useModoDados();
+  const { data: contacts = [], isLoading, error } = useContactos();
+  const { data: etapas = [] } = useEtapas();
+  const sincronizar = useServerFn(syncGhl);
+  const [aSincronizar, setASincronizar] = useState(false);
   const [busca, setBusca] = useState("");
   const [etapa, setEtapa] = useState("todas");
   const [detalhe, setDetalhe] = useState<Contact | null>(null);
+
+  async function sincronizarGhl() {
+    if (demo) {
+      toast.error("Sincronização indisponível em modo demonstração.");
+      return;
+    }
+    setASincronizar(true);
+    try {
+      const res = await sincronizar();
+      if (res.ok) toast.success(`Sincronização concluída: ${res.importados} contactos importados.`);
+      else toast.error(res.message);
+    } catch {
+      toast.error("Falha ao contactar o servidor de sincronização.");
+    } finally {
+      setASincronizar(false);
+    }
+  }
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -44,7 +67,7 @@ function Clientes() {
         c.telefone.includes(termo);
       return bate && (etapa === "todas" || c.etapa === etapa);
     });
-  }, [busca, etapa]);
+  }, [busca, etapa, contacts]);
 
   function exportarCsv() {
     const linhas = [
@@ -72,27 +95,23 @@ function Clientes() {
   return (
     <AppShell
       title="Clientes"
-      description={`${contacts.length} registos de demonstração`}
+      description={`${contacts.length} ${demo ? "registos de demonstração" : "registos"}`}
       actions={
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() =>
-              modo === "conectado"
-                ? toast.success("Sincronização iniciada.")
-                : toast.error("Sincronização indisponível em modo demonstração.")
-            }
-          >
-            <RefreshCw className="size-4" /> Sincronizar
+          <Button variant="outline" onClick={() => void sincronizarGhl()} disabled={aSincronizar}>
+            <RefreshCw className={`size-4 ${aSincronizar ? "animate-spin" : ""}`} />
+            {aSincronizar ? "A sincronizar…" : "Sincronizar"}
           </Button>
-          <Button variant="secondary" onClick={exportarCsv}>
+          <Button variant="secondary" onClick={exportarCsv} disabled={filtrados.length === 0}>
             <Download className="size-4" /> CSV
           </Button>
         </div>
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Registos DEMO. A deduplicação usa GHL Contact ID, telefone normalizado e e-mail quando a ligação estiver ativa." />
+        {demo && (
+          <DemoNotice texto="Registos DEMO. A deduplicação usa GHL Contact ID, telefone normalizado e e-mail quando a ligação estiver ativa." />
+        )}
 
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
@@ -111,7 +130,7 @@ function Clientes() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas as fases</SelectItem>
-              {journeyStages.map((s) => (
+              {etapas.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.nome}
                 </SelectItem>
@@ -156,7 +175,13 @@ function Clientes() {
               {filtrados.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
-                    Nenhum cliente encontrado com estes critérios.
+                    {isLoading
+                      ? "A carregar clientes…"
+                      : error
+                        ? "Não foi possível carregar os clientes. Atualize a página."
+                        : contacts.length === 0
+                          ? "Ainda não há clientes. Sincronize com o GoHighLevel ou carregue os dados DEMO em Configurações."
+                          : "Nenhum cliente encontrado com estes critérios."}
                   </td>
                 </tr>
               )}

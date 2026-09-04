@@ -16,14 +16,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { mascararTelefone, type Contact, type StageId } from "@/lib/demo-data";
 import {
-  automations,
-  contacts as demoContacts,
-  journeyStages,
-  mascararTelefone,
-  type Contact,
-  type StageId,
-} from "@/lib/demo-data";
+  useAutomacoes,
+  useContactos,
+  useEtapas,
+  useGuardarMapeamentoEtapa,
+  useModoDados,
+  useMoverContacto,
+} from "@/lib/repo";
 
 export const Route = createFileRoute("/jornada")({
   head: () => ({
@@ -55,11 +56,21 @@ function automacoesDaEtapa(etapa: StageId): string[] {
 }
 
 function Jornada() {
-  const [lista, setLista] = useState<Contact[]>(demoContacts);
+  const { demo } = useModoDados();
+  const { data: contactos = [], isLoading } = useContactos();
+  const { data: journeyStages = [] } = useEtapas();
+  const { data: automations = [] } = useAutomacoes();
+  const mover = useMoverContacto();
+  const guardarMapeamento = useGuardarMapeamentoEtapa();
+
+  const [locais, setLocais] = useState<Record<string, StageId>>({});
+  const [mapaEdicao, setMapaEdicao] = useState<Record<string, { pipeline: string; stage: string }>>({});
   const [arrastado, setArrastado] = useState<string | null>(null);
   const [pendente, setPendente] = useState<{ contact: Contact; destino: StageId } | null>(null);
   const [detalhe, setDetalhe] = useState<Contact | null>(null);
   const [mapeamento, setMapeamento] = useState(false);
+
+  const lista = contactos.map((c) => (locais[c.id] ? { ...c, etapa: locais[c.id]! } : c));
 
   function soltar(destino: StageId) {
     const contacto = lista.find((c) => c.id === arrastado);
@@ -68,16 +79,50 @@ function Jornada() {
     setPendente({ contact: contacto, destino });
   }
 
-  function confirmar() {
+  async function confirmar() {
     if (!pendente) return;
-    setLista((atual) =>
-      atual.map((c) => (c.id === pendente.contact.id ? { ...c, etapa: pendente.destino } : c)),
-    );
-    const nome = journeyStages.find((s) => s.id === pendente.destino)?.nome;
-    toast.success(`${pendente.contact.nome} movido para ${nome}.`, {
-      description: "Automações executadas em simulação (modo demonstração).",
-    });
+    const { contact, destino } = pendente;
+    const nome = journeyStages.find((s) => s.id === destino)?.nome;
     setPendente(null);
+
+    if (demo) {
+      setLocais((a) => ({ ...a, [contact.id]: destino }));
+      toast.success(`${contact.nome} movido para ${nome}.`, {
+        description: "Automações executadas em simulação (modo demonstração).",
+      });
+      return;
+    }
+
+    try {
+      await mover.mutateAsync({ id: contact.id, etapa: destino, nome: contact.nome });
+      toast.success(`${contact.nome} movido para ${nome}.`, {
+        description: "Alteração gravada e registada na auditoria.",
+      });
+    } catch {
+      toast.error("Não foi possível mover o cliente. Tente novamente.");
+    }
+  }
+
+  async function guardarMapeamentos() {
+    if (demo) {
+      toast.error("O mapeamento só pode ser gravado com uma conta iniciada.");
+      return;
+    }
+    try {
+      await Promise.all(
+        Object.entries(mapaEdicao).map(([key, v]) =>
+          guardarMapeamento.mutateAsync({
+            key,
+            pipelineId: v.pipeline.trim() || null,
+            stageId: v.stage.trim() || null,
+          }),
+        ),
+      );
+      toast.success("Mapeamento guardado.");
+      setMapeamento(false);
+    } catch {
+      toast.error("Não foi possível guardar o mapeamento.");
+    }
   }
 
   return (
@@ -91,7 +136,9 @@ function Jornada() {
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Arraste os cartões entre etapas. Em modo demonstração, as automações são apenas simuladas." />
+        {demo && (
+          <DemoNotice texto="Arraste os cartões entre etapas. Em modo demonstração, as automações são apenas simuladas." />
+        )}
 
         <div className="flex gap-4 overflow-x-auto pb-4">
           {journeyStages.map((etapa) => {
@@ -134,7 +181,7 @@ function Jornada() {
                   ))}
                   {cards.length === 0 && (
                     <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-                      Sem clientes nesta etapa
+                      {isLoading ? "A carregar…" : "Sem clientes nesta etapa"}
                     </li>
                   )}
                 </ul>
@@ -167,7 +214,9 @@ function Jornada() {
             <Button variant="outline" onClick={() => setPendente(null)}>
               Cancelar
             </Button>
-            <Button onClick={confirmar}>Confirmar</Button>
+            <Button onClick={() => void confirmar()} disabled={mover.isPending}>
+              {mover.isPending ? "A guardar…" : "Confirmar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -237,29 +286,47 @@ function Jornada() {
           <DialogHeader>
             <DialogTitle>Mapeamento de etapas no GoHighLevel</DialogTitle>
             <DialogDescription>
-              Indique o Pipeline ID e o Stage ID correspondentes. Guardado no backend na Fase 2.
+              Indique o Pipeline ID e o Stage ID correspondentes de cada etapa.
+              {demo && " Disponível apenas com conta iniciada."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {journeyStages.map((s) => (
-              <div key={s.id} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
-                <p className="text-sm text-heading">{s.nome}</p>
-                <Input placeholder="Pipeline ID" aria-label={`Pipeline ID de ${s.nome}`} />
-                <Input placeholder="Stage ID" aria-label={`Stage ID de ${s.nome}`} />
-              </div>
-            ))}
+            {journeyStages.map((s) => {
+              const valor = mapaEdicao[s.id] ?? {
+                pipeline: s.ghlPipelineId ?? "",
+                stage: s.ghlStageId ?? "",
+              };
+              return (
+                <div key={s.id} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
+                  <p className="text-sm text-heading">{s.nome}</p>
+                  <Input
+                    placeholder="Pipeline ID"
+                    aria-label={`Pipeline ID de ${s.nome}`}
+                    disabled={demo}
+                    value={valor.pipeline}
+                    onChange={(e) =>
+                      setMapaEdicao((a) => ({ ...a, [s.id]: { ...valor, pipeline: e.target.value } }))
+                    }
+                  />
+                  <Input
+                    placeholder="Stage ID"
+                    aria-label={`Stage ID de ${s.nome}`}
+                    disabled={demo}
+                    value={valor.stage}
+                    onChange={(e) =>
+                      setMapaEdicao((a) => ({ ...a, [s.id]: { ...valor, stage: e.target.value } }))
+                    }
+                  />
+                </div>
+              );
+            })}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMapeamento(false)}>
               Fechar
             </Button>
-            <Button
-              onClick={() => {
-                toast.info("Mapeamento guardado localmente (demonstração).");
-                setMapeamento(false);
-              }}
-            >
-              Guardar
+            <Button onClick={() => void guardarMapeamentos()} disabled={demo || guardarMapeamento.isPending}>
+              {guardarMapeamento.isPending ? "A guardar…" : "Guardar"}
             </Button>
           </DialogFooter>
         </DialogContent>

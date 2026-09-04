@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AutomacoesRouteImport } from './routes/automacoes'
 import { Route as CaixaDeEntradaRouteImport } from './routes/caixa-de-entrada'
 import { Route as ClientesRouteImport } from './routes/clientes'
@@ -17,10 +18,16 @@ import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as IntegracoesRouteImport } from './routes/integracoes'
 import { Route as JornadaRouteImport } from './routes/jornada'
 import { Route as ModelosRouteImport } from './routes/modelos'
+import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutomacoesRoute = AutomacoesRouteImport.update({
@@ -58,9 +65,15 @@ const ModelosRoute = ModelosRouteImport.update({
   path: '/modelos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
+  id: '/api/public/ghl-webhook',
+  path: '/api/public/ghl-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
   '/clientes': typeof ClientesRoute
@@ -68,9 +81,11 @@ export interface FileRoutesByFullPath {
   '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
   '/modelos': typeof ModelosRoute
+  '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
   '/clientes': typeof ClientesRoute
@@ -78,10 +93,12 @@ export interface FileRoutesByTo {
   '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
   '/modelos': typeof ModelosRoute
+  '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
   '/clientes': typeof ClientesRoute
@@ -89,11 +106,13 @@ export interface FileRoutesById {
   '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
   '/modelos': typeof ModelosRoute
+  '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
     | '/clientes'
@@ -101,9 +120,11 @@ export interface FileRouteTypes {
     | '/integracoes'
     | '/jornada'
     | '/modelos'
+    | '/api/public/ghl-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
     | '/clientes'
@@ -111,9 +132,11 @@ export interface FileRouteTypes {
     | '/integracoes'
     | '/jornada'
     | '/modelos'
+    | '/api/public/ghl-webhook'
   id:
     | '__root__'
     | '/'
+    | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
     | '/clientes'
@@ -121,10 +144,12 @@ export interface FileRouteTypes {
     | '/integracoes'
     | '/jornada'
     | '/modelos'
+    | '/api/public/ghl-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   AutomacoesRoute: typeof AutomacoesRoute
   CaixaDeEntradaRoute: typeof CaixaDeEntradaRoute
   ClientesRoute: typeof ClientesRoute
@@ -132,6 +157,7 @@ export interface RootRouteChildren {
   IntegracoesRoute: typeof IntegracoesRoute
   JornadaRoute: typeof JornadaRoute
   ModelosRoute: typeof ModelosRoute
+  ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -141,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/automacoes': {
@@ -192,11 +225,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ModelosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/ghl-webhook': {
+      id: '/api/public/ghl-webhook'
+      path: '/api/public/ghl-webhook'
+      fullPath: '/api/public/ghl-webhook'
+      preLoaderRoute: typeof ApiPublicGhlWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   AutomacoesRoute: AutomacoesRoute,
   CaixaDeEntradaRoute: CaixaDeEntradaRoute,
   ClientesRoute: ClientesRoute,
@@ -204,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   IntegracoesRoute: IntegracoesRoute,
   JornadaRoute: JornadaRoute,
   ModelosRoute: ModelosRoute,
+  ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
