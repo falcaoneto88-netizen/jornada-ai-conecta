@@ -66,7 +66,7 @@ export const Route = createFileRoute("/api/public/ghl-webhook")({
           organization_id: organizationId,
           idempotency_key: idempotencyKey,
           event_type: (payload["type"] as string) ?? (payload["event"] as string) ?? "desconhecido",
-          payload,
+          payload: payload as never,
           signature_valid: true,
           processed_at: new Date().toISOString(),
         });
