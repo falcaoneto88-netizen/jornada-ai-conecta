@@ -175,7 +175,13 @@ function Clientes() {
               {filtrados.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
-                    Nenhum cliente encontrado com estes critérios.
+                    {isLoading
+                      ? "A carregar clientes…"
+                      : error
+                        ? "Não foi possível carregar os clientes. Atualize a página."
+                        : contacts.length === 0
+                          ? "Ainda não há clientes. Sincronize com o GoHighLevel ou carregue os dados DEMO em Configurações."
+                          : "Nenhum cliente encontrado com estes critérios."}
                   </td>
                 </tr>
               )}
