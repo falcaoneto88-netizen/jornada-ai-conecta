@@ -12,11 +12,15 @@ import {
   PanelLeftOpen,
   Menu,
   X,
+  LogOut,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { useAppMode } from "@/lib/app-mode";
+import { supabase } from "@/integrations/supabase/client";
+import { desativarDemo, useSessao } from "@/lib/session";
 
 const navItems = [
   { to: "/", label: "Visão Geral", icon: LayoutDashboard },
