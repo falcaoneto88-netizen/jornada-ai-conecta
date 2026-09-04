@@ -17,7 +17,9 @@ import { Route as ClientesRouteImport } from './routes/clientes'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as IntegracoesRouteImport } from './routes/integracoes'
 import { Route as JornadaRouteImport } from './routes/jornada'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ModelosRouteImport } from './routes/modelos'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
 
 const IndexRoute = IndexRouteImport.update({
@@ -60,11 +62,22 @@ const JornadaRoute = JornadaRouteImport.update({
   path: '/jornada',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModelosRoute = ModelosRouteImport.update({
   id: '/modelos',
   path: '/modelos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
   id: '/api/public/ghl-webhook',
   path: '/api/public/ghl-webhook',
@@ -80,7 +93,9 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof ConfiguracoesRoute
   '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
+  '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
 }
 export interface FileRoutesByTo {
@@ -92,7 +107,9 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof ConfiguracoesRoute
   '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
+  '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
 }
 export interface FileRoutesById {
@@ -105,7 +122,9 @@ export interface FileRoutesById {
   '/configuracoes': typeof ConfiguracoesRoute
   '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
+  '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
 }
 export interface FileRouteTypes {
@@ -119,7 +138,9 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/integracoes'
     | '/jornada'
+    | '/mcp'
     | '/modelos'
+    | '/.well-known/oauth-protected-resource'
     | '/api/public/ghl-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -131,7 +152,9 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/integracoes'
     | '/jornada'
+    | '/mcp'
     | '/modelos'
+    | '/.well-known/oauth-protected-resource'
     | '/api/public/ghl-webhook'
   id:
     | '__root__'
@@ -143,7 +166,9 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/integracoes'
     | '/jornada'
+    | '/mcp'
     | '/modelos'
+    | '/.well-known/oauth-protected-resource'
     | '/api/public/ghl-webhook'
   fileRoutesById: FileRoutesById
 }
@@ -156,7 +181,9 @@ export interface RootRouteChildren {
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   IntegracoesRoute: typeof IntegracoesRoute
   JornadaRoute: typeof JornadaRoute
+  McpRoute: typeof McpRoute
   ModelosRoute: typeof ModelosRoute
+  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
 }
 
@@ -218,11 +245,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JornadaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/modelos': {
       id: '/modelos'
       path: '/modelos'
       fullPath: '/modelos'
       preLoaderRoute: typeof ModelosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/ghl-webhook': {
@@ -244,7 +285,10 @@ const rootRouteChildren: RootRouteChildren = {
   ConfiguracoesRoute: ConfiguracoesRoute,
   IntegracoesRoute: IntegracoesRoute,
   JornadaRoute: JornadaRoute,
+  McpRoute: McpRoute,
   ModelosRoute: ModelosRoute,
+  Char91DotwellKnownChar93OauthProtectedResourceRoute:
+    Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
 }
 export const routeTree = rootRouteImport
