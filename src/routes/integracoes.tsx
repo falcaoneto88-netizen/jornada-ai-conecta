@@ -154,7 +154,7 @@ function Integracoes() {
                 {demo
                   ? "Modo demonstração."
                   : conectada
-                    ? `Ligação validada${ligacao?.last_tested_at ? ` em ${new Date(ligacao.last_tested_at).toLocaleString("pt-PT")}` : ""}.`
+                    ? `Ligação validada${ligacao?.last_test_at ? ` em ${new Date(ligacao.last_test_at).toLocaleString("pt-PT")}` : ""}.`
                     : "Ligação por validar. Teste a conexão para confirmar as credenciais."}
               </p>
             </div>
