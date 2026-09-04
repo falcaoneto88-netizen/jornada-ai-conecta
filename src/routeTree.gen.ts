@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AutomacoesRouteImport } from './routes/automacoes'
 import { Route as CaixaDeEntradaRouteImport } from './routes/caixa-de-entrada'
 import { Route as ClientesRouteImport } from './routes/clientes'
+import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
+import { Route as IntegracoesRouteImport } from './routes/integracoes'
 import { Route as JornadaRouteImport } from './routes/jornada'
 import { Route as ModelosRouteImport } from './routes/modelos'
 
@@ -36,6 +38,16 @@ const ClientesRoute = ClientesRouteImport.update({
   path: '/clientes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegracoesRoute = IntegracoesRouteImport.update({
+  id: '/integracoes',
+  path: '/integracoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JornadaRoute = JornadaRouteImport.update({
   id: '/jornada',
   path: '/jornada',
@@ -52,6 +64,8 @@ export interface FileRoutesByFullPath {
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
   '/clientes': typeof ClientesRoute
+  '/configuracoes': typeof ConfiguracoesRoute
+  '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
   '/modelos': typeof ModelosRoute
 }
@@ -60,6 +74,8 @@ export interface FileRoutesByTo {
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
   '/clientes': typeof ClientesRoute
+  '/configuracoes': typeof ConfiguracoesRoute
+  '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
   '/modelos': typeof ModelosRoute
 }
@@ -69,6 +85,8 @@ export interface FileRoutesById {
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
   '/clientes': typeof ClientesRoute
+  '/configuracoes': typeof ConfiguracoesRoute
+  '/integracoes': typeof IntegracoesRoute
   '/jornada': typeof JornadaRoute
   '/modelos': typeof ModelosRoute
 }
@@ -79,6 +97,8 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/caixa-de-entrada'
     | '/clientes'
+    | '/configuracoes'
+    | '/integracoes'
     | '/jornada'
     | '/modelos'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +107,8 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/caixa-de-entrada'
     | '/clientes'
+    | '/configuracoes'
+    | '/integracoes'
     | '/jornada'
     | '/modelos'
   id:
@@ -95,6 +117,8 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/caixa-de-entrada'
     | '/clientes'
+    | '/configuracoes'
+    | '/integracoes'
     | '/jornada'
     | '/modelos'
   fileRoutesById: FileRoutesById
@@ -104,6 +128,8 @@ export interface RootRouteChildren {
   AutomacoesRoute: typeof AutomacoesRoute
   CaixaDeEntradaRoute: typeof CaixaDeEntradaRoute
   ClientesRoute: typeof ClientesRoute
+  ConfiguracoesRoute: typeof ConfiguracoesRoute
+  IntegracoesRoute: typeof IntegracoesRoute
   JornadaRoute: typeof JornadaRoute
   ModelosRoute: typeof ModelosRoute
 }
@@ -138,6 +164,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/configuracoes': {
+      id: '/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/configuracoes'
+      preLoaderRoute: typeof ConfiguracoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integracoes': {
+      id: '/integracoes'
+      path: '/integracoes'
+      fullPath: '/integracoes'
+      preLoaderRoute: typeof IntegracoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/jornada': {
       id: '/jornada'
       path: '/jornada'
@@ -160,6 +200,8 @@ const rootRouteChildren: RootRouteChildren = {
   AutomacoesRoute: AutomacoesRoute,
   CaixaDeEntradaRoute: CaixaDeEntradaRoute,
   ClientesRoute: ClientesRoute,
+  ConfiguracoesRoute: ConfiguracoesRoute,
+  IntegracoesRoute: IntegracoesRoute,
   JornadaRoute: JornadaRoute,
   ModelosRoute: ModelosRoute,
 }
