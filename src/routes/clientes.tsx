@@ -130,7 +130,7 @@ function Clientes() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas as fases</SelectItem>
-              {journeyStages.map((s) => (
+              {etapas.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.nome}
                 </SelectItem>
