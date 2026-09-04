@@ -282,29 +282,47 @@ function Jornada() {
           <DialogHeader>
             <DialogTitle>Mapeamento de etapas no GoHighLevel</DialogTitle>
             <DialogDescription>
-              Indique o Pipeline ID e o Stage ID correspondentes. Guardado no backend na Fase 2.
+              Indique o Pipeline ID e o Stage ID correspondentes de cada etapa.
+              {demo && " Disponível apenas com conta iniciada."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {journeyStages.map((s) => (
-              <div key={s.id} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
-                <p className="text-sm text-heading">{s.nome}</p>
-                <Input placeholder="Pipeline ID" aria-label={`Pipeline ID de ${s.nome}`} />
-                <Input placeholder="Stage ID" aria-label={`Stage ID de ${s.nome}`} />
-              </div>
-            ))}
+            {journeyStages.map((s) => {
+              const valor = mapaEdicao[s.id] ?? {
+                pipeline: s.ghlPipelineId ?? "",
+                stage: s.ghlStageId ?? "",
+              };
+              return (
+                <div key={s.id} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
+                  <p className="text-sm text-heading">{s.nome}</p>
+                  <Input
+                    placeholder="Pipeline ID"
+                    aria-label={`Pipeline ID de ${s.nome}`}
+                    disabled={demo}
+                    value={valor.pipeline}
+                    onChange={(e) =>
+                      setMapaEdicao((a) => ({ ...a, [s.id]: { ...valor, pipeline: e.target.value } }))
+                    }
+                  />
+                  <Input
+                    placeholder="Stage ID"
+                    aria-label={`Stage ID de ${s.nome}`}
+                    disabled={demo}
+                    value={valor.stage}
+                    onChange={(e) =>
+                      setMapaEdicao((a) => ({ ...a, [s.id]: { ...valor, stage: e.target.value } }))
+                    }
+                  />
+                </div>
+              );
+            })}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMapeamento(false)}>
               Fechar
             </Button>
-            <Button
-              onClick={() => {
-                toast.info("Mapeamento guardado localmente (demonstração).");
-                setMapeamento(false);
-              }}
-            >
-              Guardar
+            <Button onClick={() => void guardarMapeamentos()} disabled={demo || guardarMapeamento.isPending}>
+              {guardarMapeamento.isPending ? "A guardar…" : "Guardar"}
             </Button>
           </DialogFooter>
         </DialogContent>
