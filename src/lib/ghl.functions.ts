@@ -1,8 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-type Ctx = { supabase: any; userId: string };
+type Ctx = { supabase: SupabaseClient; userId: string };
+
+type GhlContact = {
+  id?: string;
+  firstName?: string;
+  lastName?: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  tags?: string[];
+  source?: string;
+  dateUpdated?: string;
+};
 
 async function carregarLigacao(context: Ctx) {
   const { data: perfil } = await context.supabase
