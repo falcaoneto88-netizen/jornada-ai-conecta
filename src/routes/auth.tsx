@@ -10,8 +10,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { ativarDemo, desativarDemo, useSessao } from "@/lib/session";
 
+function caminhoSeguro(valor: unknown): string {
+  return typeof valor === "string" && valor.startsWith("/") && !valor.startsWith("//") ? valor : "";
+}
+
 export const Route = createFileRoute("/auth")({
   ssr: false,
+  validateSearch: (s: Record<string, unknown>) => ({ next: caminhoSeguro(s["next"]) }),
+
   head: () => ({
     meta: [
       { title: "Acesso — Jornada AI | Dr. João Falcão" },
