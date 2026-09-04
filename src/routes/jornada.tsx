@@ -56,11 +56,21 @@ function automacoesDaEtapa(etapa: StageId): string[] {
 }
 
 function Jornada() {
-  const [lista, setLista] = useState<Contact[]>(demoContacts);
+  const { demo } = useModoDados();
+  const { data: contactos = [], isLoading } = useContactos();
+  const { data: journeyStages = [] } = useEtapas();
+  const { data: automations = [] } = useAutomacoes();
+  const mover = useMoverContacto();
+  const guardarMapeamento = useGuardarMapeamentoEtapa();
+
+  const [locais, setLocais] = useState<Record<string, StageId>>({});
+  const [mapaEdicao, setMapaEdicao] = useState<Record<string, { pipeline: string; stage: string }>>({});
   const [arrastado, setArrastado] = useState<string | null>(null);
   const [pendente, setPendente] = useState<{ contact: Contact; destino: StageId } | null>(null);
   const [detalhe, setDetalhe] = useState<Contact | null>(null);
   const [mapeamento, setMapeamento] = useState(false);
+
+  const lista = contactos.map((c) => (locais[c.id] ? { ...c, etapa: locais[c.id]! } : c));
 
   function soltar(destino: StageId) {
     const contacto = lista.find((c) => c.id === arrastado);
@@ -69,16 +79,50 @@ function Jornada() {
     setPendente({ contact: contacto, destino });
   }
 
-  function confirmar() {
+  async function confirmar() {
     if (!pendente) return;
-    setLista((atual) =>
-      atual.map((c) => (c.id === pendente.contact.id ? { ...c, etapa: pendente.destino } : c)),
-    );
-    const nome = journeyStages.find((s) => s.id === pendente.destino)?.nome;
-    toast.success(`${pendente.contact.nome} movido para ${nome}.`, {
-      description: "Automações executadas em simulação (modo demonstração).",
-    });
+    const { contact, destino } = pendente;
+    const nome = journeyStages.find((s) => s.id === destino)?.nome;
     setPendente(null);
+
+    if (demo) {
+      setLocais((a) => ({ ...a, [contact.id]: destino }));
+      toast.success(`${contact.nome} movido para ${nome}.`, {
+        description: "Automações executadas em simulação (modo demonstração).",
+      });
+      return;
+    }
+
+    try {
+      await mover.mutateAsync({ id: contact.id, etapa: destino, nome: contact.nome });
+      toast.success(`${contact.nome} movido para ${nome}.`, {
+        description: "Alteração gravada e registada na auditoria.",
+      });
+    } catch {
+      toast.error("Não foi possível mover o cliente. Tente novamente.");
+    }
+  }
+
+  async function guardarMapeamentos() {
+    if (demo) {
+      toast.error("O mapeamento só pode ser gravado com uma conta iniciada.");
+      return;
+    }
+    try {
+      await Promise.all(
+        Object.entries(mapaEdicao).map(([key, v]) =>
+          guardarMapeamento.mutateAsync({
+            key,
+            pipelineId: v.pipeline.trim() || null,
+            stageId: v.stage.trim() || null,
+          }),
+        ),
+      );
+      toast.success("Mapeamento guardado.");
+      setMapeamento(false);
+    } catch {
+      toast.error("Não foi possível guardar o mapeamento.");
+    }
   }
 
   return (
