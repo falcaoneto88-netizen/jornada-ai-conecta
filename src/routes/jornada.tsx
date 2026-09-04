@@ -214,7 +214,9 @@ function Jornada() {
             <Button variant="outline" onClick={() => setPendente(null)}>
               Cancelar
             </Button>
-            <Button onClick={confirmar}>Confirmar</Button>
+            <Button onClick={() => void confirmar()} disabled={mover.isPending}>
+              {mover.isPending ? "A guardar…" : "Confirmar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
