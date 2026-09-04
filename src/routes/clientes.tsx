@@ -31,10 +31,31 @@ export const Route = createFileRoute("/clientes")({
 });
 
 function Clientes() {
-  const modo = useAppMode();
+  const { demo } = useModoDados();
+  const { data: contacts = [], isLoading, error } = useContactos();
+  const { data: etapas = [] } = useEtapas();
+  const sincronizar = useServerFn(syncGhl);
+  const [aSincronizar, setASincronizar] = useState(false);
   const [busca, setBusca] = useState("");
   const [etapa, setEtapa] = useState("todas");
   const [detalhe, setDetalhe] = useState<Contact | null>(null);
+
+  async function sincronizarGhl() {
+    if (demo) {
+      toast.error("Sincronização indisponível em modo demonstração.");
+      return;
+    }
+    setASincronizar(true);
+    try {
+      const res = await sincronizar();
+      if (res.ok) toast.success(`Sincronização concluída: ${res.importados} contactos importados.`);
+      else toast.error(res.message);
+    } catch {
+      toast.error("Falha ao contactar o servidor de sincronização.");
+    } finally {
+      setASincronizar(false);
+    }
+  }
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
