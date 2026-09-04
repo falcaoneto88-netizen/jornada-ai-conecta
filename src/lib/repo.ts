@@ -53,7 +53,7 @@ export async function registarAuditoria(action: string, entity: string, metadata
       actor_name: userData.user?.email ?? null,
       action,
       entity,
-      metadata,
+      metadata: metadata as never,
     });
   } catch {
     /* auditoria nunca deve quebrar a interface */
@@ -181,7 +181,7 @@ export function useGuardarModelo() {
         organization_id,
         name: input.nome ?? "Novo modelo",
         stage_key: input.etapa ?? "novo_lead",
-        channel: (input.canal ?? "whatsapp") as string,
+        channel: input.canal ?? "whatsapp",
         language: input.idioma ?? "PT-PT",
         body: input.corpo ?? "",
       };
