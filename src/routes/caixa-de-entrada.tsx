@@ -110,7 +110,7 @@ function CaixaEntrada() {
     try {
       const res = await enviarGhl({
         data: {
-          operacao: "enviar_mensagem",
+          operacao: "conversations.sendMessage",
           body: { type: conversa.canal === "email" ? "Email" : "WhatsApp", message: rascunho },
         },
       });
