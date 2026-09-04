@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Sparkles, Wand2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
@@ -9,7 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { canalLabel, messageTemplates, stageName } from "@/lib/demo-data";
+import { canalLabel, stageName, type MessageTemplate } from "@/lib/demo-data";
+import { useApagarModelo, useGuardarModelo, useModelos, useModoDados } from "@/lib/repo";
+import { melhorarTexto } from "@/lib/ai.functions";
+import { useServerFn } from "@tanstack/react-start";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/modelos")({
@@ -51,14 +54,66 @@ function extrairVariaveis(texto: string): string[] {
 }
 
 function Modelos() {
+  const { demo } = useModoDados();
+  const { data: modelos = [], isLoading, error } = useModelos();
+  const guardar = useGuardarModelo();
+  const apagar = useApagarModelo();
+  const melhorar = useServerFn(melhorarTexto);
+
   const [idioma, setIdioma] = useState("todos");
-  const [selecionado, setSelecionado] = useState(messageTemplates[0]!.id);
-  const [corpo, setCorpo] = useState(messageTemplates[0]!.corpo);
+  const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
+  const [corpo, setCorpo] = useState("");
+  const [aMelhorar, setAMelhorar] = useState(false);
 
   const lista = useMemo(
-    () => messageTemplates.filter((t) => idioma === "todos" || t.idioma === idioma),
-    [idioma],
+    () => modelos.filter((t) => idioma === "todos" || t.idioma === idioma),
+    [idioma, modelos],
   );
+
+  const selecionado: MessageTemplate | null =
+    modelos.find((t) => t.id === selecionadoId) ?? modelos[0] ?? null;
+
+  useEffect(() => {
+    if (selecionado && selecionadoId === null) {
+      setSelecionadoId(selecionado.id);
+      setCorpo(selecionado.corpo);
+    }
+  }, [selecionado, selecionadoId]);
+
+  async function melhorarComIa() {
+    if (demo) {
+      toast.error("A melhoria por IA exige conta iniciada.");
+      return;
+    }
+    setAMelhorar(true);
+    try {
+      const res = await melhorar({ data: { texto: corpo } });
+      if (res.ok) {
+        setCorpo(res.texto);
+        toast.success("Texto melhorado pela IA. Reveja antes de guardar.");
+      } else {
+        toast.error(res.message);
+      }
+    } catch {
+      toast.error("Não foi possível contactar a IA.");
+    } finally {
+      setAMelhorar(false);
+    }
+  }
+
+  async function guardarModelo() {
+    if (demo) {
+      toast.error("Guardar modelos exige conta iniciada.");
+      return;
+    }
+    if (!selecionado) return;
+    try {
+      await guardar.mutateAsync({ ...selecionado, corpo });
+      toast.success("Modelo guardado.");
+    } catch {
+      toast.error("Não foi possível guardar o modelo.");
+    }
+  }
 
   const usadas = extrairVariaveis(corpo);
   const invalidas = usadas.filter((v) => !variaveisConhecidas.includes(v));
@@ -85,7 +140,9 @@ function Modelos() {
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Modelos DEMO. A IA melhora o texto mantendo tom acolhedor e premium, sem inventar valores ou promessas de resultado." />
+        {demo && (
+          <DemoNotice texto="Modelos DEMO. A IA melhora o texto mantendo tom acolhedor e premium, sem inventar valores ou promessas de resultado." />
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
           <section className="surface-card overflow-hidden">
@@ -95,12 +152,12 @@ function Modelos() {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelecionado(t.id);
+                      setSelecionadoId(t.id);
                       setCorpo(t.corpo);
                     }}
                     className={cn(
                       "w-full px-4 py-4 text-left transition-colors hover:bg-secondary/60",
-                      t.id === selecionado && "bg-secondary",
+                      t.id === selecionado?.id && "bg-secondary",
                     )}
                   >
                     <p className="text-sm font-medium text-heading">{t.nome}</p>
@@ -114,7 +171,13 @@ function Modelos() {
               ))}
               {lista.length === 0 && (
                 <li className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  Nenhum modelo neste idioma.
+                  {isLoading
+                    ? "A carregar modelos…"
+                    : error
+                      ? "Não foi possível carregar os modelos."
+                      : modelos.length === 0
+                        ? "Ainda não há modelos. Carregue os dados DEMO em Configurações para começar."
+                        : "Nenhum modelo neste idioma."}
                 </li>
               )}
             </ul>
@@ -148,17 +211,29 @@ function Modelos() {
                 </p>
               )}
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    toast.info("Melhoria por IA disponível após ativar a IA no backend (Fase 2).", {
-                      description: "O tom acolhedor, premium e humano será preservado.",
-                    })
-                  }
-                >
-                  <Wand2 className="size-4" /> Melhorar com IA
+                <Button variant="secondary" onClick={() => void melhorarComIa()} disabled={aMelhorar || demo}>
+                  <Wand2 className="size-4" /> {aMelhorar ? "A melhorar…" : "Melhorar com IA"}
                 </Button>
-                <Button onClick={() => toast.success("Modelo guardado (demonstração).")}>Guardar modelo</Button>
+                <Button onClick={() => void guardarModelo()} disabled={guardar.isPending || demo || invalidas.length > 0}>
+                  {guardar.isPending ? "A guardar…" : "Guardar modelo"}
+                </Button>
+                {selecionado && !demo && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void apagar
+                        .mutateAsync(selecionado.id)
+                        .then(() => {
+                          setSelecionadoId(null);
+                          setCorpo("");
+                          toast.success("Modelo apagado.");
+                        })
+                        .catch(() => toast.error("Não foi possível apagar o modelo."));
+                    }}
+                  >
+                    Apagar
+                  </Button>
+                )}
               </div>
             </div>
 
