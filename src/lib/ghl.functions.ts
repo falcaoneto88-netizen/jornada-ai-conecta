@@ -155,7 +155,7 @@ export const ghlProxy = createServerFn({ method: "POST" })
       await auditar(ctx, orgId, nome, `ghl.${data.operacao}`, { ok: res.ok });
     }
     return res.ok
-      ? { ok: true as const, data: res.data }
+      ? { ok: true as const, data: (res.data ?? null) as Record<string, unknown> | null }
       : { ok: false as const, code: res.code, message: res.message };
   });
 
@@ -186,7 +186,7 @@ export const syncGhl = createServerFn({ method: "POST" })
       locationId,
     };
 
-    const res = await ghlFetch<{ contacts?: any[] }>(cfg, "contacts/", { query: { locationId, limit: "100" } });
+    const res = await ghlFetch<{ contacts?: GhlContact[] }>(cfg, "contacts/", { query: { locationId, limit: "100" } });
     if (!res.ok) {
       return { ok: false as const, code: res.code, message: res.message };
     }
