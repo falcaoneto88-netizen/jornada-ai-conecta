@@ -5,6 +5,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Ctx = { supabase: SupabaseClient; userId: string };
 
+type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
+
 type GhlContact = {
   id?: string;
   firstName?: string;
@@ -155,7 +157,7 @@ export const ghlProxy = createServerFn({ method: "POST" })
       await auditar(ctx, orgId, nome, `ghl.${data.operacao}`, { ok: res.ok });
     }
     return res.ok
-      ? { ok: true as const, data: (res.data ?? null) as Record<string, unknown> | null }
+      ? { ok: true as const, data: (res.data ?? null) as Json }
       : { ok: false as const, code: res.code, message: res.message };
   });
 
