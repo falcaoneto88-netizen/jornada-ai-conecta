@@ -207,9 +207,19 @@ export function AppShell({
               <h1 className="display-title truncate text-xl sm:text-2xl">{title}</h1>
               {description && <p className="mt-0.5 truncate text-sm text-muted-foreground">{description}</p>}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <ModoBadge />
               <ConnectionBadge />
               {actions}
+              <button
+                type="button"
+                onClick={() => void sair()}
+                aria-label="Terminar sessão"
+                title="Terminar sessão"
+                className="rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-heading"
+              >
+                <LogOut className="size-4" aria-hidden />
+              </button>
             </div>
           </div>
         </header>
