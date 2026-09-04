@@ -181,7 +181,7 @@ function Jornada() {
                   ))}
                   {cards.length === 0 && (
                     <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-                      Sem clientes nesta etapa
+                      {isLoading ? "A carregar…" : "Sem clientes nesta etapa"}
                     </li>
                   )}
                 </ul>
