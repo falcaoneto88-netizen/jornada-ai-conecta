@@ -47,8 +47,8 @@ function VisaoGeral() {
       description="Desempenho da jornada do cliente"
       actions={
         <Select value={periodo} onValueChange={setPeriodo}>
-          <SelectTrigger className="w-[150px] bg-card">
-            <SelectValue />
+          <SelectTrigger className="w-[160px] bg-card" aria-label="Período">
+            <SelectValue placeholder="Período" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="7">Últimos 7 dias</SelectItem>
