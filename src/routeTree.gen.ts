@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CaixaDeEntradaRouteImport } from './routes/caixa-de-entrada'
+import { Route as JornadaRouteImport } from './routes/jornada'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CaixaDeEntradaRoute = CaixaDeEntradaRouteImport.update({
+  id: '/caixa-de-entrada',
+  path: '/caixa-de-entrada',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JornadaRoute = JornadaRouteImport.update({
+  id: '/jornada',
+  path: '/jornada',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/caixa-de-entrada': typeof CaixaDeEntradaRoute
+  '/jornada': typeof JornadaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/caixa-de-entrada': typeof CaixaDeEntradaRoute
+  '/jornada': typeof JornadaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/caixa-de-entrada': typeof CaixaDeEntradaRoute
+  '/jornada': typeof JornadaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/caixa-de-entrada' | '/jornada'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/caixa-de-entrada' | '/jornada'
+  id: '__root__' | '/' | '/caixa-de-entrada' | '/jornada'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CaixaDeEntradaRoute: typeof CaixaDeEntradaRoute
+  JornadaRoute: typeof JornadaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/caixa-de-entrada': {
+      id: '/caixa-de-entrada'
+      path: '/caixa-de-entrada'
+      fullPath: '/caixa-de-entrada'
+      preLoaderRoute: typeof CaixaDeEntradaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jornada': {
+      id: '/jornada'
+      path: '/jornada'
+      fullPath: '/jornada'
+      preLoaderRoute: typeof JornadaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CaixaDeEntradaRoute: CaixaDeEntradaRoute,
+  JornadaRoute: JornadaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
