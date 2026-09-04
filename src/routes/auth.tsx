@@ -10,8 +10,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { ativarDemo, desativarDemo, useSessao } from "@/lib/session";
 
+function caminhoSeguro(valor: unknown): string {
+  return typeof valor === "string" && valor.startsWith("/") && !valor.startsWith("//") ? valor : "";
+}
+
 export const Route = createFileRoute("/auth")({
   ssr: false,
+  validateSearch: (s: Record<string, unknown>) => ({ next: caminhoSeguro(s["next"]) }),
+
   head: () => ({
     meta: [
       { title: "Acesso — Jornada AI | Dr. João Falcão" },
@@ -31,6 +37,15 @@ export const Route = createFileRoute("/auth")({
 function Auth() {
   const navigate = useNavigate();
   const { user, carregando } = useSessao();
+  const { next } = Route.useSearch();
+
+  function irParaDestino() {
+    if (next) {
+      window.location.href = next;
+      return;
+    }
+    void navigate({ to: "/", replace: true });
+  }
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nome, setNome] = useState("");
@@ -38,8 +53,9 @@ function Auth() {
   const [aguardaEmail, setAguardaEmail] = useState(false);
 
   useEffect(() => {
-    if (!carregando && user) void navigate({ to: "/", replace: true });
-  }, [carregando, user, navigate]);
+    if (!carregando && user) irParaDestino();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregando, user]);
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
@@ -56,7 +72,7 @@ function Auth() {
       return;
     }
     toast.success("Sessão iniciada.");
-    void navigate({ to: "/", replace: true });
+    irParaDestino();
   }
 
   async function criarConta(e: React.FormEvent) {
@@ -70,7 +86,7 @@ function Auth() {
       email,
       password,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: next ? `${window.location.origin}${next}` : window.location.origin,
         data: { full_name: nome },
       },
     });
@@ -84,7 +100,7 @@ function Auth() {
       toast.success("Conta criada. Confirme o e-mail para entrar.");
       return;
     }
-    void navigate({ to: "/", replace: true });
+    irParaDestino();
   }
 
   function entrarDemo() {

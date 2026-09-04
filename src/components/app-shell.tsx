@@ -112,7 +112,7 @@ export function AppShell({
 
   useEffect(() => {
     if (!carregando && modo === "anonimo") {
-      void navigate({ to: "/auth", replace: true });
+      void navigate({ to: "/auth", search: { next: "" }, replace: true });
     }
   }, [carregando, modo, navigate]);
 
@@ -121,7 +121,7 @@ export function AppShell({
     queryClient.clear();
     desativarDemo();
     await supabase.auth.signOut();
-    void navigate({ to: "/auth", replace: true });
+    void navigate({ to: "/auth", search: { next: "" }, replace: true });
   }
 
   if (carregando || modo === "anonimo") {

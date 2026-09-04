@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "sdk_version": "2.0.2",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://wxmewyzdvaqomzonxsgs.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "jornada-ai",
+      "version": "0.1.0",
+      "title": "Jornada AI"
+    },
+    "tools": [
+      {
+        "name": "list_journey_stages",
+        "title": "Listar etapas da jornada",
+        "description": "Lista as etapas da jornada do cliente (nome, chave e ordem) da organização do utilizador.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_contacts",
+        "title": "Listar clientes",
+        "description": "Lista clientes da organização, com pesquisa por nome e filtro por etapa da jornada. Devolve no máximo 50 registos.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "search": {
+              "description": "Texto a procurar no nome do cliente.",
+              "type": "string"
+            },
+            "stage_key": {
+              "description": "Chave da etapa da jornada para filtrar.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Número máximo de registos (1 a 50, por omissão 20).",
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "move_contact_stage",
+        "title": "Mover cliente de etapa",
+        "description": "Move um cliente para outra etapa da jornada e regista a alteração na auditoria. Confirme com o utilizador antes de usar.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "contact_id": {
+              "type": "string",
+              "description": "Identificador do cliente."
+            },
+            "stage_key": {
+              "type": "string",
+              "description": "Chave da etapa de destino."
+            }
+          },
+          "required": [
+            "contact_id",
+            "stage_key"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_message_templates",
+        "title": "Listar modelos de mensagem",
+        "description": "Lista os modelos de mensagem da organização, com filtro opcional por etapa da jornada.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "stage_key": {
+              "description": "Chave da etapa da jornada para filtrar.",
+              "type": "string"
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_automations",
+        "title": "Listar automações",
+        "description": "Lista as automações da jornada com estado, gatilho e contagem de execuções.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "recent_activity",
+        "title": "Atividade recente",
+        "description": "Lista os registos de auditoria mais recentes da organização (ações, entidades e datas).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "description": "Número máximo de registos (1 a 50, por omissão 20).",
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
