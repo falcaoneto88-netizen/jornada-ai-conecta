@@ -9,6 +9,7 @@ import {
   automationRuns as demoRuns,
   automations as demoAutomations,
   contacts as demoContacts,
+  conversations as demoConversations,
   journeyStages as demoStages,
   messageTemplates as demoTemplates,
   type Automation,
@@ -16,6 +17,7 @@ import {
   type AutomationStatus,
   type Canal,
   type Contact,
+  type Conversation,
   type JourneyStage,
   type MessageTemplate,
   type StageId,
@@ -417,6 +419,11 @@ export function useCarregarDadosDemo() {
   return useMutation({
     mutationFn: async () => {
       const organization_id = await orgIdAtual();
+      const { count } = await supabase
+        .from("contacts")
+        .select("id", { count: "exact", head: true })
+        .eq("is_demo", true);
+      if ((count ?? 0) > 0) return "ja_carregado" as const;
       const { error: erroContactos } = await supabase.from("contacts").upsert(
         demoContacts.map((c) => ({
           organization_id,
@@ -461,7 +468,59 @@ export function useCarregarDadosDemo() {
       if (erroAutos) throw erroAutos;
 
       await registarAuditoria("dados_demo.carregados", "organizations", {});
+      return "carregado" as const;
     },
     onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
+/* ---------------- Conversas ---------------- */
+
+export function useConversas() {
+  const { demo } = useModoDados();
+  return useQuery<Conversation[]>({
+    queryKey: ["conversas", demo],
+    queryFn: async () => {
+      if (demo) return demoConversations;
+      const { data, error } = await supabase
+        .from("conversations")
+        .select("*, contacts(full_name), messages(body, direction, sent_at, author_name)")
+        .order("last_message_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      type Linha = {
+        id: string;
+        contact_id: string | null;
+        channel: Canal;
+        summary: string | null;
+        intent: string | null;
+        sentiment: string | null;
+        priority: string | null;
+        unread: boolean;
+        last_message_at: string | null;
+        messages: { body: string; direction: string; sent_at: string; author_name: string | null }[] | null;
+      };
+      return (data as unknown as Linha[]).map((c) => {
+        const mensagens = [...(c.messages ?? [])].sort((a, b) => a.sent_at.localeCompare(b.sent_at));
+        return {
+          id: c.id,
+          contactId: c.contact_id ?? "",
+          canal: c.channel,
+          ultimaMensagem: mensagens.at(-1)?.body ?? "",
+          quando: dataHoraPt(c.last_message_at),
+          naoLidas: c.unread ? 1 : 0,
+          resumo: c.summary ?? "Sem resumo gerado.",
+          intencao: (c.intent ?? "informacao") as Conversation["intencao"],
+          sentimento: (c.sentiment ?? "neutro") as Conversation["sentimento"],
+          prioridade: (c.priority ?? "media") as Conversation["prioridade"],
+          sugestoes: [],
+          mensagens: mensagens.map((m) => ({
+            autor: (m.direction === "entrada" ? "cliente" : "equipa") as "cliente" | "equipa",
+            texto: m.body,
+            hora: dataHoraPt(m.sent_at),
+          })),
+        };
+      });
+    },
   });
 }
