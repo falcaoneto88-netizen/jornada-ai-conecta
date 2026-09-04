@@ -46,7 +46,25 @@ export function ConnectionBadge() {
       )}
     >
       <span className={cn("size-1.5 rounded-full", conectado ? "bg-success" : "bg-primary")} />
-      {conectado ? "GoHighLevel conectado" : "Modo demonstração"}
+      {conectado ? "GoHighLevel conectado" : "GoHighLevel não ligado"}
+    </span>
+  );
+}
+
+export function ModoBadge() {
+  const { modo } = useSessao();
+  if (modo === "conta") {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success">
+        <span className="size-1.5 rounded-full bg-success" />
+        Conta ativa
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium text-accent-foreground">
+      <span className="size-1.5 rounded-full bg-primary" />
+      Modo demonstração
     </span>
   );
 }
