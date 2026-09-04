@@ -180,7 +180,13 @@ function Integracoes() {
                 campos para os escrever aqui: o administrador regista-os em Definições do projeto › Secrets.
               </p>
 
-              <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {demo && (
+                <p className="text-sm text-muted-foreground">
+                  O estado real das credenciais só é visível com conta iniciada.
+                </p>
+              )}
+
+              <ul className="grid grid-cols-1 gap-3 md:grid-cols-2" hidden={demo}>
                 <LinhaSecret
                   nome="GHL_PRIVATE_TOKEN"
                   ativo={Boolean(secrets?.token)}
