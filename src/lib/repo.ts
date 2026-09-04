@@ -515,7 +515,7 @@ export function useConversas() {
           prioridade: (c.priority ?? "media") as Conversation["prioridade"],
           sugestoes: [],
           mensagens: mensagens.map((m) => ({
-            autor: (m.direction === "entrada" ? "cliente" : "equipa") as "cliente" | "equipa",
+            autor: (m.direction === "entrada" ? "cliente" : "clinica") as "cliente" | "clinica",
             texto: m.body,
             hora: dataHoraPt(m.sent_at),
           })),
