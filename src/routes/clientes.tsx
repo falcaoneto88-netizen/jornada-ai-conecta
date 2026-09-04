@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useAppMode } from "@/lib/app-mode";
-import { contacts, journeyStages, mascararTelefone, stageName, type Contact } from "@/lib/demo-data";
+import { mascararTelefone, stageName, type Contact } from "@/lib/demo-data";
+import { useContactos, useEtapas, useModoDados } from "@/lib/repo";
+import { syncGhl } from "@/lib/ghl.functions";
+import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/clientes")({
   head: () => ({
