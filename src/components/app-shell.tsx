@@ -106,6 +106,33 @@ export function AppShell({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { modo, carregando } = useSessao();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!carregando && modo === "anonimo") {
+      void navigate({ to: "/auth", replace: true });
+    }
+  }, [carregando, modo, navigate]);
+
+  async function sair() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    desativarDemo();
+    await supabase.auth.signOut();
+    void navigate({ to: "/auth", replace: true });
+  }
+
+  if (carregando || modo === "anonimo") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground" role="status">
+          A carregar…
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
