@@ -95,27 +95,23 @@ function Clientes() {
   return (
     <AppShell
       title="Clientes"
-      description={`${contacts.length} registos de demonstração`}
+      description={`${contacts.length} ${demo ? "registos de demonstração" : "registos"}`}
       actions={
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() =>
-              modo === "conectado"
-                ? toast.success("Sincronização iniciada.")
-                : toast.error("Sincronização indisponível em modo demonstração.")
-            }
-          >
-            <RefreshCw className="size-4" /> Sincronizar
+          <Button variant="outline" onClick={() => void sincronizarGhl()} disabled={aSincronizar}>
+            <RefreshCw className={`size-4 ${aSincronizar ? "animate-spin" : ""}`} />
+            {aSincronizar ? "A sincronizar…" : "Sincronizar"}
           </Button>
-          <Button variant="secondary" onClick={exportarCsv}>
+          <Button variant="secondary" onClick={exportarCsv} disabled={filtrados.length === 0}>
             <Download className="size-4" /> CSV
           </Button>
         </div>
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Registos DEMO. A deduplicação usa GHL Contact ID, telefone normalizado e e-mail quando a ligação estiver ativa." />
+        {demo && (
+          <DemoNotice texto="Registos DEMO. A deduplicação usa GHL Contact ID, telefone normalizado e e-mail quando a ligação estiver ativa." />
+        )}
 
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
