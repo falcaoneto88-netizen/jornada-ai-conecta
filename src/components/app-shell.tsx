@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { useAppMode } from "@/lib/app-mode";
 import { supabase } from "@/integrations/supabase/client";
 import { desativarDemo, useSessao } from "@/lib/session";
+import { useLigacaoGhl } from "@/lib/repo";
+
 
 const navItems = [
   { to: "/", label: "Visão Geral", icon: LayoutDashboard },
