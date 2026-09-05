@@ -35,7 +35,9 @@ const navItems = [
 
 export function ConnectionBadge() {
   const modo = useAppMode();
-  const conectado = modo === "conectado";
+  const { data: ligacao } = useLigacaoGhl();
+  const conectado = modo === "conectado" || ligacao?.status === "conectada";
+
   return (
     <span
       className={cn(

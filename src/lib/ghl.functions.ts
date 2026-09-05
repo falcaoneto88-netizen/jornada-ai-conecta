@@ -194,10 +194,17 @@ export const syncGhl = createServerFn({ method: "POST" })
     }
 
     const contactos = res.data?.contacts ?? [];
+    const limpar = (v?: string | null) =>
+      (v ?? "").replace(/\bundefined\b|\bnull\b/gi, "").replace(/\s+/g, " ").trim();
+
     const linhas = contactos.map((c) => ({
       organization_id: orgId,
       ghl_contact_id: String(c.id),
-      full_name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.contactName || c.email || "Sem nome",
+      full_name:
+        limpar([c.firstName, c.lastName].filter(Boolean).join(" ")) ||
+        limpar(c.contactName) ||
+        limpar(c.email) ||
+        "Sem nome",
       phone: c.phone ?? null,
       phone_normalized: c.phone ? String(c.phone).replace(/\D/g, "") : null,
       email: c.email ?? null,
@@ -206,6 +213,7 @@ export const syncGhl = createServerFn({ method: "POST" })
       last_interaction_at: c.dateUpdated ?? null,
       is_demo: false,
     }));
+
 
     let importados = 0;
     if (linhas.length > 0) {
