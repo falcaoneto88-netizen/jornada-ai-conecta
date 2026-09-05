@@ -424,7 +424,7 @@ export function useCarregarDadosDemo() {
         .select("id", { count: "exact", head: true })
         .eq("is_demo", true);
       if ((count ?? 0) > 0) return "ja_carregado" as const;
-      const { error: erroContactos } = await supabase.from("contacts").upsert(
+      const { error: erroContactos } = await supabase.from("contacts").insert(
         demoContacts.map((c) => ({
           organization_id,
           full_name: `${c.nome} (DEMO)`,
@@ -438,8 +438,8 @@ export function useCarregarDadosDemo() {
           next_action: c.proximaAcao,
           is_demo: true,
         })),
-        { onConflict: "organization_id,phone_normalized" },
       );
+
       if (erroContactos) throw erroContactos;
 
       const { error: erroModelos } = await supabase.from("message_templates").insert(

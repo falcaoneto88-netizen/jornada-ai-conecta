@@ -194,10 +194,17 @@ export const syncGhl = createServerFn({ method: "POST" })
     }
 
     const contactos = res.data?.contacts ?? [];
+    const limpar = (v?: string | null) =>
+      (v ?? "").replace(/\bundefined\b|\bnull\b/gi, "").replace(/\s+/g, " ").trim();
+
     const linhas = contactos.map((c) => ({
       organization_id: orgId,
       ghl_contact_id: String(c.id),
-      full_name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.contactName || c.email || "Sem nome",
+      full_name:
+        limpar([c.firstName, c.lastName].filter(Boolean).join(" ")) ||
+        limpar(c.contactName) ||
+        limpar(c.email) ||
+        "Sem nome",
       phone: c.phone ?? null,
       phone_normalized: c.phone ? String(c.phone).replace(/\D/g, "") : null,
       email: c.email ?? null,
@@ -207,16 +214,59 @@ export const syncGhl = createServerFn({ method: "POST" })
       is_demo: false,
     }));
 
+
     let importados = 0;
     if (linhas.length > 0) {
-      const { error } = await ctx.supabase
+      // Os índices únicos são parciais, por isso não é possível usar `upsert`/ON CONFLICT.
+      // Lemos os contactos já existentes e decidimos inserir ou atualizar cada um.
+      const ids = linhas.map((l) => l.ghl_contact_id);
+      const { data: existentes, error: erroLeitura } = await ctx.supabase
         .from("contacts")
-        .upsert(linhas, { onConflict: "organization_id,ghl_contact_id" });
-      if (error) {
-        return { ok: false as const, code: "server_error" as const, message: `Falha ao gravar contactos: ${error.message}` };
+        .select("id, ghl_contact_id")
+        .eq("organization_id", orgId)
+        .in("ghl_contact_id", ids);
+      if (erroLeitura) {
+        return {
+          ok: false as const,
+          code: "server_error" as const,
+          message: `Falha ao ler contactos: ${erroLeitura.message}`,
+        };
       }
+
+      const mapa = new Map<string, string>();
+      for (const e of existentes ?? []) {
+        if (e.ghl_contact_id) mapa.set(e.ghl_contact_id, e.id);
+      }
+
+      const novos = linhas.filter((l) => !mapa.has(l.ghl_contact_id));
+      if (novos.length > 0) {
+        const { error } = await ctx.supabase.from("contacts").insert(novos);
+        if (error) {
+          return {
+            ok: false as const,
+            code: "server_error" as const,
+            message: `Falha ao gravar contactos: ${error.message}`,
+          };
+        }
+      }
+
+      for (const linha of linhas) {
+        const idExistente = mapa.get(linha.ghl_contact_id);
+        if (!idExistente) continue;
+        const { organization_id: _org, ghl_contact_id: _ghl, ...campos } = linha;
+        const { error } = await ctx.supabase.from("contacts").update(campos).eq("id", idExistente);
+        if (error) {
+          return {
+            ok: false as const,
+            code: "server_error" as const,
+            message: `Falha ao atualizar contactos: ${error.message}`,
+          };
+        }
+      }
+
       importados = linhas.length;
     }
+
 
     const agora = new Date().toISOString();
     await ctx.supabase.from("ghl_connections").update({ last_sync_at: agora }).eq("organization_id", orgId);
