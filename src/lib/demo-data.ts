@@ -386,30 +386,138 @@ export const conversations: Conversation[] = [
 
 export type AutomationStatus = "rascunho" | "ativa" | "pausada";
 
+export type CampoCondicao =
+  | "etapa"
+  | "tag"
+  | "canal"
+  | "responsavel"
+  | "respondeu"
+  | "status_agendamento";
+
+export type OperadorCondicao = "igual" | "diferente" | "contem" | "nao_contem";
+
+export type TipoAcao =
+  | "enviar_whatsapp"
+  | "enviar_email"
+  | "enviar_sms"
+  | "adicionar_tag"
+  | "remover_tag"
+  | "mover_etapa"
+  | "atribuir_responsavel"
+  | "criar_tarefa"
+  | "chamar_webhook"
+  | "pedir_sugestao_ia";
+
+export type AutomationStep =
+  | {
+      tipo: "condicao";
+      id: string;
+      campo: CampoCondicao;
+      operador: OperadorCondicao;
+      valor: string;
+      ramoSim?: AutomationStep[];
+      ramoNao?: AutomationStep[];
+    }
+  | { tipo: "acao"; id: string; acao: TipoAcao; parametros: Record<string, string> }
+  | { tipo: "espera"; id: string; duracao: number; unidade: "minutos" | "horas" | "dias" }
+  | { tipo: "texto"; id: string; texto: string };
+
 export type Automation = {
   id: string;
   nome: string;
+  descricao?: string;
   status: AutomationStatus;
   versao: number;
   gatilho: string;
-  passos: string[];
+  passos: AutomationStep[];
   ultimaExecucao: string;
   taxaSucesso: number;
   erros: number;
 };
 
+export const condicaoCampoLabel: Record<CampoCondicao, string> = {
+  etapa: "Etapa",
+  tag: "Tag",
+  canal: "Canal",
+  responsavel: "Responsável",
+  respondeu: "Respondeu",
+  status_agendamento: "Status de agendamento",
+};
+
+export const operadorLabel: Record<OperadorCondicao, string> = {
+  igual: "é",
+  diferente: "não é",
+  contem: "contém",
+  nao_contem: "não contém",
+};
+
+export const acaoLabel: Record<TipoAcao, string> = {
+  enviar_whatsapp: "Enviar WhatsApp",
+  enviar_email: "Enviar e-mail",
+  enviar_sms: "Enviar SMS",
+  adicionar_tag: "Adicionar tag",
+  remover_tag: "Remover tag",
+  mover_etapa: "Mover etapa",
+  atribuir_responsavel: "Atribuir responsável",
+  criar_tarefa: "Criar tarefa",
+  chamar_webhook: "Chamar webhook",
+  pedir_sugestao_ia: "Pedir sugestão à IA",
+};
+
+export function labelPasso(p: AutomationStep): string {
+  switch (p.tipo) {
+    case "condicao":
+      return `Se ${condicaoCampoLabel[p.campo]} ${operadorLabel[p.operador]} "${p.valor}"`;
+    case "acao":
+      return acaoLabel[p.acao];
+    case "espera":
+      return `Aguardar ${p.duracao} ${p.unidade}`;
+    case "texto":
+      return p.texto;
+  }
+}
+
+export function resumoPasso(p: AutomationStep): string | null {
+  switch (p.tipo) {
+    case "acao": {
+      const params = Object.entries(p.parametros)
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(" · ");
+      return params || null;
+    }
+    case "condicao":
+      return p.ramoSim?.length || p.ramoNao?.length ? "Com ramificação" : null;
+    default:
+      return null;
+  }
+}
+
+function ac(id: string, acao: TipoAcao, parametros: Record<string, string> = {}): AutomationStep {
+  return { tipo: "acao", id, acao, parametros };
+}
+
+function cond(id: string, campo: CampoCondicao, operador: OperadorCondicao, valor: string): AutomationStep {
+  return { tipo: "condicao", id, campo, operador, valor };
+}
+
+function espera(id: string, duracao: number, unidade: "minutos" | "horas" | "dias"): AutomationStep {
+  return { tipo: "espera", id, duracao, unidade };
+}
+
 export const automations: Automation[] = [
   {
     id: "a1",
     nome: "Novo lead — resposta imediata",
+    descricao: "Responde automaticamente a novos leads que entram pelo WhatsApp.",
     status: "ativa",
     versao: 3,
     gatilho: "Contacto criado",
     passos: [
-      "Condição: canal é WhatsApp ou Instagram",
-      "Ação: enviar WhatsApp de boas-vindas",
-      "Ação: adicionar tag «Lead respondido»",
-      "Ação: atribuir responsável comercial",
+      cond("a1-c1", "canal", "igual", "whatsapp"),
+      ac("a1-a1", "enviar_whatsapp", { modeloId: "t1" }),
+      ac("a1-a2", "adicionar_tag", { tag: "Lead respondido" }),
+      ac("a1-a3", "atribuir_responsavel", { responsavel: "Ana Ribeiro" }),
     ],
     ultimaExecucao: "04/09/2026 21:02",
     taxaSucesso: 98,
@@ -418,10 +526,15 @@ export const automations: Automation[] = [
   {
     id: "a2",
     nome: "4 dias sem resposta — reativação",
+    descricao: "Reativa leads que não responderam em 4 dias.",
     status: "ativa",
     versao: 2,
     gatilho: "Tempo sem resposta (4 dias)",
-    passos: ["Condição: não respondeu", "Ação: enviar mensagem de reativação", "Ação: mover para Reativação"],
+    passos: [
+      cond("a2-c1", "respondeu", "igual", "nao"),
+      ac("a2-a1", "enviar_whatsapp", { modeloId: "t5" }),
+      ac("a2-a2", "mover_etapa", { etapa: "reativacao" }),
+    ],
     ultimaExecucao: "04/09/2026 08:30",
     taxaSucesso: 91,
     erros: 2,
@@ -429,10 +542,14 @@ export const automations: Automation[] = [
   {
     id: "a3",
     nome: "Consulta agendada — boas-vindas",
+    descricao: "Confirma dados e prepara o paciente após agendamento.",
     status: "ativa",
     versao: 1,
     gatilho: "Consulta agendada",
-    passos: ["Ação: enviar confirmação com morada e preparo", "Ação: criar tarefa para a receção"],
+    passos: [
+      ac("a3-a1", "enviar_whatsapp", { modeloId: "t2" }),
+      ac("a3-a2", "criar_tarefa", { titulo: "Preparar recepção D-1" }),
+    ],
     ultimaExecucao: "03/09/2026 16:11",
     taxaSucesso: 100,
     erros: 0,
@@ -440,10 +557,16 @@ export const automations: Automation[] = [
   {
     id: "a4",
     nome: "Consulta D-1 — confirmação e preparo",
+    descricao: "Lembrete de confirmação um dia antes da consulta.",
     status: "ativa",
     versao: 4,
     gatilho: "Data/hora relativa (D-1 da consulta)",
-    passos: ["Ação: enviar WhatsApp de confirmação", "Aguardar 4 horas", "Condição: não respondeu → enviar SMS"],
+    passos: [
+      ac("a4-a1", "enviar_whatsapp", { modeloId: "t2" }),
+      espera("a4-w1", 4, "horas"),
+      cond("a4-c1", "respondeu", "igual", "nao"),
+      ac("a4-a2", "enviar_sms", { modeloId: "t2" }),
+    ],
     ultimaExecucao: "04/09/2026 18:00",
     taxaSucesso: 87,
     erros: 3,
@@ -451,10 +574,14 @@ export const automations: Automation[] = [
   {
     id: "a5",
     nome: "Consulta confirmada — agradecimento",
+    descricao: "Agradece a confirmação e organiza a receção.",
     status: "pausada",
     versao: 1,
     gatilho: "Consulta confirmada",
-    passos: ["Ação: enviar agradecimento", "Ação: adicionar tag «Confirmado»"],
+    passos: [
+      ac("a5-a1", "enviar_whatsapp", { modeloId: "t1" }),
+      ac("a5-a2", "adicionar_tag", { tag: "Confirmado" }),
+    ],
     ultimaExecucao: "28/08/2026 10:44",
     taxaSucesso: 96,
     erros: 0,
@@ -462,10 +589,16 @@ export const automations: Automation[] = [
   {
     id: "a6",
     nome: "Pós-consulta — orçamento e follow-up",
+    descricao: "Acompanha orçamentos enviados sem resposta.",
     status: "ativa",
     versao: 2,
     gatilho: "Oportunidade mudou de etapa → Orçamento Enviado",
-    passos: ["Aguardar 2 dias", "Condição: sem resposta", "Ação: pedir sugestão à IA", "Ação: criar tarefa comercial"],
+    passos: [
+      espera("a6-w1", 2, "dias"),
+      cond("a6-c1", "respondeu", "igual", "nao"),
+      ac("a6-a1", "pedir_sugestao_ia", {}),
+      ac("a6-a2", "criar_tarefa", { titulo: "Follow-up do orçamento" }),
+    ],
     ultimaExecucao: "04/09/2026 09:15",
     taxaSucesso: 93,
     erros: 1,
@@ -473,10 +606,14 @@ export const automations: Automation[] = [
   {
     id: "a7",
     nome: "Procedimento agendado — acolhimento",
+    descricao: "Envia orientações pré-procedimento.",
     status: "rascunho",
     versao: 1,
     gatilho: "Oportunidade mudou de etapa → Procedimento Agendado",
-    passos: ["Ação: enviar mensagem de acolhimento", "Ação: enviar orientações pré-procedimento"],
+    passos: [
+      ac("a7-a1", "enviar_whatsapp", { modeloId: "t1" }),
+      ac("a7-a2", "enviar_email", { modeloId: "t3" }),
+    ],
     ultimaExecucao: "—",
     taxaSucesso: 0,
     erros: 0,
@@ -484,14 +621,18 @@ export const automations: Automation[] = [
   {
     id: "a8",
     nome: "Pós-procedimento D+0, D+2, D+5 e D+7",
+    descricao: "Acompanhamento pós-procedimento em vários momentos.",
     status: "ativa",
     versao: 5,
     gatilho: "Oportunidade mudou de etapa → Pós-Procedimento",
     passos: [
-      "Ação: mensagem D+0",
-      "Aguardar 2 dias → mensagem D+2",
-      "Aguardar 3 dias → mensagem D+5",
-      "Aguardar 2 dias → mensagem D+7 e criar tarefa de reavaliação",
+      ac("a8-a1", "enviar_whatsapp", { modeloId: "t4" }),
+      espera("a8-w1", 2, "dias"),
+      ac("a8-a2", "enviar_whatsapp", { modeloId: "t4" }),
+      espera("a8-w2", 3, "dias"),
+      ac("a8-a3", "enviar_whatsapp", { modeloId: "t4" }),
+      espera("a8-w3", 2, "dias"),
+      ac("a8-a4", "criar_tarefa", { titulo: "Reavaliação de acompanhamento" }),
     ],
     ultimaExecucao: "04/09/2026 07:00",
     taxaSucesso: 95,
