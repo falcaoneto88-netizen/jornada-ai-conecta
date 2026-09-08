@@ -238,6 +238,8 @@ export type Database = {
           email: string | null
           full_name: string
           ghl_contact_id: string | null
+          ghl_synced_at: string | null
+          ghl_synced_version: string | null
           id: string
           is_demo: boolean
           last_interaction_at: string | null
@@ -258,6 +260,8 @@ export type Database = {
           email?: string | null
           full_name: string
           ghl_contact_id?: string | null
+          ghl_synced_at?: string | null
+          ghl_synced_version?: string | null
           id?: string
           is_demo?: boolean
           last_interaction_at?: string | null
@@ -278,6 +282,8 @@ export type Database = {
           email?: string | null
           full_name?: string
           ghl_contact_id?: string | null
+          ghl_synced_at?: string | null
+          ghl_synced_version?: string | null
           id?: string
           is_demo?: boolean
           last_interaction_at?: string | null
@@ -865,6 +871,60 @@ export type Database = {
           _tags: string[]
         }
         Returns: Json
+      }
+      ghl_apply_contact_event_v2: {
+        Args: {
+          _email: string
+          _event_type: string
+          _fence: number
+          _full_name: string
+          _ghl_contact_id: string
+          _inbox_id: string
+          _last_interaction: string
+          _org: string
+          _phone: string
+          _phone_normalized: string
+          _source: string
+          _source_version: string
+          _tags: string[]
+        }
+        Returns: Json
+      }
+      ghl_claim_delivery: {
+        Args: {
+          _content_fallback: boolean
+          _event_id: string
+          _event_type: string
+          _ghl_contact_id: string
+          _key: string
+          _location: string
+          _lock_timeout_seconds?: number
+          _org: string
+          _payload: Json
+          _source_version: string
+        }
+        Returns: Json
+      }
+      ghl_mark_delivery_failed: {
+        Args: {
+          _fence: number
+          _inbox_id: string
+          _message: string
+          _org: string
+        }
+        Returns: boolean
+      }
+      ghl_record_failed_receive: {
+        Args: {
+          _event_id: string
+          _event_type: string
+          _key: string
+          _location: string
+          _message: string
+          _org: string
+          _payload: Json
+        }
+        Returns: string
       }
       has_role: {
         Args: {
