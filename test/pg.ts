@@ -37,21 +37,27 @@ export async function iniciarDb(): Promise<Db> {
     ? ["setpriv", "--reuid=1000", "--regid=1000", "--clear-groups"]
     : [];
   if (semPrivilegios) execFileSync("chown", ["-R", "1000:1000", base]);
+  // Variáveis PG* vazias no ambiente quebram o initdb/postgres; removemo-las.
+  const ambiente = Object.fromEntries(
+    Object.entries(process.env).filter(([k, v]) => !(k.startsWith("PG") && !v)),
+  ) as NodeJS.ProcessEnv;
   const correr = (cmd: string, args: string[]) =>
     execFileSync(prefixo[0] ?? cmd, prefixo.length ? [...prefixo.slice(1), cmd, ...args] : args, {
       stdio: "ignore",
+      env: ambiente,
     });
   correr("initdb", ["-D", dados, "-U", "postgres", "--auth=trust"]);
   const cmdArgs = ["-D", dados, "-k", socket, "-c", "listen_addresses="];
   const proc = prefixo.length
-    ? spawn(prefixo[0]!, [...prefixo.slice(1), "postgres", ...cmdArgs], { stdio: "ignore" })
-    : spawn("postgres", cmdArgs, { stdio: "ignore" });
+    ? spawn(prefixo[0]!, [...prefixo.slice(1), "postgres", ...cmdArgs], { stdio: "ignore", env: ambiente })
+    : spawn("postgres", cmdArgs, { stdio: "ignore", env: ambiente });
 
 
   const psql = (args: string[], input?: string) =>
     execFileSync("psql", ["-h", socket, "-U", "postgres", "-v", "ON_ERROR_STOP=1", ...args], {
       input,
       encoding: "utf8",
+      env: ambiente,
     });
 
   for (let i = 0; i < 60; i++) {
