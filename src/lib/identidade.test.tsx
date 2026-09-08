@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Ouvinte = (evento: string, session: { user: { id: string } } | null) => void;
 
@@ -72,6 +72,10 @@ async function emitir(evento: string, sessao: { user: { id: string } } | null) {
 }
 
 describe("fronteira de identidade", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     ouvintes.length = 0;
     sessaoAtual = null;
