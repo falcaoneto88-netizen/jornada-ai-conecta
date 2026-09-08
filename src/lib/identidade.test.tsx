@@ -102,13 +102,13 @@ describe("fronteira de identidade", () => {
 
     await waitFor(() => expect(screen.getByTestId("analise")).toBeDefined());
 
-    // Troca para a conta B antes de qualquer resultado da conta A chegar.
-    await emitir("SIGNED_IN", { user: { id: "utilizador-B" } });
-
-    // A conta B tem as suas próprias fontes, ainda pendentes.
+    // A conta B terá as suas próprias fontes, ainda pendentes.
     const daContaA = { analise: analiseA, consulta: consultaA };
     analiseA = adiada<string>();
     consultaA = adiada<string>();
+
+    // Troca para a conta B antes de qualquer resultado da conta A chegar.
+    await emitir("SIGNED_IN", { user: { id: "utilizador-B" } });
 
     // Só agora a análise e a consulta da conta A resolvem.
     const analiseDaContaA = adiada<string>();
