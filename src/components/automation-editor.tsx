@@ -456,7 +456,7 @@ function StepForm({ step, etapas, modelos, onChange }: StepFormProps) {
           acao={step.acao}
           parametros={step.parametros}
           etapas={etapas}
-          modelos={modelos}
+          modelos={modelos as { id: string; nome: string; canal: Canal }[]}
           onChange={(parametros) => onChange({ ...step, parametros })}
         />
       </div>
