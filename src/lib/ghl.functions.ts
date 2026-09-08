@@ -119,7 +119,7 @@ export async function resolverAcesso(
       orgId,
       nome: (perfil.full_name as string | null) ?? null,
       papeis,
-      locationId: binding.location_id as string,
+      locationId: locationBinding,
       conn: (conn as Record<string, unknown> | null) ?? null,
     },
   };
