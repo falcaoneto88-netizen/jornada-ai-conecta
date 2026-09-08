@@ -37,10 +37,14 @@ const { useSessao } = await import("./session");
 
 function Rascunho() {
   const [texto] = useState(() => `rascunho-${Math.random()}`);
+  return <div data-testid="rascunho">{texto}</div>;
+}
+
+/** Fica fora da fronteira: observa a sessão real ao longo de toda a sequência. */
+function Sessao() {
   const s = useSessao();
   return (
     <div>
-      <div data-testid="rascunho">{texto}</div>
       <div data-testid="user">{s.user?.id ?? "sem-user"}</div>
       <div data-testid="carregando">{s.carregando ? "sim" : "nao"}</div>
     </div>
@@ -58,6 +62,7 @@ function montar() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
+      <Sessao />
       <FronteiraIdentidade>
         <Rascunho />
       </FronteiraIdentidade>
