@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, Send, ShieldAlert, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
@@ -44,7 +44,7 @@ export const Route = createFileRoute("/caixa-de-entrada")({
 });
 
 function CaixaEntrada() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   const { data: conversations = [], isLoading } = useConversas();
   const { data: contactos = [] } = useContactos();
   const { data: ligacao } = useLigacaoGhl();
@@ -58,6 +58,18 @@ function CaixaEntrada() {
   const [aAnalisar, setAAnalisar] = useState(false);
   const [aEnviar, setAEnviar] = useState(false);
   const [confirmar, setConfirmar] = useState(false);
+
+  // Ao mudar de conta (ou sair), descarta rascunhos e análises da sessão anterior.
+  const escopoAnterior = useRef(escopo);
+  useEffect(() => {
+    if (escopoAnterior.current === escopo) return;
+    escopoAnterior.current = escopo;
+    setAtivaId(null);
+    setRascunho("");
+    setAnalise(null);
+    setErroIa(null);
+    setConfirmar(false);
+  }, [escopo]);
 
   const conversa: Conversation | null =
     conversations.find((c) => c.id === ativaId) ?? conversations[0] ?? null;
