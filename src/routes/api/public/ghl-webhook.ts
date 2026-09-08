@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { timingSafeEqual } from "node:crypto";
 
 import { processarWebhook } from "@/lib/ghl-webhook.core";
 import {
@@ -24,6 +25,12 @@ export const Route = createFileRoute("/api/public/ghl-webhook")({
             tokenPresente: Boolean(token),
             locationEsperada: GHL_LOCATION_ESPERADA,
             store: criarStore(supabaseAdmin as never),
+            compararSegredo: (recebido, esperado) => {
+              const a = Buffer.from(recebido, "utf8");
+              const b = Buffer.from(esperado, "utf8");
+              if (a.length !== b.length) return false;
+              return timingSafeEqual(a, b);
+            },
             fetchContact: (contactId) => buscarContactoGhl(contactId, token ?? ""),
           },
         );

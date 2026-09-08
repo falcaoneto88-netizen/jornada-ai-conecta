@@ -6,6 +6,7 @@ import { ghlFetch } from "./ghl.server";
 import type {
   Claim,
   ContactoGhl,
+  ResultadoApply,
   ResultadoFetchContacto,
   WebhookStore,
 } from "./ghl-webhook.core";
@@ -15,14 +16,28 @@ export const GHL_API_VERSION = "2021-07-28";
 /** Location verificada e ligada à organização f07ab3be-7419-4779-a901-ef71c5fc27f0. */
 export const GHL_LOCATION_ESPERADA = "ok2UHC2QMZsd8UHsAgEa";
 
-const LOCK_TIMEOUT_MS = 2 * 60 * 1000;
+const LOCK_TIMEOUT_SEGUNDOS = 120;
 
-type Admin = {
-  from: (t: string) => any;
-  rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+type RpcResultado = { data: unknown; error: { message: string } | null };
+
+/** Interface mínima do cliente service-role (permite testar contra Postgres real). */
+export type ClienteRpc = {
+  rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<RpcResultado>;
+  from: (tabela: string) => {
+    select: (colunas: string) => {
+      eq: (
+        coluna: string,
+        valor: string,
+      ) => { maybeSingle: () => PromiseLike<{ data: Record<string, unknown> | null; error: { message: string } | null }> };
+    };
+  };
 };
 
-export function criarStore(admin: Admin): WebhookStore {
+function objeto(data: unknown): Record<string, unknown> {
+  return data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+}
+
+export function criarStore(admin: ClienteRpc): WebhookStore {
   return {
     async findOrganization(locationId) {
       const { data, error } = await admin
@@ -31,65 +46,43 @@ export function criarStore(admin: Admin): WebhookStore {
         .eq("location_id", locationId)
         .maybeSingle();
       if (error) throw new Error(`binding: ${error.message}`);
-      return (data?.organization_id as string | undefined) ?? null;
+      const org = data?.["organization_id"];
+      return typeof org === "string" ? org : null;
     },
 
     async claim(input): Promise<Claim> {
-      const agora = new Date().toISOString();
-      const { data, error } = await admin
-        .from("webhooks_inbox")
-        .insert({
-          organization_id: input.organizationId,
-          idempotency_key: input.idempotencyKey,
-          event_type: input.eventType,
-          event_id: input.eventId,
-          location_id: input.locationId,
-          source_version: input.sourceVersion,
-          payload: input.payload,
-          signature_valid: true,
-          status: "a_processar",
-          attempts: 1,
-          locked_at: agora,
-        })
-        .select("id")
-        .maybeSingle();
-
-      if (!error && data?.id) return { outcome: "claimed", inboxId: data.id as string };
-      if (error && error.code !== "23505") throw new Error(`inbox: ${error.message}`);
-
-      const { data: existente, error: erroLeitura } = await admin
-        .from("webhooks_inbox")
-        .select("id, status, processed_at, attempts, locked_at")
-        .eq("idempotency_key", input.idempotencyKey)
-        .maybeSingle();
-      if (erroLeitura) throw new Error(`inbox: ${erroLeitura.message}`);
-      if (!existente) throw new Error("inbox: entrega não encontrada após conflito");
-      if (existente.status === "processado" || existente.processed_at) return { outcome: "duplicate" };
-
-      const expirado =
-        !existente.locked_at || Date.now() - new Date(existente.locked_at as string).getTime() > LOCK_TIMEOUT_MS;
-      if (existente.status === "a_processar" && !expirado) return { outcome: "in_flight" };
-
-      const { data: reservada, error: erroClaim } = await admin
-        .from("webhooks_inbox")
-        .update({
-          status: "a_processar",
-          attempts: ((existente.attempts as number) ?? 0) + 1,
-          locked_at: agora,
-        })
-        .eq("id", existente.id)
-        .eq("status", existente.status)
-        .is("processed_at", null)
-        .select("id")
-        .maybeSingle();
-      if (erroClaim) throw new Error(`inbox: ${erroClaim.message}`);
-      if (!reservada?.id) return { outcome: "in_flight" };
-      return { outcome: "claimed", inboxId: reservada.id as string };
+      const { data, error } = await admin.rpc("ghl_claim_delivery", {
+        _org: input.organizationId,
+        _location: input.locationId,
+        _key: input.idempotencyKey,
+        _event_type: input.eventType,
+        _event_id: input.eventId,
+        _source_version: input.sourceVersion,
+        _payload: input.payload,
+        _ghl_contact_id: input.ghlContactId,
+        _content_fallback: input.contentFallback,
+        _lock_timeout_seconds: LOCK_TIMEOUT_SEGUNDOS,
+      });
+      if (error) throw new Error(`claim: ${error.message}`);
+      const r = objeto(data);
+      const outcome = r["outcome"];
+      if (outcome === "claimed") {
+        return {
+          outcome: "claimed",
+          inboxId: String(r["inbox_id"]),
+          fence: Number(r["fence"]),
+        };
+      }
+      if (outcome === "duplicate" || outcome === "in_flight" || outcome === "mismatch") {
+        return { outcome };
+      }
+      throw new Error("claim: resposta inesperada");
     },
 
-    async applyContact(input) {
-      const { data, error } = await admin.rpc("ghl_apply_contact_event", {
+    async applyContact(input): Promise<ResultadoApply> {
+      const { data, error } = await admin.rpc("ghl_apply_contact_event_v2", {
         _inbox_id: input.inboxId,
+        _fence: input.fence,
         _org: input.organizationId,
         _ghl_contact_id: input.contacto.ghlContactId,
         _full_name: input.contacto.fullName,
@@ -103,16 +96,40 @@ export function criarStore(admin: Admin): WebhookStore {
         _source_version: input.sourceVersion,
       });
       if (error) throw new Error(error.message);
-      const r = (data ?? {}) as { contact_id?: string; created?: boolean };
-      if (!r.contact_id) throw new Error("sincronização de contacto sem resultado");
-      return { contactId: r.contact_id, created: Boolean(r.created) };
+      const r = objeto(data);
+      const estado = String(r["estado"] ?? "");
+      const contactId = typeof r["contact_id"] === "string" ? r["contact_id"] : null;
+      if (estado === "processado" || estado === "ja_processado" || estado === "versao_antiga_ignorada") {
+        return { estado, contactId, created: Boolean(r["created"]) };
+      }
+      if (estado === "reserva_expirada" || estado === "organizacao_divergente" || estado === "entrega_inexistente") {
+        return { estado };
+      }
+      throw new Error("sincronização de contacto sem resultado");
     },
 
-    async markFailed(inboxId, message) {
-      await admin
-        .from("webhooks_inbox")
-        .update({ status: "falhado", error_message: message, locked_at: null, processed_at: null })
-        .eq("id", inboxId);
+    async markFailed(input) {
+      const { data, error } = await admin.rpc("ghl_mark_delivery_failed", {
+        _inbox_id: input.inboxId,
+        _fence: input.fence,
+        _org: input.organizationId,
+        _message: input.message,
+      });
+      if (error) throw new Error(`falha ao registar erro: ${error.message}`);
+      return Boolean(data);
+    },
+
+    async recordFailedReceive(input) {
+      const { error } = await admin.rpc("ghl_record_failed_receive", {
+        _org: input.organizationId,
+        _location: input.locationId,
+        _key: input.idempotencyKey,
+        _event_type: input.eventType,
+        _event_id: input.eventId,
+        _payload: input.payload,
+        _message: input.message,
+      });
+      if (error) throw new Error(`falha ao registar erro: ${error.message}`);
     },
   };
 }

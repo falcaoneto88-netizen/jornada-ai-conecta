@@ -403,22 +403,27 @@ function Integracoes() {
               </ol>
 
               <h3 className="text-base font-semibold">Receber contactos em tempo real (Custom Webhook)</h3>
+              <p className="text-muted-foreground">
+                O endereço de callback só responde depois de a versão atual da aplicação estar publicada. Enquanto não
+                publicar, use este guia apenas para preparar os workflows.
+              </p>
               <ol className="list-decimal space-y-3 pl-5">
                 <li>
                   No GoHighLevel, abra <strong>Automation › Workflows</strong> e crie um workflow com o gatilho{" "}
-                  <em>Contact Created</em> (e um segundo com <em>Contact Changed</em>).
+                  <em>Contact Created</em>. Deixe-o em <em>Draft</em> por agora.
                 </li>
                 <li>
-                  Adicione a ação <strong>Webhook</strong> (Custom Webhook), método <code>POST</code>, e cole o endereço
-                  do separador Webhooks.
+                  Adicione a ação chamada <strong>Custom Webhook</strong> e configure: <em>Event</em> ={" "}
+                  <code>CUSTOM</code>, <em>Method</em> = <code>POST</code>, <em>Authorization</em> = <code>None</code>,
+                  e cole o endereço de callback do separador Webhooks.
                 </li>
                 <li>
                   Em <em>Headers</em>, adicione <code>Content-Type: application/json</code> e{" "}
                   <code>x-webhook-secret</code> com exatamente o mesmo valor guardado em{" "}
-                  <code>GHL_WEBHOOK_SECRET</code>.
+                  <code>GHL_WEBHOOK_SECRET</code>. A autenticação é feita só por este cabeçalho.
                 </li>
                 <li>
-                  Em <em>Custom Data / Body</em> (JSON), envie:
+                  Escolha <em>Raw Body</em> (JSON) e envie:
                   <pre className="mt-2 overflow-x-auto rounded-lg bg-secondary/40 p-3 text-xs">
 {`{
   "type": "contact.created",
@@ -426,20 +431,29 @@ function Integracoes() {
   "contactId": "{{contact.id}}"
 }`}
                   </pre>
-                  No workflow de alterações, troque o tipo para <code>contact.updated</code>.
                 </li>
                 <li>
-                  Guarde o workflow, publique-o e dispare um teste (por exemplo, editar um contacto de teste).
+                  Ainda em <em>Draft</em>, crie um contacto de teste dedicado e use <em>Test Workflow</em> com esse
+                  contacto. Para o gatilho «Contact Created» não basta editar um contacto existente: tem mesmo de criar
+                  um novo.
                 </li>
                 <li>
-                  Volte a este separador Webhooks e confirme o evento com o estado <strong>Processado</strong>. Depois
-                  verifique a ficha em Clientes.
+                  Volte a este separador Webhooks e confirme o estado <strong>Processado</strong>; depois confirme a
+                  ficha real do contacto de teste em Clientes. Só depois de ambos estarem corretos deve publicar
+                  (<em>Publish</em>) o workflow.
+                </li>
+                <li>
+                  <strong>Opcional:</strong> repita com um segundo workflow de atualizações, usando o gatilho de
+                  alteração de contacto disponível na sua conta (por exemplo <em>Contact Changed</em>, limitado aos
+                  campos que quer sincronizar) e trocando o tipo para <code>contact.updated</code>. Só estes dois tipos
+                  são aceites; os restantes são recusados.
                 </li>
               </ol>
               <p className="text-muted-foreground">
                 O recetor confirma sempre o contacto na API oficial do GoHighLevel antes de gravar, mantém a etapa de
                 jornada dos clientes já existentes e não executa automações nem envia mensagens.
               </p>
+
               <p className="text-muted-foreground">
                 Nenhuma chave é escrita no código ou no navegador. Todas as chamadas passam por um proxy no backend com
                 lista de operações permitidas, tempo limite e novas tentativas.
