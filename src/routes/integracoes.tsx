@@ -31,8 +31,14 @@ export const Route = createFileRoute("/integracoes")({
   component: Integracoes,
 });
 
-const CALLBACK_URL =
-  "https://project--36345211-2616-42f7-bb9e-e78a9d00ca22.lovable.app/api/public/ghl-webhook";
+const CALLBACK_URL = "https://jornada-ai-conecta.lovable.app/api/public/ghl-webhook";
+
+const ESTADO_WEBHOOK: Record<string, { rotulo: string; variante: "default" | "outline" | "destructive" }> = {
+  processado: { rotulo: "Processado", variante: "default" },
+  a_processar: { rotulo: "Em processamento", variante: "outline" },
+  falhado: { rotulo: "Falhado", variante: "destructive" },
+  recebido: { rotulo: "Recebido", variante: "outline" },
+};
 
 type EstadoSecrets = { token: boolean; locationId: boolean; webhookSecret: boolean; ia: boolean };
 
