@@ -59,7 +59,7 @@ beforeAll(async () => {
     insert into public.contacts (organization_id, full_name) values ('${orgA}', 'Cliente A');
     insert into public.contacts (organization_id, full_name) values ('${orgB}', 'Cliente B');
     insert into public.ghl_location_bindings (location_id, organization_id)
-      values ('ok2UHC2QMZsd8UHsAgEa', '${orgA}');
+      values ('loc-sintetica-A', '${orgA}');
   `);
   contactoA = valor(db.admin(`select id from public.contacts where organization_id = '${orgA}' limit 1;`))!;
   contactoB = valor(db.admin(`select id from public.contacts where organization_id = '${orgB}' limit 1;`))!;
@@ -211,7 +211,7 @@ describe("integração e auditoria", () => {
     const a = db.comoServico(
       `select location_id from public.ghl_location_bindings where organization_id = '${orgA}';`,
     );
-    expect(valor(a)).toBe("ok2UHC2QMZsd8UHsAgEa");
+    expect(valor(a)).toBe("loc-sintetica-A");
   });
 
   it("o cliente não altera o endereço, a versão nem a location da API", () => {
