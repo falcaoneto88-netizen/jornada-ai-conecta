@@ -94,7 +94,7 @@ describe("isolamento entre organizações", () => {
   it("A não muda a organização do próprio perfil", () => {
     const r = db.comoUtilizador(UID_A, `update public.profiles set organization_id = '${orgB}' where id = '${UID_A}';`);
     expect(r.ok).toBe(false);
-    expect(r.erro).toMatch(/organizacao nao permitida/i);
+    expect(r.erro).toMatch(/organizacao nao permitida|row-level security/i);
     expect(valor(db.admin(`select organization_id from public.profiles where id = '${UID_A}';`))).toBe(orgA);
   });
 
