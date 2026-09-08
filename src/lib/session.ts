@@ -32,6 +32,8 @@ export function useSessao(): SessaoEstado {
 
   useEffect(() => {
     let ativo = true;
+    // Eventos de autenticação prevalecem sobre o getSession inicial atrasado.
+    let houveEvento = false;
 
     const resolver = (user: User | null) => {
       if (!ativo) return;
@@ -42,10 +44,21 @@ export function useSessao(): SessaoEstado {
       });
     };
 
-    supabase.auth.getSession().then(({ data }) => resolver(data.session?.user ?? null));
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (houveEvento) return;
+        resolver(data.session?.user ?? null);
+      })
+      .catch(() => {
+        if (houveEvento) return;
+        resolver(null);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((_evento, session) => {
+      houveEvento = true;
       resolver(session?.user ?? null);
     });
+
 
     return () => {
       ativo = false;
