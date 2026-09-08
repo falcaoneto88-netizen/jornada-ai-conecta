@@ -1,0 +1,14 @@
+revoke all on function public.proteger_perfil() from public, anon, authenticated;
+revoke all on function public.verificar_org_pai() from public, anon, authenticated;
+revoke all on function public.bloquear_troca_org() from public, anon, authenticated;
+revoke all on function public.proteger_ligacao_ghl() from public, anon, authenticated;
+revoke all on function public.has_org_role(uuid, uuid, public.app_role) from public, anon;
+revoke all on function public.tem_papel(public.app_role[]) from public, anon;
+revoke all on function public.has_role(uuid, public.app_role) from public, anon;
+revoke all on function public.current_org_id() from public, anon;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.update_updated_at_column() from public, anon, authenticated;
+grant execute on function public.has_org_role(uuid, uuid, public.app_role) to authenticated, service_role;
+grant execute on function public.tem_papel(public.app_role[]) to authenticated, service_role;
+grant execute on function public.has_role(uuid, public.app_role) to authenticated, service_role;
+grant execute on function public.current_org_id() to authenticated, service_role;

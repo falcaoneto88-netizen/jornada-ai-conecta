@@ -111,6 +111,7 @@ function CaixaEntrada() {
       const res = await enviarGhl({
         data: {
           operacao: "conversations.sendMessage",
+          contactoId: conversa.contactId || null,
           body: { type: conversa.canal === "email" ? "Email" : "WhatsApp", message: rascunho },
         },
       });

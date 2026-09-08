@@ -68,15 +68,35 @@ export function mensagemErro(code: GhlErrorCode): string {
 const TIMEOUT_MS = 12_000;
 const MAX_TENTATIVAS = 3;
 
+/** Origem e versão fixas da API oficial. Nada as pode alterar em runtime. */
+export const GHL_ORIGIN = "https://services.leadconnectorhq.com";
+export const GHL_VERSION = "2021-07-28";
+
+/** Constrói o URL final garantindo que nunca sai da origem oficial. */
+export function urlOficial(path: string, query: Record<string, string | undefined> = {}): URL {
+  const limpo = String(path).replace(/^\/+/, "");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(limpo) || limpo.startsWith("//") || limpo.includes("..")) {
+    throw new Error("caminho não permitido");
+  }
+  const url = new URL(limpo, `${GHL_ORIGIN}/`);
+  if (url.origin !== GHL_ORIGIN) throw new Error("origem não permitida");
+  for (const [k, v] of Object.entries(query)) {
+    if (v != null && v !== "") url.searchParams.set(k, v);
+  }
+  return url;
+}
+
 /** Pedido com timeout, retry com backoff exponencial e erros legíveis. */
 export async function ghlFetch<T = unknown>(
   cfg: GhlConfig,
   path: string,
   init: { method?: string; body?: unknown; query?: Record<string, string | undefined> } = {},
 ): Promise<GhlResult<T>> {
-  const url = new URL(path.replace(/^\//, ""), cfg.baseUrl.replace(/\/?$/, "/"));
-  for (const [k, v] of Object.entries(init.query ?? {})) {
-    if (v != null && v !== "") url.searchParams.set(k, v);
+  let url: URL;
+  try {
+    url = urlOficial(path, init.query ?? {});
+  } catch {
+    return { ok: false, status: 0, code: "bad_request", message: mensagemErro("bad_request") };
   }
 
   let ultimo: { status: number; code: GhlErrorCode } = { status: 0, code: "network_error" };
@@ -87,13 +107,24 @@ export async function ghlFetch<T = unknown>(
         method: init.method ?? "GET",
         headers: {
           Authorization: `Bearer ${cfg.token}`,
-          Version: cfg.version,
+          Version: GHL_VERSION,
           Accept: "application/json",
           ...(init.body ? { "Content-Type": "application/json" } : {}),
         },
         ...(init.body ? { body: JSON.stringify(init.body) } : {}),
+        // Nunca seguir redirects: evitaria enviar o token para outro destino.
+        redirect: "manual",
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
+
+      if (res.status >= 300 && res.status < 400) {
+        return {
+          ok: false,
+          status: res.status,
+          code: "bad_request",
+          message: "O GoHighLevel respondeu com um redirecionamento; pedido bloqueado por segurança.",
+        };
+      }
 
       if (res.ok) {
         const texto = await res.text();
@@ -118,21 +149,170 @@ export async function ghlFetch<T = unknown>(
   return { ok: false, status: ultimo.status, code: ultimo.code, message: mensagemErro(ultimo.code) };
 }
 
+export type PapelApp = "administrador" | "gestor" | "comercial" | "visualizador";
+
+export type DefinicaoOperacao = {
+  method: "GET" | "POST";
+  /** Caminho relativo; recebe a location autorizada e o contacto GHL verificado. */
+  path: (ctx: { locationId: string; ghlContactId: string | null }) => string;
+  escrita: boolean;
+  /** Papéis autorizados a executar a operação. */
+  papeis: readonly PapelApp[];
+  /** Parâmetros de query aceites do cliente (locationId é sempre imposto pelo servidor). */
+  query: readonly string[];
+  /** Chaves de body aceites do cliente. */
+  body: readonly string[];
+  /** Exige um contacto local cuja propriedade é verificada na location autorizada. */
+  exigeContacto: boolean;
+};
+
+const LEITURA: readonly PapelApp[] = ["administrador", "gestor", "comercial", "visualizador"];
+const OPERACAO: readonly PapelApp[] = ["administrador", "gestor", "comercial"];
+
 /** Operações permitidas no proxy. Nada fora desta lista é executado. */
-export const OPERACOES = {
-  "locations.get": { method: "GET", path: (c: GhlConfig) => `locations/${c.locationId}`, escrita: false },
-  "contacts.list": { method: "GET", path: () => "contacts/", escrita: false },
-  "pipelines.list": { method: "GET", path: () => "opportunities/pipelines", escrita: false },
-  "opportunities.search": { method: "GET", path: () => "opportunities/search", escrita: false },
-  "calendars.list": { method: "GET", path: () => "calendars/", escrita: false },
-  "users.list": { method: "GET", path: () => "users/", escrita: false },
-  "conversations.search": { method: "GET", path: () => "conversations/search", escrita: false },
-  "conversations.sendMessage": { method: "POST", path: () => "conversations/messages", escrita: true },
-  "contacts.addTag": { method: "POST", path: () => "contacts/tags", escrita: true },
-} as const;
+export const OPERACOES: Record<string, DefinicaoOperacao> = {
+  "locations.get": {
+    method: "GET",
+    path: (c) => `locations/${encodeURIComponent(c.locationId)}`,
+    escrita: false,
+    papeis: LEITURA,
+    query: [],
+    body: [],
+    exigeContacto: false,
+  },
+  "contacts.list": {
+    method: "GET",
+    path: () => "contacts/",
+    escrita: false,
+    papeis: LEITURA,
+    query: ["limit", "query", "startAfterId", "startAfter"],
+    body: [],
+    exigeContacto: false,
+  },
+  "pipelines.list": {
+    method: "GET",
+    path: () => "opportunities/pipelines",
+    escrita: false,
+    papeis: LEITURA,
+    query: [],
+    body: [],
+    exigeContacto: false,
+  },
+  "opportunities.search": {
+    method: "GET",
+    path: () => "opportunities/search",
+    escrita: false,
+    papeis: LEITURA,
+    query: ["limit", "q", "status"],
+    body: [],
+    exigeContacto: false,
+  },
+  "calendars.list": {
+    method: "GET",
+    path: () => "calendars/",
+    escrita: false,
+    papeis: LEITURA,
+    query: [],
+    body: [],
+    exigeContacto: false,
+  },
+  "users.list": {
+    method: "GET",
+    path: () => "users/",
+    escrita: false,
+    papeis: ["administrador", "gestor"],
+    query: [],
+    body: [],
+    exigeContacto: false,
+  },
+  "conversations.search": {
+    method: "GET",
+    path: () => "conversations/search",
+    escrita: false,
+    papeis: LEITURA,
+    query: ["limit", "query"],
+    body: [],
+    exigeContacto: true,
+  },
+  "conversations.sendMessage": {
+    method: "POST",
+    path: () => "conversations/messages",
+    escrita: true,
+    papeis: OPERACAO,
+    query: [],
+    body: ["type", "message"],
+    exigeContacto: true,
+  },
+  "contacts.addTag": {
+    method: "POST",
+    path: (c) => `contacts/${encodeURIComponent(c.ghlContactId ?? "")}/tags`,
+    escrita: true,
+    papeis: OPERACAO,
+    query: [],
+    body: ["tags"],
+    exigeContacto: true,
+  },
+};
 
 export type OperacaoGhl = keyof typeof OPERACOES;
 
 export function isOperacaoValida(op: string): op is OperacaoGhl {
   return Object.prototype.hasOwnProperty.call(OPERACOES, op);
 }
+
+/** Filtra a query do cliente pela allowlist; locationId nunca vem do cliente. */
+export function filtrarQuery(
+  op: DefinicaoOperacao,
+  query: Record<string, unknown> | undefined,
+): { ok: true; valor: Record<string, string> } | { ok: false; motivo: string } {
+  const saida: Record<string, string> = {};
+  for (const [k, v] of Object.entries(query ?? {})) {
+    if (k === "locationId" || k === "location_id" || k === "altId" || k === "altType") {
+      return { ok: false, motivo: `O parâmetro "${k}" é definido pelo servidor e não pode ser enviado.` };
+    }
+    if (!op.query.includes(k)) return { ok: false, motivo: `Parâmetro não permitido: "${k}".` };
+    if (typeof v !== "string" && typeof v !== "number") return { ok: false, motivo: `Valor inválido em "${k}".` };
+    saida[k] = String(v).slice(0, 200);
+  }
+  return { ok: true, valor: saida };
+}
+
+/** Valida o body pela allowlist da operação. */
+export function filtrarBody(
+  op: DefinicaoOperacao,
+  body: unknown,
+): { ok: true; valor: Record<string, unknown> } | { ok: false; motivo: string } {
+  if (body == null) return { ok: true, valor: {} };
+  if (typeof body !== "object" || Array.isArray(body)) return { ok: false, motivo: "Body inválido." };
+  const saida: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+    if (k === "locationId" || k === "location_id" || k === "contactId") {
+      return { ok: false, motivo: `O campo "${k}" é definido pelo servidor e não pode ser enviado.` };
+    }
+    if (!op.body.includes(k)) return { ok: false, motivo: `Campo não permitido: "${k}".` };
+    if (typeof v === "string") saida[k] = v.slice(0, 4000);
+    else if (Array.isArray(v) && v.every((i) => typeof i === "string")) saida[k] = v.slice(0, 20);
+    else return { ok: false, motivo: `Valor inválido em "${k}".` };
+  }
+  return { ok: true, valor: saida };
+}
+
+/** Confirma que o contacto do GoHighLevel pertence à location autorizada. */
+export async function contactoPertenceALocation(
+  token: string,
+  locationId: string,
+  ghlContactId: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const res = await ghlFetch<{ contact?: { id?: string; locationId?: string } }>(
+    { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId },
+    `contacts/${encodeURIComponent(ghlContactId)}`,
+  );
+  if (!res.ok) return { ok: false, message: res.message };
+  const contacto = res.data?.contact;
+  if (!contacto?.id) return { ok: false, message: "Contacto não encontrado no GoHighLevel." };
+  if (contacto.locationId !== locationId) {
+    return { ok: false, message: "O contacto não pertence à localização autorizada desta conta." };
+  }
+  return { ok: true };
+}
+

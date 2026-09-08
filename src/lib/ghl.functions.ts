@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { DefinicaoOperacao, PapelApp } from "./ghl.server";
 
 type Ctx = { supabase: SupabaseClient; userId: string };
 
@@ -19,21 +20,89 @@ type GhlContact = {
   dateUpdated?: string;
 };
 
-async function carregarLigacao(context: Ctx) {
+export const SEM_INTEGRACAO = "Integração não configurada para esta organização.";
+export const SEM_PERMISSAO = "Não tem permissão para esta ação.";
+
+export type Acesso = {
+  orgId: string;
+  nome: string | null;
+  papeis: PapelApp[];
+  locationId: string;
+  conn: Record<string, unknown> | null;
+};
+
+export type Recusa = { ok: false; code: "forbidden" | "not_found" | "missing_secrets"; message: string };
+
+/** Decide se um papel pode executar a operação pedida (função pura, testável). */
+export function autorizarOperacao(input: {
+  papeis: readonly PapelApp[];
+  op: Pick<DefinicaoOperacao, "escrita" | "papeis">;
+  writeEnabled: boolean;
+}): { ok: true } | { ok: false; message: string } {
+  const permitido = input.op.papeis.some((p) => input.papeis.includes(p));
+  if (!permitido) return { ok: false, message: SEM_PERMISSAO };
+  if (input.op.escrita && !input.writeEnabled) {
+    return {
+      ok: false,
+      message: "Operações de escrita estão bloqueadas. Ative a escrita em Integrações após validar a ligação.",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Resolve utilizador -> organização -> papéis -> vínculo de location.
+ * Só depois disto é legítimo tocar em credenciais do GoHighLevel.
+ */
+export async function resolverAcesso(
+  context: Ctx,
+  papeisNecessarios: readonly PapelApp[],
+): Promise<{ ok: true; acesso: Acesso } | Recusa> {
   const { data: perfil } = await context.supabase
     .from("profiles")
     .select("organization_id, full_name")
     .eq("id", context.userId)
     .maybeSingle();
-  if (!perfil) throw new Error("Perfil não encontrado.");
+  if (!perfil) return { ok: false, code: "not_found", message: "Perfil não encontrado." };
+
+  const orgId = perfil.organization_id as string;
+
+  const { data: linhasPapeis } = await context.supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", context.userId)
+    .eq("organization_id", orgId);
+  const papeis = (linhasPapeis ?? []).map((l) => l.role as PapelApp);
+
+  if (papeisNecessarios.length > 0 && !papeisNecessarios.some((p) => papeis.includes(p))) {
+    return { ok: false, code: "forbidden", message: SEM_PERMISSAO };
+  }
+
+  // Vínculo de confiança: server-only, o cliente nunca o pode alterar.
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: binding } = await supabaseAdmin
+    .from("ghl_location_bindings")
+    .select("location_id")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (!binding?.location_id) return { ok: false, code: "not_found", message: SEM_INTEGRACAO };
 
   const { data: conn } = await context.supabase
     .from("ghl_connections")
     .select("*")
-    .eq("organization_id", perfil.organization_id)
+    .eq("organization_id", orgId)
     .maybeSingle();
 
-  return { orgId: perfil.organization_id as string, nome: perfil.full_name as string | null, conn };
+  return {
+    ok: true,
+    acesso: {
+      orgId,
+      nome: (perfil.full_name as string | null) ?? null,
+      papeis,
+      locationId: binding.location_id as string,
+      conn: (conn as Record<string, unknown> | null) ?? null,
+    },
+  };
 }
 
 async function auditar(
@@ -56,23 +125,33 @@ async function auditar(
 /** Verifica se os secrets estão configurados — nunca devolve valores. */
 export const getGhlSecretsStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => ({
-    token: Boolean(process.env["GHL_PRIVATE_TOKEN"]),
-    locationId: Boolean(process.env["GHL_LOCATION_ID"]),
-    webhookSecret: Boolean(process.env["GHL_WEBHOOK_SECRET"]),
-    ia: Boolean(process.env["LOVABLE_API_KEY"]),
-  }));
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    const acesso = await resolverAcesso(ctx, []);
+    if (!acesso.ok) {
+      return { configurada: false, token: false, locationId: false, webhookSecret: false, ia: false };
+    }
+    return {
+      configurada: true,
+      token: Boolean(process.env["GHL_PRIVATE_TOKEN"]),
+      locationId: Boolean(process.env["GHL_LOCATION_ID"]),
+      webhookSecret: Boolean(process.env["GHL_WEBHOOK_SECRET"]),
+      ia: Boolean(process.env["LOVABLE_API_KEY"]),
+    };
+  });
 
-/** Teste real de ligação ao GoHighLevel. */
+/** Teste real de ligação ao GoHighLevel (apenas administrador). */
 export const testGhlConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { ghlFetch, readGhlSecrets, mensagemErro } = await import("./ghl.server");
+    const { ghlFetch, readGhlSecrets, mensagemErro, GHL_ORIGIN, GHL_VERSION } = await import("./ghl.server");
     const ctx = context as unknown as Ctx;
-    const { orgId, nome, conn } = await carregarLigacao(ctx);
-    const { token, locationId } = readGhlSecrets();
+    const acesso = await resolverAcesso(ctx, ["administrador"]);
+    if (!acesso.ok) return { ok: false as const, code: acesso.code, message: acesso.message };
+    const { orgId, nome, locationId } = acesso.acesso;
 
-    if (!token || !locationId) {
+    const { token } = readGhlSecrets();
+    if (!token) {
       const message = mensagemErro("missing_secrets");
       await ctx.supabase
         .from("ghl_connections")
@@ -81,13 +160,7 @@ export const testGhlConnection = createServerFn({ method: "POST" })
       return { ok: false as const, code: "missing_secrets" as const, message };
     }
 
-    const cfg = {
-      baseUrl: conn?.api_base_url ?? "https://services.leadconnectorhq.com",
-      version: conn?.api_version ?? "2021-07-28",
-      token,
-      locationId,
-    };
-
+    const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
     const res = await ghlFetch<{ location?: { name?: string; id?: string } }>(cfg, `locations/${locationId}`);
     const agora = new Date().toISOString();
 
@@ -106,7 +179,6 @@ export const testGhlConnection = createServerFn({ method: "POST" })
       .update({
         status: "conectada",
         mode: "conectado",
-        location_id: locationId,
         last_test_at: agora,
         last_test_message: `Ligação validada com ${nomeLocation}.`,
       })
@@ -116,41 +188,92 @@ export const testGhlConnection = createServerFn({ method: "POST" })
     return { ok: true as const, locationName: nomeLocation, testedAt: agora };
   });
 
-/** Proxy com allowlist de operações. */
+/** Proxy com allowlist de operações, papéis e verificação de propriedade. */
 export const ghlProxy = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { operacao: string; query?: Record<string, string>; body?: unknown }) => input)
+  .inputValidator(
+    (input: {
+      operacao: string;
+      query?: Record<string, string>;
+      body?: unknown;
+      contactoId?: string | null;
+    }) => input,
+  )
   .handler(async ({ data, context }) => {
-    const { ghlFetch, readGhlSecrets, mensagemErro, isOperacaoValida, OPERACOES } = await import("./ghl.server");
+    const {
+      ghlFetch,
+      readGhlSecrets,
+      mensagemErro,
+      isOperacaoValida,
+      OPERACOES,
+      filtrarQuery,
+      filtrarBody,
+      contactoPertenceALocation,
+      GHL_ORIGIN,
+      GHL_VERSION,
+    } = await import("./ghl.server");
     const ctx = context as unknown as Ctx;
 
     if (!isOperacaoValida(data.operacao)) {
       return { ok: false as const, code: "bad_request" as const, message: "Operação não permitida." };
     }
-    const op = OPERACOES[data.operacao];
-    const { orgId, nome, conn } = await carregarLigacao(ctx);
-    const { token, locationId } = readGhlSecrets();
-    if (!token || !locationId) {
-      return { ok: false as const, code: "missing_secrets" as const, message: mensagemErro("missing_secrets") };
-    }
-    if (op.escrita && !conn?.write_enabled) {
-      return {
-        ok: false as const,
-        code: "forbidden" as const,
-        message: "Operações de escrita estão bloqueadas. Ative a escrita em Integrações após validar a ligação.",
-      };
+    const op = OPERACOES[data.operacao] as DefinicaoOperacao;
+
+    const acesso = await resolverAcesso(ctx, []);
+    if (!acesso.ok) return { ok: false as const, code: acesso.code, message: acesso.message };
+    const { orgId, nome, papeis, locationId, conn } = acesso.acesso;
+
+    const autorizacao = autorizarOperacao({
+      papeis,
+      op,
+      writeEnabled: conn?.["write_enabled"] === true,
+    });
+    if (!autorizacao.ok) {
+      return { ok: false as const, code: "forbidden" as const, message: autorizacao.message };
     }
 
-    const cfg = {
-      baseUrl: conn?.api_base_url ?? "https://services.leadconnectorhq.com",
-      version: conn?.api_version ?? "2021-07-28",
-      token,
-      locationId,
-    };
-    const res = await ghlFetch(cfg, op.path(cfg), {
+    const query = filtrarQuery(op, data.query);
+    if (!query.ok) return { ok: false as const, code: "bad_request" as const, message: query.motivo };
+    const body = filtrarBody(op, data.body);
+    if (!body.ok) return { ok: false as const, code: "bad_request" as const, message: body.motivo };
+
+    const { token } = readGhlSecrets();
+    if (!token) {
+      return { ok: false as const, code: "missing_secrets" as const, message: mensagemErro("missing_secrets") };
+    }
+
+    let ghlContactId: string | null = null;
+    if (op.exigeContacto) {
+      if (!data.contactoId) {
+        return { ok: false as const, code: "bad_request" as const, message: "Indique o cliente desta ação." };
+      }
+      const { data: contacto } = await ctx.supabase
+        .from("contacts")
+        .select("ghl_contact_id")
+        .eq("id", data.contactoId)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      if (!contacto?.ghl_contact_id) {
+        return {
+          ok: false as const,
+          code: "not_found" as const,
+          message: "Este cliente ainda não está associado ao GoHighLevel.",
+        };
+      }
+      ghlContactId = contacto.ghl_contact_id as string;
+      const propriedade = await contactoPertenceALocation(token, locationId, ghlContactId);
+      if (!propriedade.ok) {
+        return { ok: false as const, code: "forbidden" as const, message: propriedade.message };
+      }
+    }
+
+    const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
+    const res = await ghlFetch(cfg, op.path({ locationId, ghlContactId }), {
       method: op.method,
-      query: { locationId, ...(data.query ?? {}) },
-      ...(op.method === "POST" ? { body: data.body ?? {} } : {}),
+      query: { locationId, ...query.valor },
+      ...(op.method === "POST"
+        ? { body: { ...body.valor, ...(ghlContactId ? { contactId: ghlContactId } : {}) } }
+        : {}),
     });
 
     if (op.escrita) {
@@ -165,15 +288,17 @@ export const ghlProxy = createServerFn({ method: "POST" })
 export const syncGhl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { ghlFetch, readGhlSecrets, mensagemErro } = await import("./ghl.server");
+    const { ghlFetch, readGhlSecrets, mensagemErro, GHL_ORIGIN, GHL_VERSION } = await import("./ghl.server");
     const ctx = context as unknown as Ctx;
-    const { orgId, nome, conn } = await carregarLigacao(ctx);
-    const { token, locationId } = readGhlSecrets();
+    const acesso = await resolverAcesso(ctx, ["administrador"]);
+    if (!acesso.ok) return { ok: false as const, code: acesso.code, message: acesso.message };
+    const { orgId, nome, locationId, conn } = acesso.acesso;
 
-    if (!token || !locationId) {
+    const { token } = readGhlSecrets();
+    if (!token) {
       return { ok: false as const, code: "missing_secrets" as const, message: mensagemErro("missing_secrets") };
     }
-    if (conn?.status !== "conectada") {
+    if (conn?.["status"] !== "conectada") {
       return {
         ok: false as const,
         code: "forbidden" as const,
@@ -181,12 +306,7 @@ export const syncGhl = createServerFn({ method: "POST" })
       };
     }
 
-    const cfg = {
-      baseUrl: conn.api_base_url,
-      version: conn.api_version,
-      token,
-      locationId,
-    };
+    const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
 
     const res = await ghlFetch<{ contacts?: GhlContact[] }>(cfg, "contacts/", { query: { locationId, limit: "100" } });
     if (!res.ok) {
@@ -213,7 +333,6 @@ export const syncGhl = createServerFn({ method: "POST" })
       last_interaction_at: c.dateUpdated ?? null,
       is_demo: false,
     }));
-
 
     let importados = 0;
     if (linhas.length > 0) {
@@ -266,7 +385,6 @@ export const syncGhl = createServerFn({ method: "POST" })
 
       importados = linhas.length;
     }
-
 
     const agora = new Date().toISOString();
     await ctx.supabase.from("ghl_connections").update({ last_sync_at: agora }).eq("organization_id", orgId);
