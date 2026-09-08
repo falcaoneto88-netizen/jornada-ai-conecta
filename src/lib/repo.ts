@@ -11,10 +11,13 @@ import {
   contacts as demoContacts,
   conversations as demoConversations,
   journeyStages as demoStages,
+  labelPasso,
   messageTemplates as demoTemplates,
+  resumoPasso,
   type Automation,
   type AutomationRun,
   type AutomationStatus,
+  type AutomationStep,
   type Canal,
   type Contact,
   type Conversation,
@@ -23,6 +26,30 @@ import {
   type StageId,
 } from "@/lib/demo-data";
 import { useSessao } from "@/lib/session";
+
+function gerarId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function parsePassos(steps: unknown): AutomationStep[] {
+  if (!Array.isArray(steps)) return [];
+  return steps.map((s) => {
+    if (typeof s === "string") return { tipo: "texto", id: gerarId(), texto: s };
+    if (s && typeof s === "object") {
+      const obj = s as Record<string, unknown>;
+      const id = typeof obj["id"] === "string" ? obj["id"] : gerarId();
+      const tipo = obj["tipo"];
+      if (tipo === "condicao") return { ...(obj as object), id } as AutomationStep;
+      if (tipo === "acao") return { ...(obj as object), id } as AutomationStep;
+      if (tipo === "espera") return { ...(obj as object), id } as AutomationStep;
+      if (tipo === "texto") return { ...(obj as object), id } as AutomationStep;
+    }
+    return { tipo: "texto", id: gerarId(), texto: String(s) };
+  });
+}
 
 export function useModoDados() {
   const { modo, carregando, user } = useSessao();
@@ -225,10 +252,11 @@ export function useAutomacoes() {
       return (data ?? []).map((a) => ({
         id: a.id,
         nome: a.name,
+        descricao: a.description ?? "",
         status: a.status as AutomationStatus,
         versao: a.current_version,
         gatilho: a.trigger_type,
-        passos: Array.isArray(a.steps) ? (a.steps as string[]) : [],
+        passos: parsePassos(a.steps),
         ultimaExecucao: dataHoraPt(a.last_run_at),
         taxaSucesso: a.runs_total > 0 ? Math.round((a.runs_success / a.runs_total) * 100) : 0,
         erros: a.runs_error,
@@ -240,23 +268,65 @@ export function useAutomacoes() {
 export function useGuardarAutomacao() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { id?: string; nome: string; gatilho: string; passos: string[]; status: AutomationStatus }) => {
+    mutationFn: async (input: {
+      id?: string;
+      nome: string;
+      descricao?: string;
+      gatilho: string;
+      passos: AutomationStep[];
+      status: AutomationStatus;
+    }) => {
       const organization_id = await orgIdAtual();
+      const definicao = {
+        nome: input.nome,
+        descricao: input.descricao,
+        gatilho: input.gatilho,
+        passos: input.passos,
+      };
+
       if (input.id) {
+        const { data: atual, error: erroLeitura } = await supabase
+          .from("automations")
+          .select("current_version")
+          .eq("id", input.id)
+          .maybeSingle();
+        if (erroLeitura) throw erroLeitura;
+
+        const proximaVersao = (atual?.current_version ?? 0) + 1;
         const { error } = await supabase
           .from("automations")
-          .update({ name: input.nome, trigger_type: input.gatilho, steps: input.passos, status: input.status })
+          .update({
+            name: input.nome,
+            description: input.descricao ?? null,
+            trigger_type: input.gatilho,
+            steps: input.passos,
+            status: input.status,
+            current_version: proximaVersao,
+          })
           .eq("id", input.id);
         if (error) throw error;
+
+        await supabase.from("automation_versions").insert({
+          organization_id,
+          automation_id: input.id,
+          version: proximaVersao,
+          definition: definicao,
+        });
+        await registarAuditoria("automacao.versao_criada", "automation_versions", {
+          automacao_id: input.id,
+          versao: proximaVersao,
+        });
       } else {
         const { data, error } = await supabase
           .from("automations")
           .insert({
             organization_id,
             name: input.nome,
+            description: input.descricao ?? null,
             trigger_type: input.gatilho,
             steps: input.passos,
             status: input.status,
+            current_version: 1,
           })
           .select("id")
           .single();
@@ -265,7 +335,7 @@ export function useGuardarAutomacao() {
           organization_id,
           automation_id: data.id,
           version: 1,
-          definition: { gatilho: input.gatilho, passos: input.passos },
+          definition: definicao,
         });
       }
       await registarAuditoria("automacao.guardada", "automations", { nome: input.nome, status: input.status });
@@ -292,7 +362,11 @@ export function useTestarAutomacao() {
   return useMutation({
     mutationFn: async (input: { automacao: Automation; contactoId?: string | null; contactoNome: string }) => {
       const organization_id = await orgIdAtual();
-      const log = input.automacao.passos.map((p) => ({ passo: p, resultado: "simulado" }));
+      const log = input.automacao.passos.map((p) => ({
+        passo: labelPasso(p),
+        detalhe: resumoPasso(p),
+        resultado: "simulado",
+      }));
       const { error } = await supabase.from("automation_runs").insert({
         organization_id,
         automation_id: input.automacao.id,
@@ -459,9 +533,11 @@ export function useCarregarDadosDemo() {
         demoAutomations.map((a) => ({
           organization_id,
           name: `${a.nome} (DEMO)`,
+          description: a.descricao ?? null,
           status: "rascunho" as const,
           trigger_type: a.gatilho,
           steps: a.passos,
+          current_version: a.versao,
           is_demo: true,
         })),
       );

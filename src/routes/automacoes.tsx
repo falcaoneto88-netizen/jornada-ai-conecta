@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PlayCircle, Plus } from "lucide-react";
+import { Edit, PlayCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
+import { AutomationEditor } from "@/components/automation-editor";
 import { DemoNotice } from "@/components/demo-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type Automation, type AutomationStatus } from "@/lib/demo-data";
+import { type Automation, type AutomationStatus, labelPasso, resumoPasso } from "@/lib/demo-data";
 import {
   useAlterarEstadoAutomacao,
   useAutomacoes,
@@ -56,14 +55,7 @@ const gatilhos = [
   "Webhook recebido",
 ];
 
-const condicoes = [
-  "Etapa",
-  "Tag",
-  "Canal",
-  "Responsável",
-  "Respondeu / não respondeu",
-  "Status de agendamento",
-];
+const condicoes = ["Etapa", "Tag", "Canal", "Responsável", "Respondeu / não respondeu", "Status de agendamento"];
 
 const acoes = [
   "Enviar WhatsApp via GHL",
@@ -97,28 +89,55 @@ function Automacoes() {
   const testar = useTestarAutomacao();
 
   const [detalhe, setDetalhe] = useState<Automation | null>(null);
-  const [novo, setNovo] = useState(false);
-  const [nomeNovo, setNomeNovo] = useState("");
-  const [gatilhoNovo, setGatilhoNovo] = useState("");
+  const [editorAberto, setEditorAberto] = useState(false);
+  const [editando, setEditando] = useState<Automation | null>(null);
 
-  async function criarRascunho() {
-    if (!nomeNovo.trim() || !gatilhoNovo) {
-      toast.error("Indique o nome e o gatilho da automação.");
-      return;
-    }
+  async function guardarAutomacao(draft: {
+    id?: string;
+    nome: string;
+    descricao: string;
+    gatilho: string;
+    status: AutomationStatus;
+    passos: Automation["passos"];
+  }) {
     if (demo) {
-      toast.error("Criar automações exige conta iniciada.");
+      toast.error("Guardar automações exige conta iniciada.");
       return;
     }
     try {
-      await guardar.mutateAsync({ nome: nomeNovo.trim(), gatilho: gatilhoNovo, passos: [], status: "rascunho" });
-      toast.success("Automação criada como rascunho.");
-      setNomeNovo("");
-      setGatilhoNovo("");
-      setNovo(false);
+      const payload: {
+        nome: string;
+        descricao?: string;
+        gatilho: string;
+        status: AutomationStatus;
+        passos: Automation["passos"];
+        id?: string;
+      } = {
+        nome: draft.nome.trim(),
+        gatilho: draft.gatilho,
+        status: draft.status,
+        passos: draft.passos,
+      };
+      const descricao = draft.descricao.trim();
+      if (descricao) payload.descricao = descricao;
+      if (draft.id) payload.id = draft.id;
+      await guardar.mutateAsync(payload);
+      toast.success(draft.id ? "Automação atualizada." : "Automação criada como rascunho.");
+      setEditorAberto(false);
+      setEditando(null);
     } catch {
-      toast.error("Não foi possível criar a automação.");
+      toast.error("Não foi possível guardar a automação.");
     }
+  }
+
+  function abrirNovo() {
+    setEditando(null);
+    setEditorAberto(true);
+  }
+
+  function abrirEdicao(a: Automation) {
+    setEditando(a);
+    setEditorAberto(true);
   }
 
   async function testarAutomacao(a: Automation) {
@@ -162,7 +181,7 @@ function Automacoes() {
       title="Automações"
       description="Construtor visual da jornada"
       actions={
-        <Button onClick={() => setNovo(true)}>
+        <Button onClick={abrirNovo}>
           <Plus className="size-4" /> Nova automação
         </Button>
       }
@@ -188,20 +207,25 @@ function Automacoes() {
               {automations.map((a) => (
                 <article key={a.id} className="surface-card flex flex-col p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-heading">{a.nome}</h2>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-base font-semibold text-heading">{a.nome}</h2>
                       <p className="mt-0.5 text-sm text-muted-foreground">
                         Gatilho: {a.gatilho} · v{a.versao}
                       </p>
+                      {a.descricao && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.descricao}</p>}
                     </div>
                     {statusBadge(a.status, demo)}
                   </div>
                   <ul className="mt-4 flex-1 space-y-1.5 text-sm text-foreground">
                     {a.passos.map((p) => (
-                      <li key={p} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
-                        {p}
+                      <li key={p.id} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
+                        <span className="font-medium">{labelPasso(p)}</span>
+                        {resumoPasso(p) && <span className="ml-2 text-xs text-muted-foreground">· {resumoPasso(p)}</span>}
                       </li>
                     ))}
+                    {a.passos.length === 0 && (
+                      <li className="text-xs text-muted-foreground">Sem passos configurados.</li>
+                    )}
                   </ul>
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                     <span>Última execução: {a.ultimaExecucao}</span>
@@ -209,9 +233,12 @@ function Automacoes() {
                       Sucesso {a.taxaSucesso}% · {a.erros} erro(s)
                     </span>
                   </div>
-                  <div className="mt-4 flex gap-2">
+                  <div className="mt-4 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => setDetalhe(a)}>
                       Ver detalhes
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => abrirEdicao(a)}>
+                      <Edit className="size-3.5" /> Editar
                     </Button>
                     <Button
                       size="sm"
@@ -311,10 +338,12 @@ function Automacoes() {
               Versão {detalhe?.versao} · Gatilho: {detalhe?.gatilho}
             </DialogDescription>
           </DialogHeader>
+          {detalhe?.descricao && <p className="text-sm text-muted-foreground">{detalhe.descricao}</p>}
           <ol className="space-y-2 text-sm">
             {detalhe?.passos.map((p, i) => (
-              <li key={p} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
-                {i + 1}. {p}
+              <li key={p.id} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
+                {i + 1}. {labelPasso(p)}
+                {resumoPasso(p) && <span className="ml-2 text-xs text-muted-foreground">· {resumoPasso(p)}</span>}
               </li>
             ))}
           </ol>
@@ -326,42 +355,13 @@ function Automacoes() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={novo} onOpenChange={setNovo}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nova automação</DialogTitle>
-            <DialogDescription>Comece pelo nome e pelo gatilho; os passos são adicionados a seguir.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="Nome da automação"
-              aria-label="Nome da automação"
-              value={nomeNovo}
-              onChange={(e) => setNomeNovo(e.target.value)}
-            />
-            <Select value={gatilhoNovo} onValueChange={setGatilhoNovo}>
-              <SelectTrigger aria-label="Gatilho">
-                <SelectValue placeholder="Escolher gatilho" />
-              </SelectTrigger>
-              <SelectContent>
-                {gatilhos.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNovo(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={() => void criarRascunho()} disabled={guardar.isPending || demo}>
-              {guardar.isPending ? "A criar…" : "Criar rascunho"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AutomationEditor
+        automation={editando}
+        open={editorAberto}
+        onOpenChange={setEditorAberto}
+        onSave={guardarAutomacao}
+        isSaving={guardar.isPending}
+      />
     </AppShell>
   );
 }
