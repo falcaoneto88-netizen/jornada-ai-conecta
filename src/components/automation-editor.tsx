@@ -132,8 +132,7 @@ export function AutomationEditor({ automation, open, onOpenChange, onSave, isSav
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
   const { data: etapas = [] } = useEtapas();
-  const modelosQuery = useModelos();
-  const modelos = (modelosQuery.data ?? []) as MessageTemplate[];
+  const { data: modelos = [] } = useModelos();
 
   useEffect(() => {
     if (!open) return;
