@@ -133,35 +133,17 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
 
-  // Ao trocar de conta ou sair, tudo o que estava em memória é descartado:
-  // cache de consultas, pedidos em curso e estado local das páginas.
-  useEffect(() => {
-    let identidadeAtual: string | null = null;
-    let primeiro = true;
-    const { data: sub } = supabase.auth.onAuthStateChange((evento, session) => {
-      if (evento !== "SIGNED_IN" && evento !== "SIGNED_OUT" && evento !== "USER_UPDATED") return;
-      const identidade = session?.user?.id ?? null;
-      if (primeiro) {
-        primeiro = false;
-        identidadeAtual = identidade;
-        return;
-      }
-      if (identidade === identidadeAtual && evento !== "SIGNED_OUT") return;
-      identidadeAtual = identidade;
-      void queryClient.cancelQueries();
-      queryClient.clear();
-      router.invalidate();
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [queryClient, router]);
-
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      {/* Fronteira de identidade: ao trocar/sair, a árvore é remontada e o cache limpo. */}
+      <FronteiraIdentidade aoTrocar={() => router.invalidate()}>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+      </FronteiraIdentidade>
       <Toaster position="top-right" richColors />
     </QueryClientProvider>
   );
 }
+
 
 
