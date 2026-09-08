@@ -27,6 +27,9 @@ export function FronteiraIdentidade({
 
   useEffect(() => {
     let vivo = true;
+    // Qualquer evento de autenticação torna obsoleto o resultado (ou erro) do
+    // getSession inicial, que pode chegar atrasado com a conta anterior.
+    let houveEvento = false;
 
     const aplicar = (idUtilizador: string | null) => {
       if (!vivo) return;
@@ -43,10 +46,22 @@ export function FronteiraIdentidade({
     };
 
     // Inclui a inicialização: getSession + INITIAL_SESSION são ambos tratados.
-    void supabase.auth.getSession().then(({ data }) => aplicar(data.session?.user?.id ?? null));
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (houveEvento) return;
+        aplicar(data.session?.user?.id ?? null);
+      })
+      .catch(() => {
+        // Falha do arranque nunca reinstala identidade antiga.
+        if (houveEvento) return;
+        aplicar(null);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((_evento, session) => {
+      houveEvento = true;
       aplicar(session?.user?.id ?? null);
     });
+
 
     return () => {
       vivo = false;
