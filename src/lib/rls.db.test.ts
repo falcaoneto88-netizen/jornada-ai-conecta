@@ -235,13 +235,63 @@ describe("integração e auditoria", () => {
     expect(valor(r)).toBe("1");
   });
 
-  it("o backend de confiança mantém a capacidade de atualizar a ligação", () => {
+  it("o administrador não pode apagar e reinserir a ligação com valores arbitrários", () => {
+    const antes = db.admin(
+      `select api_base_url, coalesce(location_id,'-') from public.ghl_connections where organization_id = '${orgA}';`,
+    ).linhas.at(-1);
+
+    const del = db.comoUtilizador(
+      UID_A,
+      `delete from public.ghl_connections where organization_id = '${orgA}';`,
+    );
+    expect(del.ok).toBe(false);
+    expect(del.erro).toMatch(/permission denied|row-level security/i);
+
+    const ins = db.comoUtilizador(
+      UID_A,
+      `insert into public.ghl_connections (organization_id, api_base_url, api_version, location_id)
+         values ('${orgA}', 'https://atacante.example', '9999-01-01', 'loc-roubada');`,
+    );
+    expect(ins.ok).toBe(false);
+    expect(ins.erro).toMatch(/permission denied|row-level security/i);
+
+    const depois = db.admin(
+      `select api_base_url, coalesce(location_id,'-') from public.ghl_connections where organization_id = '${orgA}';`,
+    ).linhas.at(-1);
+    expect(depois).toEqual(antes);
+  });
+
+  it("o cliente não escreve em papéis nem no vínculo de location", () => {
+    const papel = db.comoUtilizador(
+      UID_A,
+      `insert into public.user_roles (user_id, organization_id, role) values ('${UID_A}', '${orgA}', 'administrador');`,
+    );
+    expect(papel.ok).toBe(false);
+    expect(papel.erro).toMatch(/permission denied|row-level security/i);
+
+    const vinculo = db.comoUtilizador(
+      UID_A,
+      `insert into public.ghl_location_bindings (location_id, organization_id) values ('loc-roubada', '${orgA}');`,
+    );
+    expect(vinculo.ok).toBe(false);
+    expect(vinculo.erro).toMatch(/permission denied|row-level security/i);
+  });
+
+  it("o backend de confiança mantém a capacidade de provisionar e atualizar", () => {
     const r = db.comoServico(
       `with x as (update public.ghl_connections set location_id = 'loc-sintetica-A'
          where organization_id = '${orgA}' returning 1) select count(*) from x;`,
     );
     expect(valor(r)).toBe("1");
+    const b = db.comoServico(
+      `with x as (insert into public.ghl_location_bindings (location_id, organization_id)
+         values ('loc-provisionada-B', '${orgB}')
+         on conflict (location_id) do nothing returning 1) select count(*) from x;`,
+    );
+    expect(valor(b)).toBe("1");
+    db.comoServico(`delete from public.ghl_location_bindings where location_id = 'loc-provisionada-B';`);
   });
+
 
   it("privilégios por coluna protegem o perfil em qualquer via de acesso", () => {
     for (const campo of ["email = 'novo@exemplo.test'", "id = gen_random_uuid()", "created_at = now()"]) {
