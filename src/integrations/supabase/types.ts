@@ -431,6 +431,35 @@ export type Database = {
           },
         ]
       }
+      ghl_location_bindings: {
+        Row: {
+          created_at: string
+          location_id: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          location_id: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          location_id?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ghl_location_bindings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       journey_stages: {
         Row: {
           color: string
@@ -741,39 +770,70 @@ export type Database = {
       }
       webhooks_inbox: {
         Row: {
+          attempts: number
+          contact_id: string | null
           created_at: string
           error_message: string | null
+          event_id: string | null
           event_type: string | null
           id: string
           idempotency_key: string
+          location_id: string | null
+          locked_at: string | null
           organization_id: string | null
           payload: Json
           processed_at: string | null
           signature_valid: boolean
+          source_version: string | null
+          status: string
+          updated_at: string
         }
         Insert: {
+          attempts?: number
+          contact_id?: string | null
           created_at?: string
           error_message?: string | null
+          event_id?: string | null
           event_type?: string | null
           id?: string
           idempotency_key: string
+          location_id?: string | null
+          locked_at?: string | null
           organization_id?: string | null
           payload?: Json
           processed_at?: string | null
           signature_valid?: boolean
+          source_version?: string | null
+          status?: string
+          updated_at?: string
         }
         Update: {
+          attempts?: number
+          contact_id?: string | null
           created_at?: string
           error_message?: string | null
+          event_id?: string | null
           event_type?: string | null
           id?: string
           idempotency_key?: string
+          location_id?: string | null
+          locked_at?: string | null
           organization_id?: string | null
           payload?: Json
           processed_at?: string | null
           signature_valid?: boolean
+          source_version?: string | null
+          status?: string
+          updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "webhooks_inbox_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "webhooks_inbox_organization_id_fkey"
             columns: ["organization_id"]
@@ -789,6 +849,23 @@ export type Database = {
     }
     Functions: {
       current_org_id: { Args: never; Returns: string }
+      ghl_apply_contact_event: {
+        Args: {
+          _email: string
+          _event_type: string
+          _full_name: string
+          _ghl_contact_id: string
+          _inbox_id: string
+          _last_interaction: string
+          _org: string
+          _phone: string
+          _phone_normalized: string
+          _source: string
+          _source_version: string
+          _tags: string[]
+        }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
