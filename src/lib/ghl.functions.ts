@@ -54,9 +54,15 @@ export function autorizarOperacao(input: {
  * Resolve utilizador -> organização -> papéis -> vínculo de location.
  * Só depois disto é legítimo tocar em credenciais do GoHighLevel.
  */
+export type DepsAcesso = {
+  lerBinding?: (orgId: string) => Promise<string | null>;
+  locationDoToken?: () => string | undefined;
+};
+
 export async function resolverAcesso(
   context: Ctx,
   papeisNecessarios: readonly PapelApp[],
+  deps: DepsAcesso = {},
 ): Promise<{ ok: true; acesso: Acesso } | Recusa> {
   const { data: perfil } = await context.supabase
     .from("profiles")
@@ -79,13 +85,27 @@ export async function resolverAcesso(
   }
 
   // Vínculo de confiança: server-only, o cliente nunca o pode alterar.
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: binding } = await supabaseAdmin
-    .from("ghl_location_bindings")
-    .select("location_id")
-    .eq("organization_id", orgId)
-    .maybeSingle();
-  if (!binding?.location_id) return { ok: false, code: "not_found", message: SEM_INTEGRACAO };
+  const lerBinding =
+    deps.lerBinding ??
+    (async (org: string) => {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data } = await supabaseAdmin
+        .from("ghl_location_bindings")
+        .select("location_id")
+        .eq("organization_id", org)
+        .maybeSingle();
+      return (data?.location_id as string | undefined) ?? null;
+    });
+  const locationBinding = await lerBinding(orgId);
+  if (!locationBinding) return { ok: false, code: "not_found", message: SEM_INTEGRACAO };
+
+  // Existe um único token global no backend: só pode ser usado pela location a
+  // que esse token pertence. Qualquer outro vínculo é recusado antes do fetch.
+  const locationDoToken = (deps.locationDoToken ?? (() => process.env["GHL_LOCATION_ID"]))();
+  if (!locationDoToken || locationDoToken !== locationBinding) {
+    return { ok: false, code: "not_found", message: SEM_INTEGRACAO };
+  }
+
 
   const { data: conn } = await context.supabase
     .from("ghl_connections")
@@ -99,7 +119,7 @@ export async function resolverAcesso(
       orgId,
       nome: (perfil.full_name as string | null) ?? null,
       papeis,
-      locationId: binding.location_id as string,
+      locationId: locationBinding,
       conn: (conn as Record<string, unknown> | null) ?? null,
     },
   };
