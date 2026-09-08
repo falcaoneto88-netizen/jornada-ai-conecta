@@ -40,17 +40,22 @@ function Pagina() {
   const [rascunho, setRascunho] = useState<string | null>(null);
   const [analise, setAnalise] = useState<string | null>(null);
 
+  // Cada montagem captura a promessa em curso no momento em que foi montada.
+  const [fonteAnalise] = useState(() => analiseA);
+  const [fonteConsulta] = useState(() => consultaA);
+
   useEffect(() => {
     // Promessa iniciada na conta que montou este componente.
-    void analiseA.promessa.then((texto) => {
+    void fonteAnalise.promessa.then((texto) => {
       setAnalise(texto);
       setRascunho(`rascunho:${texto}`);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const q = useQuery({
     queryKey: ["conversas"],
-    queryFn: () => consultaA.promessa,
+    queryFn: () => fonteConsulta.promessa,
     retry: false,
   });
 
@@ -100,11 +105,16 @@ describe("fronteira de identidade", () => {
     // Troca para a conta B antes de qualquer resultado da conta A chegar.
     await emitir("SIGNED_IN", { user: { id: "utilizador-B" } });
 
+    // A conta B tem as suas próprias fontes, ainda pendentes.
+    const daContaA = { analise: analiseA, consulta: consultaA };
+    analiseA = adiada<string>();
+    consultaA = adiada<string>();
+
     // Só agora a análise e a consulta da conta A resolvem.
     const analiseDaContaA = adiada<string>();
     await act(async () => {
-      analiseA.resolver("segredo-da-conta-A");
-      consultaA.resolver("conversas-da-conta-A");
+      daContaA.analise.resolver("segredo-da-conta-A");
+      daContaA.consulta.resolver("conversas-da-conta-A");
       await Promise.resolve();
       await Promise.resolve();
       analiseDaContaA.resolver("fim");
@@ -141,6 +151,8 @@ describe("fronteira de identidade", () => {
       expect(screen.getByTestId("analise").textContent).toBe("dado-da-conta-A"),
     );
 
+    analiseA = adiada<string>();
+    consultaA = adiada<string>();
     await emitir("SIGNED_OUT", null);
 
     expect(screen.getByTestId("analise").textContent).toBe("sem-analise");
