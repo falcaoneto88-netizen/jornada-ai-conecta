@@ -397,11 +397,49 @@ function Integracoes() {
                   <code>LOVABLE_API_KEY</code> para a IA). O estado aparece no separador Credenciais.
                 </li>
                 <li>Preencha o Pipeline ID e o Calendar ID e mapeie as etapas em Jornada › Mapear Pipeline/Stage.</li>
-                <li>Copie a Callback URL do separador Webhooks e registe-a nos webhooks do GoHighLevel.</li>
                 <li>Clique em «Testar conexão» e confirme o nome da conta devolvido.</li>
                 <li>Execute a «Sincronização (leitura)» e verifique os contactos importados em Clientes.</li>
                 <li>Só depois de validar os dados ative «Permitir escrita» para libertar envios e alterações.</li>
               </ol>
+
+              <h3 className="text-base font-semibold">Receber contactos em tempo real (Custom Webhook)</h3>
+              <ol className="list-decimal space-y-3 pl-5">
+                <li>
+                  No GoHighLevel, abra <strong>Automation › Workflows</strong> e crie um workflow com o gatilho{" "}
+                  <em>Contact Created</em> (e um segundo com <em>Contact Changed</em>).
+                </li>
+                <li>
+                  Adicione a ação <strong>Webhook</strong> (Custom Webhook), método <code>POST</code>, e cole o endereço
+                  do separador Webhooks.
+                </li>
+                <li>
+                  Em <em>Headers</em>, adicione <code>Content-Type: application/json</code> e{" "}
+                  <code>x-webhook-secret</code> com exatamente o mesmo valor guardado em{" "}
+                  <code>GHL_WEBHOOK_SECRET</code>.
+                </li>
+                <li>
+                  Em <em>Custom Data / Body</em> (JSON), envie:
+                  <pre className="mt-2 overflow-x-auto rounded-lg bg-secondary/40 p-3 text-xs">
+{`{
+  "type": "contact.created",
+  "locationId": "ok2UHC2QMZsd8UHsAgEa",
+  "contactId": "{{contact.id}}"
+}`}
+                  </pre>
+                  No workflow de alterações, troque o tipo para <code>contact.updated</code>.
+                </li>
+                <li>
+                  Guarde o workflow, publique-o e dispare um teste (por exemplo, editar um contacto de teste).
+                </li>
+                <li>
+                  Volte a este separador Webhooks e confirme o evento com o estado <strong>Processado</strong>. Depois
+                  verifique a ficha em Clientes.
+                </li>
+              </ol>
+              <p className="text-muted-foreground">
+                O recetor confirma sempre o contacto na API oficial do GoHighLevel antes de gravar, mantém a etapa de
+                jornada dos clientes já existentes e não executa automações nem envia mensagens.
+              </p>
               <p className="text-muted-foreground">
                 Nenhuma chave é escrita no código ou no navegador. Todas as chamadas passam por um proxy no backend com
                 lista de operações permitidas, tempo limite e novas tentativas.
