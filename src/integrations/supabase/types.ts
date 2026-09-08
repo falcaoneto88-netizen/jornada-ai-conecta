@@ -941,6 +941,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      pedido_de_cliente: { Args: never; Returns: boolean }
       tem_papel: {
         Args: { _papeis: Database["public"]["Enums"]["app_role"][] }
         Returns: boolean
