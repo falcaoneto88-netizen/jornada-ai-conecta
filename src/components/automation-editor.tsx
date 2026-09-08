@@ -518,7 +518,7 @@ type ActionParamsProps = {
   acao: TipoAcao;
   parametros: Record<string, string>;
   etapas: { id: string; nome: string }[];
-  modelos: MessageTemplate[];
+  modelos: { id: string; nome: string; canal: Canal }[];
   onChange: (parametros: Record<string, string>) => void;
 };
 
