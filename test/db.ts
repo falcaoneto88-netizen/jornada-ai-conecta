@@ -76,14 +76,20 @@ export async function iniciarDbReal(): Promise<DbReal> {
   psql(["-d", "jornada"], PREPARACAO);
 
   const dir = join(RAIZ, "supabase/migrations");
+  let primeira = true;
   for (const ficheiro of readdirSync(dir).sort()) {
     psql(["-d", "jornada"], readFileSync(join(dir, ficheiro), "utf8"));
-    // A migração do vínculo de confiança refere a organização real da clínica;
-    // aqui usamos apenas um marcador sintético para satisfazer a chave externa.
-    psql(
-      ["-d", "jornada", "-c"],
-      undefined,
-    );
+    if (primeira) {
+      // A migração do vínculo de confiança refere a organização real da clínica;
+      // aqui criamos apenas um marcador sintético para satisfazer a chave externa.
+      psql([
+        "-d",
+        "jornada",
+        "-c",
+        "insert into public.organizations (id, name) values ('f07ab3be-7419-4779-a901-ef71c5fc27f0', 'Marcador de teste') on conflict do nothing",
+      ]);
+      primeira = false;
+    }
   }
 
   const executar = (sql: string): Resultado => {
