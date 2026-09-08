@@ -311,10 +311,21 @@ function Integracoes() {
                 </div>
               </div>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>• Validação obrigatória do segredo (cabeçalho direto ou assinatura HMAC SHA-256).</li>
-                <li>• Idempotência por idempotency_key para evitar duplicações.</li>
-                <li>• Registo de todos os eventos recebidos em webhooks_inbox com auditoria.</li>
-                <li>• Resposta imediata ao GoHighLevel; erros de rede e limites tratados com retry.</li>
+                <li>
+                  • Autenticação por cabeçalho: <code>x-webhook-secret</code> com o valor de{" "}
+                  <code>GHL_WEBHOOK_SECRET</code> (caminho «Custom Webhook» dos workflows do GoHighLevel).
+                </li>
+                <li>
+                  • Eventos suportados: <code>contact.created</code> e <code>contact.updated</code>. Outros eventos são
+                  recusados em vez de marcados como processados.
+                </li>
+                <li>
+                  • Cada evento é confirmado na API oficial do GoHighLevel antes de gravar; entregas repetidas não
+                  duplicam clientes nem registos.
+                </li>
+                <li>
+                  • Só sincroniza a ficha do cliente. Não executa automações da jornada nem move oportunidades.
+                </li>
               </ul>
               {webhooks.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -322,14 +333,31 @@ function Integracoes() {
                 </div>
               ) : (
                 <ul className="divide-y divide-border rounded-xl border border-border">
-                  {webhooks.map((w) => (
-                    <li key={w.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
-                      <span className="font-medium">{w.event_type ?? "evento"}</span>
-                      <span className="text-muted-foreground">
-                        {new Date(w.created_at).toLocaleString("pt-PT")}
-                      </span>
-                    </li>
-                  ))}
+                  {webhooks.map((w) => {
+                    const estado = ESTADO_WEBHOOK[w.status ?? "recebido"] ?? ESTADO_WEBHOOK["recebido"]!;
+                    return (
+                      <li key={w.id} className="space-y-1 p-3 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{w.event_type ?? "evento"}</span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={estado.variante}>{estado.rotulo}</Badge>
+                            <span className="text-muted-foreground">
+                              {new Date(w.created_at).toLocaleString("pt-PT")}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tentativas: {w.attempts ?? 0}
+                          {w.processed_at
+                            ? ` · processado em ${new Date(w.processed_at).toLocaleString("pt-PT")}`
+                            : ""}
+                        </p>
+                        {w.error_message && (
+                          <p className="text-xs break-words text-destructive">Falha: {w.error_message}</p>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
