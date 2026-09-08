@@ -229,6 +229,7 @@ export const ghlProxy = createServerFn({ method: "POST" })
       filtrarQuery,
       filtrarBody,
       contactoPertenceALocation,
+      parametrosDoServidor,
       GHL_ORIGIN,
       GHL_VERSION,
     } = await import("./ghl.server");
@@ -290,7 +291,7 @@ export const ghlProxy = createServerFn({ method: "POST" })
     const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
     const res = await ghlFetch(cfg, op.path({ locationId, ghlContactId }), {
       method: op.method,
-      query: { locationId, ...query.valor },
+      query: { ...query.valor, ...parametrosDoServidor(op, { locationId, ghlContactId }) },
       ...(op.method === "POST"
         ? { body: { ...body.valor, ...(ghlContactId ? { contactId: ghlContactId } : {}) } }
         : {}),

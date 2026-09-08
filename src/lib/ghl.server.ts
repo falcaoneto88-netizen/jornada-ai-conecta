@@ -166,6 +166,10 @@ export type DefinicaoOperacao = {
   body: readonly string[];
   /** Exige um contacto local cuja propriedade é verificada na location autorizada. */
   exigeContacto: boolean;
+  /** Nome do parâmetro de location exigido por esta rota da API oficial. */
+  chaveLocation?: "locationId" | "location_id";
+  /** Envia o contacto verificado na query (rotas que filtram por contacto). */
+  contactoNaQuery?: "contactId" | "contact_id";
 };
 
 const LEITURA: readonly PapelApp[] = ["administrador", "gestor", "comercial", "visualizador"];
@@ -208,6 +212,8 @@ export const OPERACOES: Record<string, DefinicaoOperacao> = {
     query: ["limit", "q", "status"],
     body: [],
     exigeContacto: false,
+    // A rota /opportunities/search da versão 2021-07-28 exige "location_id".
+    chaveLocation: "location_id",
   },
   "calendars.list": {
     method: "GET",
@@ -235,6 +241,7 @@ export const OPERACOES: Record<string, DefinicaoOperacao> = {
     query: ["limit", "query"],
     body: [],
     exigeContacto: true,
+    contactoNaQuery: "contactId",
   },
   "conversations.sendMessage": {
     method: "POST",
@@ -262,6 +269,19 @@ export function isOperacaoValida(op: string): op is OperacaoGhl {
   return Object.prototype.hasOwnProperty.call(OPERACOES, op);
 }
 
+/**
+ * Parâmetros impostos pelo servidor: location com o nome que a rota exige e,
+ * quando aplicável, o contacto já verificado.
+ */
+export function parametrosDoServidor(
+  op: DefinicaoOperacao,
+  ctx: { locationId: string; ghlContactId: string | null },
+): Record<string, string> {
+  const saida: Record<string, string> = { [op.chaveLocation ?? "locationId"]: ctx.locationId };
+  if (op.contactoNaQuery && ctx.ghlContactId) saida[op.contactoNaQuery] = ctx.ghlContactId;
+  return saida;
+}
+
 /** Filtra a query do cliente pela allowlist; locationId nunca vem do cliente. */
 export function filtrarQuery(
   op: DefinicaoOperacao,
@@ -269,7 +289,14 @@ export function filtrarQuery(
 ): { ok: true; valor: Record<string, string> } | { ok: false; motivo: string } {
   const saida: Record<string, string> = {};
   for (const [k, v] of Object.entries(query ?? {})) {
-    if (k === "locationId" || k === "location_id" || k === "altId" || k === "altType") {
+    if (
+      k === "locationId" ||
+      k === "location_id" ||
+      k === "altId" ||
+      k === "altType" ||
+      k === "contactId" ||
+      k === "contact_id"
+    ) {
       return { ok: false, motivo: `O parâmetro "${k}" é definido pelo servidor e não pode ser enviado.` };
     }
     if (!op.query.includes(k)) return { ok: false, motivo: `Parâmetro não permitido: "${k}".` };
@@ -312,6 +339,9 @@ export async function contactoPertenceALocation(
   if (!res.ok) return { ok: false, message: res.message };
   const contacto = res.data?.contact;
   if (!contacto?.id) return { ok: false, message: "Contacto não encontrado no GoHighLevel." };
+  if (contacto.id !== ghlContactId) {
+    return { ok: false, message: "O contacto devolvido não corresponde ao pedido." };
+  }
   if (contacto.locationId !== locationId) {
     return { ok: false, message: "O contacto não pertence à localização autorizada desta conta." };
   }
