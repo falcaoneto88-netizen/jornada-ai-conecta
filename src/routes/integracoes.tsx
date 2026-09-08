@@ -31,8 +31,14 @@ export const Route = createFileRoute("/integracoes")({
   component: Integracoes,
 });
 
-const CALLBACK_URL =
-  "https://project--36345211-2616-42f7-bb9e-e78a9d00ca22.lovable.app/api/public/ghl-webhook";
+const CALLBACK_URL = "https://jornada-ai-conecta.lovable.app/api/public/ghl-webhook";
+
+const ESTADO_WEBHOOK: Record<string, { rotulo: string; variante: "default" | "outline" | "destructive" }> = {
+  processado: { rotulo: "Processado", variante: "default" },
+  a_processar: { rotulo: "Em processamento", variante: "outline" },
+  falhado: { rotulo: "Falhado", variante: "destructive" },
+  recebido: { rotulo: "Recebido", variante: "outline" },
+};
 
 type EstadoSecrets = { token: boolean; locationId: boolean; webhookSecret: boolean; ia: boolean };
 
@@ -305,10 +311,21 @@ function Integracoes() {
                 </div>
               </div>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>• Validação obrigatória do segredo (cabeçalho direto ou assinatura HMAC SHA-256).</li>
-                <li>• Idempotência por idempotency_key para evitar duplicações.</li>
-                <li>• Registo de todos os eventos recebidos em webhooks_inbox com auditoria.</li>
-                <li>• Resposta imediata ao GoHighLevel; erros de rede e limites tratados com retry.</li>
+                <li>
+                  • Autenticação por cabeçalho: <code>x-webhook-secret</code> com o valor de{" "}
+                  <code>GHL_WEBHOOK_SECRET</code> (caminho «Custom Webhook» dos workflows do GoHighLevel).
+                </li>
+                <li>
+                  • Eventos suportados: <code>contact.created</code> e <code>contact.updated</code>. Outros eventos são
+                  recusados em vez de marcados como processados.
+                </li>
+                <li>
+                  • Cada evento é confirmado na API oficial do GoHighLevel antes de gravar; entregas repetidas não
+                  duplicam clientes nem registos.
+                </li>
+                <li>
+                  • Só sincroniza a ficha do cliente. Não executa automações da jornada nem move oportunidades.
+                </li>
               </ul>
               {webhooks.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -316,14 +333,31 @@ function Integracoes() {
                 </div>
               ) : (
                 <ul className="divide-y divide-border rounded-xl border border-border">
-                  {webhooks.map((w) => (
-                    <li key={w.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
-                      <span className="font-medium">{w.event_type ?? "evento"}</span>
-                      <span className="text-muted-foreground">
-                        {new Date(w.created_at).toLocaleString("pt-PT")}
-                      </span>
-                    </li>
-                  ))}
+                  {webhooks.map((w) => {
+                    const estado = ESTADO_WEBHOOK[w.status ?? "recebido"] ?? ESTADO_WEBHOOK["recebido"]!;
+                    return (
+                      <li key={w.id} className="space-y-1 p-3 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{w.event_type ?? "evento"}</span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={estado.variante}>{estado.rotulo}</Badge>
+                            <span className="text-muted-foreground">
+                              {new Date(w.created_at).toLocaleString("pt-PT")}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tentativas: {w.attempts ?? 0}
+                          {w.processed_at
+                            ? ` · processado em ${new Date(w.processed_at).toLocaleString("pt-PT")}`
+                            : ""}
+                        </p>
+                        {w.error_message && (
+                          <p className="text-xs break-words text-destructive">Falha: {w.error_message}</p>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -363,11 +397,49 @@ function Integracoes() {
                   <code>LOVABLE_API_KEY</code> para a IA). O estado aparece no separador Credenciais.
                 </li>
                 <li>Preencha o Pipeline ID e o Calendar ID e mapeie as etapas em Jornada › Mapear Pipeline/Stage.</li>
-                <li>Copie a Callback URL do separador Webhooks e registe-a nos webhooks do GoHighLevel.</li>
                 <li>Clique em «Testar conexão» e confirme o nome da conta devolvido.</li>
                 <li>Execute a «Sincronização (leitura)» e verifique os contactos importados em Clientes.</li>
                 <li>Só depois de validar os dados ative «Permitir escrita» para libertar envios e alterações.</li>
               </ol>
+
+              <h3 className="text-base font-semibold">Receber contactos em tempo real (Custom Webhook)</h3>
+              <ol className="list-decimal space-y-3 pl-5">
+                <li>
+                  No GoHighLevel, abra <strong>Automation › Workflows</strong> e crie um workflow com o gatilho{" "}
+                  <em>Contact Created</em> (e um segundo com <em>Contact Changed</em>).
+                </li>
+                <li>
+                  Adicione a ação <strong>Webhook</strong> (Custom Webhook), método <code>POST</code>, e cole o endereço
+                  do separador Webhooks.
+                </li>
+                <li>
+                  Em <em>Headers</em>, adicione <code>Content-Type: application/json</code> e{" "}
+                  <code>x-webhook-secret</code> com exatamente o mesmo valor guardado em{" "}
+                  <code>GHL_WEBHOOK_SECRET</code>.
+                </li>
+                <li>
+                  Em <em>Custom Data / Body</em> (JSON), envie:
+                  <pre className="mt-2 overflow-x-auto rounded-lg bg-secondary/40 p-3 text-xs">
+{`{
+  "type": "contact.created",
+  "locationId": "ok2UHC2QMZsd8UHsAgEa",
+  "contactId": "{{contact.id}}"
+}`}
+                  </pre>
+                  No workflow de alterações, troque o tipo para <code>contact.updated</code>.
+                </li>
+                <li>
+                  Guarde o workflow, publique-o e dispare um teste (por exemplo, editar um contacto de teste).
+                </li>
+                <li>
+                  Volte a este separador Webhooks e confirme o evento com o estado <strong>Processado</strong>. Depois
+                  verifique a ficha em Clientes.
+                </li>
+              </ol>
+              <p className="text-muted-foreground">
+                O recetor confirma sempre o contacto na API oficial do GoHighLevel antes de gravar, mantém a etapa de
+                jornada dos clientes já existentes e não executa automações nem envia mensagens.
+              </p>
               <p className="text-muted-foreground">
                 Nenhuma chave é escrita no código ou no navegador. Todas as chamadas passam por um proxy no backend com
                 lista de operações permitidas, tempo limite e novas tentativas.
