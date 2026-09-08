@@ -104,7 +104,7 @@ export async function iniciarDbReal(): Promise<DbReal> {
       const out = execFileSync(
         "psql",
         ["-h", socket, "-U", "postgres", "-d", "jornada", "-v", "ON_ERROR_STOP=1", "-t", "-A", "-F", "\u0001"],
-        { input: sql, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+        { input: sql, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], env: ambiente },
       );
       const linhas = out
         .split("\n")
