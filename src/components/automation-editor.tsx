@@ -132,8 +132,7 @@ export function AutomationEditor({ automation, open, onOpenChange, onSave, isSav
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
   const { data: etapas = [] } = useEtapas();
-  const modelosRaw = useModelos().data ?? [];
-  const modelos = modelosRaw.map((m) => ({ id: m.id, nome: m.nome, canal: m.canal }));
+  const { data: modelos = [] } = useModelos();
 
   useEffect(() => {
     if (!open) return;
