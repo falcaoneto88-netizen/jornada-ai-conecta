@@ -152,3 +152,68 @@ describe("propriedade de recursos", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("parâmetros impostos pelo servidor", () => {
+  it("usa location_id em opportunities.search e locationId nas restantes", async () => {
+    const { OPERACOES, parametrosDoServidor, ghlFetch, GHL_ORIGIN, GHL_VERSION, filtrarQuery } =
+      await import("./ghl.server");
+
+    expect(parametrosDoServidor(OPERACOES["opportunities.search"]!, { locationId: LOCATION_TOKEN, ghlContactId: null }))
+      .toEqual({ location_id: LOCATION_TOKEN });
+    expect(parametrosDoServidor(OPERACOES["contacts.list"]!, { locationId: LOCATION_TOKEN, ghlContactId: null }))
+      .toEqual({ locationId: LOCATION_TOKEN });
+    expect(parametrosDoServidor(OPERACOES["conversations.search"]!, { locationId: LOCATION_TOKEN, ghlContactId: "c1" }))
+      .toEqual({ locationId: LOCATION_TOKEN, contactId: "c1" });
+
+    // O cliente não pode enviar nenhuma das duas grafias, nem o contacto.
+    for (const chave of ["locationId", "location_id", "contactId", "contact_id"]) {
+      const r = filtrarQuery(OPERACOES["opportunities.search"]!, { [chave]: "x" });
+      expect(r.ok, chave).toBe(false);
+    }
+
+    const pedidos: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        pedidos.push(String(url));
+        return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+      }),
+    );
+
+    const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token: "token-falso", locationId: LOCATION_TOKEN };
+    const op = OPERACOES["opportunities.search"]!;
+    await ghlFetch(cfg, op.path({ locationId: LOCATION_TOKEN, ghlContactId: null }), {
+      method: "GET",
+      query: { limit: "20", ...parametrosDoServidor(op, { locationId: LOCATION_TOKEN, ghlContactId: null }) },
+    });
+    const conv = OPERACOES["conversations.search"]!;
+    await ghlFetch(cfg, conv.path({ locationId: LOCATION_TOKEN, ghlContactId: "c1" }), {
+      method: "GET",
+      query: { limit: "10", ...parametrosDoServidor(conv, { locationId: LOCATION_TOKEN, ghlContactId: "c1" }) },
+    });
+
+    expect(pedidos[0]).toBe(
+      `https://services.leadconnectorhq.com/opportunities/search?limit=20&location_id=${LOCATION_TOKEN}`,
+    );
+    expect(pedidos[0]).not.toContain("locationId=");
+    expect(pedidos[1]).toBe(
+      `https://services.leadconnectorhq.com/conversations/search?limit=10&locationId=${LOCATION_TOKEN}&contactId=c1`,
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("recusa um contacto cujo id devolvido não corresponde ao pedido", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ contact: { id: "outro", locationId: LOCATION_TOKEN } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    const r = await contactoPertenceALocation("token-falso", LOCATION_TOKEN, "c1");
+    expect(r.ok).toBe(false);
+    vi.unstubAllGlobals();
+  });
+});
