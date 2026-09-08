@@ -101,7 +101,7 @@ export async function iniciarDbReal(): Promise<DbReal> {
       );
       const linhas = out
         .split("\n")
-        .filter((l) => l.trim() !== "")
+        .filter((l) => l.trim() !== "" && !/^(BEGIN|COMMIT|ROLLBACK|SET|DO|INSERT \d|UPDATE \d|DELETE \d|CREATE|GRANT|REVOKE)/.test(l.trim()))
         .map((l) => l.split("\u0001"));
       return { ok: true, erro: "", linhas };
     } catch (e) {
@@ -113,7 +113,7 @@ export async function iniciarDbReal(): Promise<DbReal> {
   const envolver = (papel: string, userId: string | null, sql: string) =>
     [
       "begin;",
-      userId ? `select set_config('request.jwt.claim.sub', '${userId}', true);` : "",
+      userId ? `set local "request.jwt.claim.sub" = '${userId}';` : "",
       `set local role ${papel};`,
       sql.trim().endsWith(";") ? sql : `${sql};`,
       "commit;",
