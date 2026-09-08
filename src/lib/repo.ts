@@ -51,9 +51,51 @@ function parsePassos(steps: unknown): AutomationStep[] {
   });
 }
 
+/** Chave de cache por identidade: nunca reaproveita dados entre contas. */
+export function chaveEscopo(userId: string | null | undefined, demo: boolean): string {
+  if (userId) return `u:${userId}`;
+  return demo ? "demo" : "anonimo";
+}
+
 export function useModoDados() {
   const { modo, carregando, user } = useSessao();
-  return { demo: modo !== "conta", carregando, user, modo };
+  const demo = modo !== "conta";
+  return { demo, carregando, user, modo, escopo: chaveEscopo(user?.id, demo) };
+}
+
+/** Papéis do utilizador autenticado (apenas os próprios). */
+export function usePapeis() {
+  const { demo, escopo } = useModoDados();
+  return useQuery<string[]>({
+    queryKey: ["papeis", escopo],
+    queryFn: async () => {
+      if (demo) return ["administrador"];
+      const { data: userData } = await supabase.auth.getUser();
+      const uid = userData.user?.id;
+      if (!uid) return [];
+      const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", uid);
+      if (error) throw error;
+      return (data ?? []).map((l) => l.role as string);
+    },
+  });
+}
+
+export type Permissoes = {
+  gerirIntegracao: boolean;
+  gerirJornada: boolean;
+  operar: boolean;
+  soLeitura: boolean;
+};
+
+export function usePermissoes(): Permissoes {
+  const { data: papeis = [] } = usePapeis();
+  const tem = (...p: string[]) => p.some((x) => papeis.includes(x));
+  return {
+    gerirIntegracao: tem("administrador"),
+    gerirJornada: tem("administrador", "gestor"),
+    operar: tem("administrador", "gestor", "comercial"),
+    soLeitura: papeis.length > 0 && !tem("administrador", "gestor", "comercial"),
+  };
 }
 
 function dataPt(valor: string | null | undefined) {
@@ -67,10 +109,18 @@ function dataHoraPt(valor: string | null | undefined) {
 }
 
 async function orgIdAtual(): Promise<string> {
-  const { data, error } = await supabase.from("profiles").select("organization_id").maybeSingle();
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) throw new Error("Sessão não iniciada.");
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", uid)
+    .maybeSingle();
   if (error || !data) throw new Error("Não foi possível identificar a organização.");
   return data.organization_id;
 }
+
 
 export async function registarAuditoria(action: string, entity: string, metadata: Record<string, unknown> = {}) {
   try {
@@ -92,9 +142,9 @@ export async function registarAuditoria(action: string, entity: string, metadata
 /* ---------------- Etapas ---------------- */
 
 export function useEtapas() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery<JourneyStage[]>({
-    queryKey: ["etapas", demo],
+    queryKey: ["etapas", escopo],
     queryFn: async () => {
       if (demo) return demoStages;
       const { data, error } = await supabase
@@ -130,9 +180,9 @@ export function useGuardarMapeamentoEtapa() {
 /* ---------------- Contactos ---------------- */
 
 export function useContactos() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery<Contact[]>({
-    queryKey: ["contactos", demo],
+    queryKey: ["contactos", escopo],
     queryFn: async () => {
       if (demo) return demoContacts;
       const { data, error } = await supabase
@@ -182,9 +232,9 @@ export function useMoverContacto() {
 const canaisValidos: Canal[] = ["whatsapp", "instagram", "facebook", "email"];
 
 export function useModelos() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery<MessageTemplate[]>({
-    queryKey: ["modelos", demo],
+    queryKey: ["modelos", escopo],
     queryFn: async () => {
       if (demo) return demoTemplates;
       const { data, error } = await supabase.from("message_templates").select("*").order("created_at");
@@ -242,9 +292,9 @@ export function useApagarModelo() {
 /* ---------------- Automações ---------------- */
 
 export function useAutomacoes() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery<Automation[]>({
-    queryKey: ["automacoes", demo],
+    queryKey: ["automacoes", escopo],
     queryFn: async () => {
       if (demo) return demoAutomations;
       const { data, error } = await supabase.from("automations").select("*").order("created_at");
@@ -391,9 +441,9 @@ export function useTestarAutomacao() {
 }
 
 export function useExecucoes() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery<AutomationRun[]>({
-    queryKey: ["execucoes", demo],
+    queryKey: ["execucoes", escopo],
     queryFn: async () => {
       if (demo) return demoRuns;
       const { data, error } = await supabase
@@ -417,9 +467,9 @@ export function useExecucoes() {
 /* ---------------- Ligação GHL ---------------- */
 
 export function useLigacaoGhl() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery({
-    queryKey: ["ligacao-ghl", demo],
+    queryKey: ["ligacao-ghl", escopo],
     queryFn: async () => {
       if (demo) return null;
       const { data, error } = await supabase.from("ghl_connections").select("*").maybeSingle();
@@ -433,8 +483,6 @@ export function useGuardarLigacaoGhl() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
-      api_base_url: string;
-      api_version: string;
       default_pipeline_id: string | null;
       calendar_id: string | null;
       write_enabled?: boolean;
@@ -444,7 +492,9 @@ export function useGuardarLigacaoGhl() {
         .update(input)
         .eq("organization_id", await orgIdAtual());
       if (error) throw error;
-      await registarAuditoria("ghl.configuracao_atualizada", "ghl_connections", { url: input.api_base_url });
+      await registarAuditoria("ghl.configuracao_atualizada", "ghl_connections", {
+        pipeline: input.default_pipeline_id,
+      });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ligacao-ghl"] }),
   });
@@ -453,9 +503,9 @@ export function useGuardarLigacaoGhl() {
 /* ---------------- Auditoria e webhooks ---------------- */
 
 export function useAuditoria(limite = 30) {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery({
-    queryKey: ["auditoria", demo, limite],
+    queryKey: ["auditoria", escopo, limite],
     queryFn: async () => {
       if (demo) return [];
       const { data, error } = await supabase
@@ -470,9 +520,9 @@ export function useAuditoria(limite = 30) {
 }
 
 export function useWebhooks(limite = 20) {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery({
-    queryKey: ["webhooks", demo, limite],
+    queryKey: ["webhooks", escopo, limite],
     queryFn: async () => {
       if (demo) return [];
       const { data, error } = await supabase
@@ -553,9 +603,9 @@ export function useCarregarDadosDemo() {
 /* ---------------- Conversas ---------------- */
 
 export function useConversas() {
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   return useQuery<Conversation[]>({
-    queryKey: ["conversas", demo],
+    queryKey: ["conversas", escopo],
     queryFn: async () => {
       if (demo) return demoConversations;
       const { data, error } = await supabase

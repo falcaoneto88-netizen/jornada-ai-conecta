@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getGhlSecretsStatus, syncGhl, testGhlConnection } from "@/lib/ghl.functions";
-import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, useWebhooks } from "@/lib/repo";
+import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, usePermissoes, useWebhooks } from "@/lib/repo";
 
 export const Route = createFileRoute("/integracoes")({
   head: () => ({
@@ -40,7 +40,13 @@ const ESTADO_WEBHOOK: Record<string, { rotulo: string; variante: "default" | "ou
   recebido: { rotulo: "Recebido", variante: "outline" },
 };
 
-type EstadoSecrets = { token: boolean; locationId: boolean; webhookSecret: boolean; ia: boolean };
+type EstadoSecrets = {
+  configurada?: boolean;
+  token: boolean;
+  locationId: boolean;
+  webhookSecret: boolean;
+  ia: boolean;
+};
 
 function LinhaSecret({ nome, ativo, descricao }: { nome: string; ativo: boolean; descricao: string }) {
   return (
@@ -60,6 +66,8 @@ function LinhaSecret({ nome, ativo, descricao }: { nome: string; ativo: boolean;
 
 function Integracoes() {
   const { demo } = useModoDados();
+  const permissoes = usePermissoes();
+  const podeGerir = permissoes.gerirIntegracao;
   const { data: ligacao } = useLigacaoGhl();
   const { data: webhooks = [] } = useWebhooks(10);
   const guardar = useGuardarLigacaoGhl();
@@ -133,8 +141,6 @@ function Integracoes() {
     }
     guardar.mutate(
       {
-        api_base_url: baseUrl,
-        api_version: versao,
         default_pipeline_id: pipeline || null,
         calendar_id: calendario || null,
         write_enabled: escrita,
@@ -217,24 +223,15 @@ function Integracoes() {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="base-url">API Base URL</Label>
-                  <Input
-                    id="base-url"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    disabled={demo}
-                    className="mt-1.5 bg-card"
-                  />
+                  <Label htmlFor="base-url">Endereço da API (fixo)</Label>
+                  <Input id="base-url" value={baseUrl} readOnly disabled className="mt-1.5 bg-card" />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Definido no servidor e não editável, para o token nunca poder ser enviado a outro destino.
+                  </p>
                 </div>
                 <div>
-                  <Label htmlFor="versao">Version header</Label>
-                  <Input
-                    id="versao"
-                    value={versao}
-                    onChange={(e) => setVersao(e.target.value)}
-                    disabled={demo}
-                    className="mt-1.5 bg-card"
-                  />
+                  <Label htmlFor="versao">Versão da API (fixa)</Label>
+                  <Input id="versao" value={versao} readOnly disabled className="mt-1.5 bg-card" />
                 </div>
                 <div>
                   <Label htmlFor="pipeline">Pipeline ID padrão</Label>
@@ -243,7 +240,7 @@ function Integracoes() {
                     value={pipeline}
                     onChange={(e) => setPipeline(e.target.value)}
                     placeholder="ex.: pipe_98765"
-                    disabled={demo}
+                    disabled={demo || !podeGerir}
                     className="mt-1.5 bg-card"
                   />
                 </div>
@@ -254,11 +251,17 @@ function Integracoes() {
                     value={calendario}
                     onChange={(e) => setCalendario(e.target.value)}
                     placeholder="ex.: cal_12345"
-                    disabled={demo}
+                    disabled={demo || !podeGerir}
                     className="mt-1.5 bg-card"
                   />
                 </div>
               </div>
+
+              {!demo && !podeGerir && (
+                <p className="text-sm text-muted-foreground">
+                  Só o administrador da conta pode alterar, testar ou sincronizar esta ligação.
+                </p>
+              )}
 
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border p-4">
                 <div>
@@ -270,22 +273,27 @@ function Integracoes() {
                 <Switch
                   checked={escrita}
                   onCheckedChange={setEscrita}
-                  disabled={demo || !conectada}
+                  disabled={demo || !conectada || !podeGerir}
                   aria-label="Permitir escrita no GoHighLevel"
                 />
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void testarLigacao()} disabled={aTestar || demo}>
+                <Button onClick={() => void testarLigacao()} disabled={aTestar || demo || !podeGerir}>
                   <ShieldCheck className="size-4" /> {aTestar ? "A testar…" : "Testar conexão"}
                 </Button>
-                <Button variant="outline" onClick={() => void sincronizarAgora()} disabled={aSincronizar || demo}>
+                <Button
+                  variant="outline"
+                  onClick={() => void sincronizarAgora()}
+                  disabled={aSincronizar || demo || !podeGerir}
+                >
                   <RefreshCw className="size-4" /> {aSincronizar ? "A sincronizar…" : "Sincronização (leitura)"}
                 </Button>
-                <Button variant="outline" onClick={guardarConfig} disabled={demo || guardar.isPending}>
+                <Button variant="outline" onClick={guardarConfig} disabled={demo || guardar.isPending || !podeGerir}>
                   Guardar configuração
                 </Button>
               </div>
+
               <p className="text-xs text-muted-foreground">
                 Última sincronização:{" "}
                 {ligacao?.last_sync_at ? new Date(ligacao.last_sync_at).toLocaleString("pt-PT") : "—"}

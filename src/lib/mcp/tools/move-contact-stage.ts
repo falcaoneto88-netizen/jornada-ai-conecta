@@ -17,6 +17,14 @@ export default defineTool({
     if (!ctx.isAuthenticated()) return naoAutenticado();
     const supabase = supabaseForUser(ctx);
 
+    // Papel do próprio utilizador: as políticas de escrita exigem operação.
+    const { data: papeis, error: erroPapeis } = await supabase.from("user_roles").select("role");
+    if (erroPapeis) return erro(erroPapeis.message);
+    const podeOperar = (papeis ?? []).some((p) =>
+      ["administrador", "gestor", "comercial"].includes(String(p.role)),
+    );
+    if (!podeOperar) return erro("Não tem permissão para mover clientes de etapa.");
+
     const { data: etapa, error: erroEtapa } = await supabase
       .from("journey_stages")
       .select("key,name")
@@ -37,19 +45,24 @@ export default defineTool({
       .from("contacts")
       .update({ stage_key })
       .eq("id", contact_id)
-      .select("id,full_name,stage_key")
-      .maybeSingle();
+      .select("id,full_name,stage_key");
     if (error) return erro(error.message);
+    // Sem linhas afetadas significa que as políticas recusaram a escrita.
+    if (!data || data.length !== 1) {
+      return erro("A alteração não foi aplicada: sem permissão ou cliente fora da sua organização.");
+    }
 
-    await supabase.from("audit_logs").insert({
+    const { error: erroAuditoria } = await supabase.from("audit_logs").insert({
       organization_id: anterior.organization_id,
+      actor_id: ctx.getUserId?.() ?? null,
       action: "contacto.mover_etapa",
       entity: "contacts",
       entity_id: contact_id,
       actor_name: ctx.getUserEmail() ?? "MCP",
       metadata: { de: anterior.stage_key, para: stage_key, origem: "mcp" },
     });
+    if (erroAuditoria) return erro(`Alteração aplicada, mas a auditoria falhou: ${erroAuditoria.message}`);
 
-    return texto({ movido: data, etapa: etapa.name });
+    return texto({ movido: data[0], etapa: etapa.name });
   },
 });
