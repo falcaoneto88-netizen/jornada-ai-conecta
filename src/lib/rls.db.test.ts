@@ -94,7 +94,7 @@ describe("isolamento entre organizações", () => {
   it("A não muda a organização do próprio perfil", () => {
     const r = db.comoUtilizador(UID_A, `update public.profiles set organization_id = '${orgB}' where id = '${UID_A}';`);
     expect(r.ok).toBe(false);
-    expect(r.erro).toMatch(/organizacao nao permitida|row-level security/i);
+    expect(r.erro).toMatch(/organizacao nao permitida|row-level security|permission denied for column/i);
     expect(valor(db.admin(`select organization_id from public.profiles where id = '${UID_A}';`))).toBe(orgA);
   });
 
@@ -215,17 +215,51 @@ describe("integração e auditoria", () => {
   });
 
   it("o cliente não altera o endereço, a versão nem a location da API", () => {
-    const r = db.comoUtilizador(
-      UID_A,
-      `update public.ghl_connections
-         set api_base_url = 'https://atacante.example', api_version = '9999-01-01', location_id = 'outra'
-       where organization_id = '${orgA}';`,
-    );
-    expect(r.ok, r.erro).toBe(true);
+    for (const campo of ["api_base_url = 'https://atacante.example'", "api_version = '9999-01-01'", "location_id = 'outra'", `organization_id = '${orgB}'`]) {
+      const r = db.comoUtilizador(UID_A, `update public.ghl_connections set ${campo} where organization_id = '${orgA}';`);
+      expect(r.ok, `devia recusar: ${campo}`).toBe(false);
+      expect(r.erro).toMatch(/permission denied for column|row-level security/i);
+    }
     const linha = db.admin(
       `select api_base_url, api_version, coalesce(location_id,'-') from public.ghl_connections where organization_id = '${orgA}';`,
     );
     expect(linha.linhas.at(-1)).toEqual(["https://services.leadconnectorhq.com", "2021-07-28", "-"]);
+  });
+
+  it("o administrador continua a poder gerir os campos operacionais da ligação", () => {
+    const r = db.comoUtilizador(
+      UID_A,
+      `with x as (update public.ghl_connections set write_enabled = true, default_pipeline_id = 'pipe_1'
+         where organization_id = '${orgA}' returning 1) select count(*) from x;`,
+    );
+    expect(valor(r)).toBe("1");
+  });
+
+  it("o backend de confiança mantém a capacidade de atualizar a ligação", () => {
+    const r = db.comoServico(
+      `with x as (update public.ghl_connections set location_id = 'loc-sintetica-A'
+         where organization_id = '${orgA}' returning 1) select count(*) from x;`,
+    );
+    expect(valor(r)).toBe("1");
+  });
+
+  it("privilégios por coluna protegem o perfil em qualquer via de acesso", () => {
+    for (const campo of ["email = 'novo@exemplo.test'", "id = gen_random_uuid()", "created_at = now()"]) {
+      const r = db.comoUtilizador(UID_A, `update public.profiles set ${campo} where id = '${UID_A}';`);
+      expect(r.ok, `devia recusar: ${campo}`).toBe(false);
+    }
+    expect(valor(db.admin(`select email from public.profiles where id = '${UID_A}';`))).toBe("a@exemplo.test");
+  });
+
+  it("as consultas de papéis só respondem sobre a própria identidade e organização", () => {
+    const proprio = db.comoUtilizador(UID_A, `select public.has_role('${UID_A}', 'administrador');`);
+    expect(valor(proprio)).toBe("t");
+    const alheio = db.comoUtilizador(UID_C, `select public.has_role('${UID_A}', 'administrador');`);
+    expect(valor(alheio)).toBe("f");
+    const outraOrg = db.comoUtilizador(UID_A, `select public.has_org_role('${UID_B}', '${orgB}', 'administrador');`);
+    expect(valor(outraOrg)).toBe("f");
+    const backend = db.comoServico(`select public.has_org_role('${UID_B}', '${orgB}', 'administrador');`);
+    expect(valor(backend)).toBe("t");
   });
 
   it("a auditoria não aceita identidades de outras pessoas", () => {
