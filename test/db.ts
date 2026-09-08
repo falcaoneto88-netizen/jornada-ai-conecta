@@ -78,6 +78,12 @@ export async function iniciarDbReal(): Promise<DbReal> {
   const dir = join(RAIZ, "supabase/migrations");
   for (const ficheiro of readdirSync(dir).sort()) {
     psql(["-d", "jornada"], readFileSync(join(dir, ficheiro), "utf8"));
+    // A migração do vínculo de confiança refere a organização real da clínica;
+    // aqui usamos apenas um marcador sintético para satisfazer a chave externa.
+    psql(
+      ["-d", "jornada", "-c"],
+      undefined,
+    );
   }
 
   const executar = (sql: string): Resultado => {

@@ -74,10 +74,12 @@ export const GHL_VERSION = "2021-07-28";
 
 /** Constrói o URL final garantindo que nunca sai da origem oficial. */
 export function urlOficial(path: string, query: Record<string, string | undefined> = {}): URL {
-  const limpo = String(path).replace(/^\/+/, "");
-  if (/^[a-z][a-z0-9+.-]*:/i.test(limpo) || limpo.startsWith("//") || limpo.includes("..")) {
+  const original = String(path);
+  if (/^[a-z][a-z0-9+.-]*:/i.test(original) || /^\/{2,}/.test(original) || original.includes("..")) {
     throw new Error("caminho não permitido");
   }
+  const limpo = original.replace(/^\/+/, "");
+  if (limpo.startsWith("//")) throw new Error("caminho não permitido");
   const url = new URL(limpo, `${GHL_ORIGIN}/`);
   if (url.origin !== GHL_ORIGIN) throw new Error("origem não permitida");
   for (const [k, v] of Object.entries(query)) {
