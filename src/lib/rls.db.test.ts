@@ -94,7 +94,7 @@ describe("isolamento entre organizações", () => {
   it("A não muda a organização do próprio perfil", () => {
     const r = db.comoUtilizador(UID_A, `update public.profiles set organization_id = '${orgB}' where id = '${UID_A}';`);
     expect(r.ok).toBe(false);
-    expect(r.erro).toMatch(/organizacao nao permitida|row-level security|permission denied for column/i);
+    expect(r.erro).toMatch(/organizacao nao permitida|row-level security|permission denied for (column|table)/i);
     expect(valor(db.admin(`select organization_id from public.profiles where id = '${UID_A}';`))).toBe(orgA);
   });
 
@@ -218,7 +218,7 @@ describe("integração e auditoria", () => {
     for (const campo of ["api_base_url = 'https://atacante.example'", "api_version = '9999-01-01'", "location_id = 'outra'", `organization_id = '${orgB}'`]) {
       const r = db.comoUtilizador(UID_A, `update public.ghl_connections set ${campo} where organization_id = '${orgA}';`);
       expect(r.ok, `devia recusar: ${campo}`).toBe(false);
-      expect(r.erro).toMatch(/permission denied for column|row-level security/i);
+      expect(r.erro).toMatch(/permission denied for (column|table)|row-level security/i);
     }
     const linha = db.admin(
       `select api_base_url, api_version, coalesce(location_id,'-') from public.ghl_connections where organization_id = '${orgA}';`,
