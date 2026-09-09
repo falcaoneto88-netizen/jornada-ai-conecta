@@ -740,7 +740,10 @@ function Integracoes() {
           </TabsContent>
 
           <TabsContent value="mapeamento" className="mt-4">
-            <MapeamentoPipelines conectada={conectada} podeGerir={podeGerir} demo={demo} />
+            <div className="space-y-8">
+              <MapeamentoPipelines conectada={conectada} podeGerir={podeGerir} demo={demo} />
+              <MapeamentoCalendarios conectada={conectada} podeGerir={podeGerir} demo={demo} />
+            </div>
           </TabsContent>
 
 
