@@ -108,7 +108,7 @@ export function AgendaCalendario({ vista, dataReferencia, marcacoes, onSeleciona
   const hoje = new Date();
 
   if (vista === "dia") {
-    const lista = doDia(dias[0]);
+    const lista = doDia(dias[0] ?? startOfDay(dataReferencia));
     return (
       <div className="surface-card p-5">
         {lista.length === 0 ? (
@@ -196,7 +196,8 @@ export function AgendaCalendario({ vista, dataReferencia, marcacoes, onSeleciona
     );
   }
 
-  const cabecalho = eachDayOfInterval({ start: dias[0], end: addDays(dias[0], 6) });
+  const primeiro = dias[0] ?? startOfDay(dataReferencia);
+  const cabecalho = eachDayOfInterval({ start: primeiro, end: addDays(primeiro, 6) });
   return (
     <div className="surface-card overflow-hidden">
       <div className="grid grid-cols-7 border-b border-border">
