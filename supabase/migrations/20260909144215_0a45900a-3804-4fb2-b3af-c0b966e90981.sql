@@ -1,0 +1,2 @@
+alter table public.journey_stages add column if not exists ghl_stage_position integer;
+comment on column public.journey_stages.ghl_stage_position is 'Posicao da etapa no pipeline do GoHighLevel (somente leitura).';

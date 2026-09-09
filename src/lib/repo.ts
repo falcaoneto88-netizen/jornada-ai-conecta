@@ -177,7 +177,81 @@ export function useGuardarMapeamentoEtapa() {
   });
 }
 
+/* ---------------- Oportunidades (leitura do GoHighLevel) ---------------- */
+
+export type EtapaPipeline = { key: string; nome: string; posicao: number; ghlStageId: string | null };
+
+export type Oportunidade = {
+  id: string;
+  nome: string;
+  contacto: string;
+  etapa: string | null;
+  valor: number | null;
+  estado: string;
+  atualizada: string;
+};
+
+/** Etapas ligadas ao pipeline configurado, pela ordem do GoHighLevel. */
+export function useEtapasPipeline(pipelineId: string | null | undefined) {
+  const { demo, escopo } = useModoDados();
+  return useQuery<EtapaPipeline[]>({
+    queryKey: ["etapas-pipeline", escopo, pipelineId ?? "sem"],
+    enabled: Boolean(pipelineId) && !demo,
+    queryFn: async () => {
+      if (!pipelineId) return [];
+      const { data, error } = await supabase
+        .from("journey_stages")
+        .select("key,name,position,ghl_stage_id,ghl_stage_position")
+        .eq("ghl_pipeline_id", pipelineId)
+        .order("ghl_stage_position", { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return (data ?? []).map((s) => ({
+        key: s.key,
+        nome: s.name,
+        posicao: s.ghl_stage_position ?? s.position,
+        ghlStageId: s.ghl_stage_id,
+      }));
+    },
+  });
+}
+
+export function useOportunidades(pipelineId: string | null | undefined) {
+  const { demo, escopo } = useModoDados();
+  return useQuery<Oportunidade[]>({
+    queryKey: ["oportunidades", escopo, pipelineId ?? "sem"],
+    enabled: Boolean(pipelineId) && !demo,
+    queryFn: async () => {
+      if (!pipelineId) return [];
+      const { data, error } = await supabase
+        .from("opportunities")
+        .select("id,name,stage_key,monetary_value,status,updated_at,contacts(full_name)")
+        .eq("pipeline_id", pipelineId)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      type Linha = {
+        id: string;
+        name: string;
+        stage_key: string | null;
+        monetary_value: number | null;
+        status: string;
+        updated_at: string;
+        contacts: { full_name: string } | null;
+      };
+      return (data as unknown as Linha[]).map((o) => ({
+        id: o.id,
+        nome: o.name,
+        contacto: o.contacts?.full_name ?? "Contacto por associar",
+        etapa: o.stage_key,
+        valor: o.monetary_value,
+        estado: o.status,
+        atualizada: dataHoraPt(o.updated_at),
+      }));
+    },
+  });
+}
+
 /* ---------------- Contactos ---------------- */
+
 
 export function useContactos() {
   const { demo, escopo } = useModoDados();

@@ -12,7 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  configurarPipelineGhl,
+  listarPipelinesGhl,
+  sincronizarOportunidadesGhl,
+} from "@/lib/ghl-pipelines.functions";
 import { getGhlSecretsStatus, syncGhl, testGhlConnection } from "@/lib/ghl.functions";
+
 import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, usePermissoes, useWebhooks } from "@/lib/repo";
 
 export const Route = createFileRoute("/integracoes")({
@@ -64,7 +70,169 @@ function LinhaSecret({ nome, ativo, descricao }: { nome: string; ativo: boolean;
   );
 }
 
+type PipelineListado = { id: string; name: string; stages: { id: string; name: string; position: number }[] };
+
+function MapeamentoPipelines({
+  conectada,
+  podeGerir,
+  demo,
+}: {
+  conectada: boolean;
+  podeGerir: boolean;
+  demo: boolean;
+}) {
+  const listar = useServerFn(listarPipelinesGhl);
+  const configurar = useServerFn(configurarPipelineGhl);
+  const sincronizarOps = useServerFn(sincronizarOportunidadesGhl);
+  const [pipelines, setPipelines] = useState<PipelineListado[] | null>(null);
+  const [selecionado, setSelecionado] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aCarregar, setACarregar] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [aImportar, setAImportar] = useState(false);
+
+  async function carregar() {
+    setACarregar(true);
+    setErro(null);
+    try {
+      const res = await listar();
+      if (!res.ok) {
+        setErro(res.message);
+        setPipelines([]);
+        return;
+      }
+      setPipelines(res.pipelines);
+      setSelecionado(res.selecionado ?? null);
+    } catch {
+      setErro("Não foi possível obter os funis da conta.");
+    } finally {
+      setACarregar(false);
+    }
+  }
+
+  async function guardar(pipelineId: string) {
+    setAGuardar(true);
+    try {
+      const res = await configurar({ data: { pipelineId } });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      setSelecionado(pipelineId);
+      toast.success(
+        `Funil «${res.pipeline.name}» ligado: ${res.etapasAssociadas} etapa(s) associada(s), ${res.etapasCriadas} criada(s).`,
+      );
+    } catch {
+      toast.error("Não foi possível guardar o funil.");
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  async function importar() {
+    setAImportar(true);
+    try {
+      const res = await sincronizarOps();
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      const r = res.resultado;
+      const resumo = `${r.inseridas} novas, ${r.atualizadas} atualizadas, ${r.contactosNovos} contacto(s) novo(s)`;
+      if (r.completo) toast.success(`Oportunidades sincronizadas: ${resumo}.`);
+      else toast.warning(`Sincronização incompleta: ${resumo}. ${r.conflitos.length} ocorrência(s).`);
+    } catch {
+      toast.error("Não foi possível sincronizar as oportunidades.");
+    } finally {
+      setAImportar(false);
+    }
+  }
+
+  if (demo || !podeGerir) {
+    return (
+      <div className="surface-card p-6 text-sm text-muted-foreground">
+        Apenas administradores da conta podem ligar funis do GoHighLevel.
+      </div>
+    );
+  }
+
+  if (!conectada) {
+    return (
+      <div className="surface-card p-6 text-sm text-muted-foreground">
+        Valide primeiro a ligação no separador Ligação para carregar os funis reais.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">Funis e etapas do GoHighLevel</h3>
+          <p className="text-sm text-muted-foreground">
+            Escolha o funil a acompanhar. As etapas são criadas ou associadas apenas por nome exatamente igual.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => void carregar()} disabled={aCarregar}>
+            <RefreshCw className="size-4" /> {aCarregar ? "A carregar…" : "Carregar funis"}
+          </Button>
+          <Button onClick={() => void importar()} disabled={!selecionado || aImportar}>
+            {aImportar ? "A sincronizar…" : "Sincronizar oportunidades"}
+          </Button>
+        </div>
+      </div>
+
+      {erro && <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{erro}</p>}
+
+      {pipelines === null && !erro && (
+        <div className="surface-card p-6 text-sm text-muted-foreground">
+          Clique em «Carregar funis» para ler os funis reais da conta ligada.
+        </div>
+      )}
+
+      {pipelines?.length === 0 && !erro && (
+        <div className="surface-card p-6 text-sm text-muted-foreground">Nenhum funil encontrado nesta conta.</div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {(pipelines ?? []).map((p) => (
+          <section key={p.id} className="surface-card space-y-3 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold break-words">{p.name}</h4>
+                <p className="text-xs text-muted-foreground">{p.stages.length} etapa(s)</p>
+              </div>
+              {selecionado === p.id ? (
+                <Badge>Ligado</Badge>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => void guardar(p.id)} disabled={aGuardar}>
+                  Ligar
+                </Button>
+              )}
+            </div>
+            <ol className="space-y-1 text-xs text-muted-foreground">
+              {[...p.stages]
+                .sort((a, b) => a.position - b.position)
+                .map((s, i) => (
+                  <li key={s.id}>
+                    {i + 1}. {s.name}
+                  </li>
+                ))}
+            </ol>
+          </section>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        A ligação está em modo leitura: nada é criado nem movido no GoHighLevel.
+      </p>
+    </div>
+  );
+}
+
 function Integracoes() {
+
   const { demo } = useModoDados();
   const permissoes = usePermissoes();
   const podeGerir = permissoes.gerirIntegracao;
@@ -372,22 +540,9 @@ function Integracoes() {
           </TabsContent>
 
           <TabsContent value="mapeamento" className="mt-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {["Pipelines", "Stages", "Utilizadores", "Calendários"].map((m) => (
-                <section key={m} className="surface-card p-5">
-                  <h3 className="text-base font-semibold">{m}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {conectada
-                      ? "Faça o mapeamento por etapa no separador Jornada › Mapear Pipeline/Stage."
-                      : "A lista é carregada do GoHighLevel após validação da ligação."}
-                  </p>
-                  <div className="mt-3 rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
-                    {conectada ? "Ligação validada" : "Sem dados — ligação por validar"}
-                  </div>
-                </section>
-              ))}
-            </div>
+            <MapeamentoPipelines conectada={conectada} podeGerir={podeGerir} demo={demo} />
           </TabsContent>
+
 
           <TabsContent value="guia" className="mt-4">
             <article className="surface-card space-y-4 p-6 text-sm">
