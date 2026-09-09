@@ -14,6 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          assigned_user_name: string | null
+          contact_id: string | null
+          created_at: string
+          end_at: string | null
+          ghl_appointment_id: string | null
+          ghl_calendar_id: string | null
+          id: string
+          is_demo: boolean
+          notes: string | null
+          organization_id: string
+          start_at: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_user_name?: string | null
+          contact_id?: string | null
+          created_at?: string
+          end_at?: string | null
+          ghl_appointment_id?: string | null
+          ghl_calendar_id?: string | null
+          id?: string
+          is_demo?: boolean
+          notes?: string | null
+          organization_id: string
+          start_at: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_user_name?: string | null
+          contact_id?: string | null
+          created_at?: string
+          end_at?: string | null
+          ghl_appointment_id?: string | null
+          ghl_calendar_id?: string | null
+          id?: string
+          is_demo?: boolean
+          notes?: string | null
+          organization_id?: string
+          start_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
