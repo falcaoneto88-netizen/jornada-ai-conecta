@@ -86,7 +86,80 @@ export const listarPipelinesGhl = createServerFn({ method: "GET" })
     };
   });
 
-/** Liga um pipeline real a esta organização e prepara as etapas locais. */
+/** Liga um pipeline real à organização. Reutilizável por qualquer chamador autorizado. */
+export async function executarConfiguracaoPipeline(args: {
+  supabase: SupabaseClient;
+  orgId: string;
+  cfg: { baseUrl: string; version: string; token: string; locationId: string };
+  pipelineId: string;
+  ator: { id: string | null; nome: string };
+}) {
+  const { supabase, orgId, cfg, pipelineId, ator } = args;
+  const res = await lerPipelines(cfg);
+  if (!res.ok) return { ok: false as const, code: res.code, message: res.message };
+
+  const pipeline = res.pipelines.find((p) => p.id === pipelineId);
+  if (!pipeline) {
+    return {
+      ok: false as const,
+      code: "not_found" as const,
+      message: "Esse pipeline não existe na localização autorizada desta conta.",
+    };
+  }
+
+  const { data: locaisRaw, error: erroLocais } = await supabase
+    .from("journey_stages")
+    .select("key,name,position,ghl_pipeline_id,ghl_stage_id")
+    .eq("organization_id", orgId)
+    .order("position");
+  if (erroLocais) {
+    return { ok: false as const, code: "server_error" as const, message: "Não foi possível ler as etapas locais." };
+  }
+  const locais = (locaisRaw ?? []) as EtapaLocal[];
+  const plano = planearEtapas({ pipelineId: pipeline.id, stages: pipeline.stages, locais });
+
+  for (const a of plano.atualizar) {
+    const { error } = await supabase
+      .from("journey_stages")
+      .update({
+        ghl_pipeline_id: a.ghl_pipeline_id,
+        ghl_stage_id: a.ghl_stage_id,
+        ghl_stage_position: a.ghl_stage_position,
+      })
+      .eq("organization_id", orgId)
+      .eq("key", a.key);
+    if (error) return { ok: false as const, code: "server_error" as const, message: error.message };
+  }
+  if (plano.criar.length > 0) {
+    const { error } = await supabase
+      .from("journey_stages")
+      .insert(plano.criar.map((c) => ({ ...c, organization_id: orgId })));
+    if (error) return { ok: false as const, code: "server_error" as const, message: error.message };
+  }
+
+  const { error: erroConn } = await supabase
+    .from("ghl_connections")
+    .update({ default_pipeline_id: pipeline.id })
+    .eq("organization_id", orgId);
+  if (erroConn) return { ok: false as const, code: "server_error" as const, message: erroConn.message };
+
+  await supabase.from("audit_logs").insert({
+    organization_id: orgId,
+    actor_id: ator.id,
+    actor_name: ator.nome,
+    action: "ghl.pipeline_configurado",
+    entity: "ghl_connections",
+    metadata: { pipeline_id: pipeline.id, pipeline: pipeline.name, etapas: pipeline.stages.length },
+  });
+
+  return {
+    ok: true as const,
+    pipeline: { id: pipeline.id, name: pipeline.name },
+    etapasAssociadas: plano.atualizar.length,
+    etapasCriadas: plano.criar.length,
+  };
+}
+
 export const configurarPipelineGhl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { pipelineId: string }) => input)
@@ -94,72 +167,15 @@ export const configurarPipelineGhl = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const base = await ctxGhl(ctx, ["administrador"]);
     if (!base.ok) return { ok: false as const, code: base.code, message: base.message };
-    const { orgId, nome } = base.acesso;
-
-    const res = await lerPipelines(base.cfg);
-    if (!res.ok) return { ok: false as const, code: res.code, message: res.message };
-
-    const pipeline = res.pipelines.find((p) => p.id === data.pipelineId);
-    if (!pipeline) {
-      return {
-        ok: false as const,
-        code: "not_found" as const,
-        message: "Esse pipeline não existe na localização autorizada desta conta.",
-      };
-    }
-
-    const { data: locaisRaw, error: erroLocais } = await ctx.supabase
-      .from("journey_stages")
-      .select("key,name,position,ghl_pipeline_id,ghl_stage_id")
-      .eq("organization_id", orgId)
-      .order("position");
-    if (erroLocais) {
-      return { ok: false as const, code: "server_error" as const, message: "Não foi possível ler as etapas locais." };
-    }
-    const locais = (locaisRaw ?? []) as EtapaLocal[];
-    const plano = planearEtapas({ pipelineId: pipeline.id, stages: pipeline.stages, locais });
-
-    for (const a of plano.atualizar) {
-      const { error } = await ctx.supabase
-        .from("journey_stages")
-        .update({
-          ghl_pipeline_id: a.ghl_pipeline_id,
-          ghl_stage_id: a.ghl_stage_id,
-          ghl_stage_position: a.ghl_stage_position,
-        })
-        .eq("organization_id", orgId)
-        .eq("key", a.key);
-      if (error) return { ok: false as const, code: "server_error" as const, message: error.message };
-    }
-    if (plano.criar.length > 0) {
-      const { error } = await ctx.supabase
-        .from("journey_stages")
-        .insert(plano.criar.map((c) => ({ ...c, organization_id: orgId })));
-      if (error) return { ok: false as const, code: "server_error" as const, message: error.message };
-    }
-
-    const { error: erroConn } = await ctx.supabase
-      .from("ghl_connections")
-      .update({ default_pipeline_id: pipeline.id })
-      .eq("organization_id", orgId);
-    if (erroConn) return { ok: false as const, code: "server_error" as const, message: erroConn.message };
-
-    await ctx.supabase.from("audit_logs").insert({
-      organization_id: orgId,
-      actor_id: ctx.userId,
-      actor_name: nome,
-      action: "ghl.pipeline_configurado",
-      entity: "ghl_connections",
-      metadata: { pipeline_id: pipeline.id, pipeline: pipeline.name, etapas: pipeline.stages.length },
+    return executarConfiguracaoPipeline({
+      supabase: ctx.supabase,
+      orgId: base.acesso.orgId,
+      cfg: base.cfg,
+      pipelineId: data.pipelineId,
+      ator: { id: ctx.userId, nome: base.acesso.nome },
     });
-
-    return {
-      ok: true as const,
-      pipeline: { id: pipeline.id, name: pipeline.name },
-      etapasAssociadas: plano.atualizar.length,
-      etapasCriadas: plano.criar.length,
-    };
   });
+
 
 /** Adaptador Supabase do motor de sincronização. */
 export function criarLoja(supabase: SupabaseClient, orgId: string): LojaSincronizacao {
