@@ -179,10 +179,12 @@ describe("regressões de paginação e vínculos", () => {
   });
 
   it("não apaga o vínculo anterior quando o contacto falha numa atualização", async () => {
-    const { loja, oportunidades } = lojaMemoria();
+    const { loja, oportunidades, contactos } = lojaMemoria();
     await sincronizarOportunidades(deps([[op(1)]], loja));
     const antes = oportunidades.get("opp-1")!.contact_id;
     expect(antes).not.toBeNull();
+    // O contacto deixa de ser resolúvel (removido da conta de origem).
+    contactos.delete("ghl-c-1");
     const r = await sincronizarOportunidades(deps([[op(1)]], loja, new Set(["ghl-c-1"])));
     expect(oportunidades.get("opp-1")!.contact_id).toBe(antes);
     expect(r.adiadas).toBe(1);
