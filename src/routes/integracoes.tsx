@@ -12,7 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  configurarPipelineGhl,
+  listarPipelinesGhl,
+  sincronizarOportunidadesGhl,
+} from "@/lib/ghl-pipelines.functions";
 import { getGhlSecretsStatus, syncGhl, testGhlConnection } from "@/lib/ghl.functions";
+
 import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, usePermissoes, useWebhooks } from "@/lib/repo";
 
 export const Route = createFileRoute("/integracoes")({
