@@ -23,6 +23,7 @@ import { Route as ModelosRouteImport } from './routes/modelos'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
+import { Route as ApiPublicHooksSincronizarAgendaRouteImport } from './routes/api/public/hooks/sincronizar-agenda'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -95,6 +96,12 @@ const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
   path: '/api/public/ghl-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksSincronizarAgendaRoute =
+  ApiPublicHooksSincronizarAgendaRouteImport.update({
+    id: '/api/public/hooks/sincronizar-agenda',
+    path: '/api/public/hooks/sincronizar-agenda',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
+  '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -127,6 +135,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
+  '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -144,6 +153,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
+  '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
     | '/api/public/ghl-webhook'
+    | '/api/public/hooks/sincronizar-agenda'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
     | '/api/public/ghl-webhook'
+    | '/api/public/hooks/sincronizar-agenda'
   id:
     | '__root__'
     | '/'
@@ -194,6 +206,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
     | '/api/public/ghl-webhook'
+    | '/api/public/hooks/sincronizar-agenda'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -211,6 +224,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
+  ApiPublicHooksSincronizarAgendaRoute: typeof ApiPublicHooksSincronizarAgendaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -313,6 +327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGhlWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/sincronizar-agenda': {
+      id: '/api/public/hooks/sincronizar-agenda'
+      path: '/api/public/hooks/sincronizar-agenda'
+      fullPath: '/api/public/hooks/sincronizar-agenda'
+      preLoaderRoute: typeof ApiPublicHooksSincronizarAgendaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -332,6 +353,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
+  ApiPublicHooksSincronizarAgendaRoute: ApiPublicHooksSincronizarAgendaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

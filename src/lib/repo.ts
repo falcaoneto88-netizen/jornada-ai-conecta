@@ -293,6 +293,9 @@ export function useMarcacoes() {
   const { demo, escopo } = useModoDados();
   return useQuery<Marcacao[]>({
     queryKey: ["marcacoes", escopo],
+    // A importação corre de hora a hora no backend; o quadro recarrega sozinho.
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       if (demo) return [];
       const { data, error } = await supabase
