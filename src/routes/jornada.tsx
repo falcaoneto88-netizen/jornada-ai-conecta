@@ -94,6 +94,7 @@ function QuadroOportunidades() {
   const sincronizar = useServerFn(sincronizarOportunidadesGhl);
   const [estado, setEstado] = useState("todos");
   const [aSincronizar, setASincronizar] = useState(false);
+  const [ocorrencias, setOcorrencias] = useState<string[]>([]);
 
   async function importar() {
     setASincronizar(true);
@@ -105,8 +106,12 @@ function QuadroOportunidades() {
       }
       const r = res.resultado;
       const resumo = `${r.inseridas} novas, ${r.atualizadas} atualizadas`;
+      setOcorrencias(r.conflitos);
       if (r.completo) toast.success(`Sincronização em leitura concluída: ${resumo}.`);
-      else toast.warning(`Sincronização incompleta: ${resumo}. ${r.conflitos.length} ocorrência(s).`);
+      else
+        toast.warning(
+          `Sincronização incompleta: ${resumo}${r.adiadas ? `, ${r.adiadas} adiada(s)` : ""}. ${r.conflitos.length} ocorrência(s).`,
+        );
       await Promise.all([etapas.refetch(), oportunidades.refetch()]);
     } catch {
       toast.error("Não foi possível sincronizar as oportunidades.");
@@ -146,6 +151,8 @@ function QuadroOportunidades() {
   }
 
   const visiveis = (oportunidades.data ?? []).filter((o) => estado === "todos" || o.estado === estado);
+  const chavesEtapas = new Set((etapas.data ?? []).map((e) => e.key));
+  const naoMapeadas = visiveis.filter((o) => !o.etapa || !chavesEtapas.has(o.etapa));
 
   return (
     <div className="space-y-4">
@@ -165,6 +172,7 @@ function QuadroOportunidades() {
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground">
             {visiveis.length} oportunidade(s) · leitura apenas
+            {naoMapeadas.length > 0 ? ` · ${naoMapeadas.length} por mapear` : ""}
           </span>
           {permissoes.gerirIntegracao && (
             <Button variant="outline" size="sm" onClick={() => void importar()} disabled={aSincronizar}>
@@ -173,6 +181,17 @@ function QuadroOportunidades() {
           )}
         </div>
       </div>
+
+      {ocorrencias.length > 0 && (
+        <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+          <h3 className="text-sm font-semibold">Ocorrências da última sincronização ({ocorrencias.length})</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+            {ocorrencias.slice(0, 10).map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="flex gap-4 overflow-x-auto pb-4">
         {(etapas.data ?? []).map((etapa) => {
@@ -215,6 +234,37 @@ function QuadroOportunidades() {
             </section>
           );
         })}
+
+        {naoMapeadas.length > 0 && (
+          <section
+            className="w-[272px] shrink-0 rounded-2xl border border-dashed border-amber-500/50 bg-amber-500/5 p-3"
+            aria-label="Oportunidades por mapear"
+          >
+            <header className="px-1 pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-heading">Por mapear</h2>
+                <span className="rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">
+                  {naoMapeadas.length}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Etapa do GoHighLevel ainda sem correspondência.</p>
+            </header>
+            <ul className="space-y-2">
+              {naoMapeadas.map((o) => (
+                <li key={o.id} className="rounded-xl border border-border bg-card p-3 shadow-soft">
+                  <p className="text-sm font-medium text-heading">{o.contacto}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{o.nome}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-heading">{euros(o.valor)}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {ROTULO_ESTADO[o.estado] ?? o.estado}
+                    </Badge>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         Esta ligação está em modo leitura: os cartões refletem o GoHighLevel e não podem ser arrastados.

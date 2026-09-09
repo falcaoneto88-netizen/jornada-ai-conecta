@@ -226,7 +226,9 @@ export function useOportunidades(pipelineId: string | null | undefined) {
         .from("opportunities")
         .select("id,name,stage_key,monetary_value,status,updated_at,contacts(full_name)")
         .eq("pipeline_id", pipelineId)
+        .eq("is_demo", false)
         .order("updated_at", { ascending: false });
+
       if (error) throw error;
       type Linha = {
         id: string;

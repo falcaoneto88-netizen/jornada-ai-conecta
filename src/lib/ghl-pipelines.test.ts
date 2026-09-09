@@ -41,8 +41,9 @@ function lojaMemoria() {
       return id;
     },
     async oportunidadesPorGhlId(ids) {
-      const m = new Map<string, string>();
-      for (const id of ids) if (oportunidades.has(id)) m.set(id, `op-${id}`);
+      const m = new Map<string, { id: string; contactId: string | null }>();
+      for (const id of ids)
+        if (oportunidades.has(id)) m.set(id, { id: `op-${id}`, contactId: oportunidades.get(id)!.contact_id });
       return m;
     },
     async inserirOportunidade(linha) {
@@ -114,6 +115,91 @@ function deps(paginas: OportunidadeGhl[][], loja: LojaSincronizacao, contactosFa
   };
 }
 
+describe("regressões de paginação e vínculos", () => {
+  it("não declara completo quando o total anunciado não é alcançado", async () => {
+    const { loja } = lojaMemoria();
+    const base = deps([[op(1), op(2)]], loja);
+    const r = await sincronizarOportunidades({
+      ...base,
+      limitePagina: 100,
+      buscarPagina: async () => ({ ok: true as const, oportunidades: [op(1), op(2)], meta: { total: 39 } }),
+    });
+    expect(r.total).toBe(39);
+    expect(r.completo).toBe(false);
+    expect(r.conflitos.join(" ")).toContain("39");
+  });
+
+  it("interrompe e sinaliza cursor repetido", async () => {
+    const { loja } = lojaMemoria();
+    const base = deps([[op(1)]], loja);
+    const r = await sincronizarOportunidades({
+      ...base,
+      buscarPagina: async () => ({
+        ok: true as const,
+        oportunidades: [op(1)],
+        meta: { startAfter: 10, startAfterId: "sempre-o-mesmo" },
+      }),
+    });
+    expect(r.paginas).toBe(2);
+    expect(r.completo).toBe(false);
+    expect(r.conflitos.join(" ")).toContain("cursor");
+  });
+
+  it("sinaliza página cheia sem cursor seguinte", async () => {
+    const cheia = Array.from({ length: 5 }, (_, i) => op(i + 1));
+    const { loja } = lojaMemoria();
+    const base = deps([cheia], loja);
+    const r = await sincronizarOportunidades({
+      ...base,
+      limitePagina: 5,
+      buscarPagina: async () => ({ ok: true as const, oportunidades: cheia, meta: {} }),
+    });
+    expect(r.completo).toBe(false);
+    expect(r.conflitos.join(" ")).toContain("sem cursor");
+  });
+
+  it("recusa cursores mal formados e nunca segue URLs", () => {
+    expect(cursorSeguinte({ startAfterId: "a".repeat(200) })).toBeNull();
+    expect(cursorSeguinte({ startAfterId: "https://evil.example/x?a=1" })).toBeNull();
+    expect(cursorSeguinte({ startAfter: "não-numérico" })).toBeNull();
+    expect(cursorSeguinte({ nextPageUrl: "https://evil.example" })).toBeNull();
+  });
+
+  it("recusa oportunidade sem location declarada", () => {
+    const semLocation = { ...op(1) };
+    delete (semLocation as { locationId?: string }).locationId;
+    expect(validarOportunidade(semLocation, { locationId: LOCATION, pipelineId: PIPELINE }).ok).toBe(false);
+  });
+
+  it("registos ignorados contam como inconsistência", async () => {
+    const { loja } = lojaMemoria();
+    const r = await sincronizarOportunidades(deps([[op(1), op(2, { pipelineId: "outro" })]], loja));
+    expect(r.ignoradas).toBe(1);
+    expect(r.completo).toBe(false);
+  });
+
+  it("não apaga o vínculo anterior quando o contacto falha numa atualização", async () => {
+    const { loja, oportunidades, contactos } = lojaMemoria();
+    await sincronizarOportunidades(deps([[op(1)]], loja));
+    const antes = oportunidades.get("opp-1")!.contact_id;
+    expect(antes).not.toBeNull();
+    // O contacto deixa de ser resolúvel (removido da conta de origem).
+    contactos.delete("ghl-c-1");
+    const r = await sincronizarOportunidades(deps([[op(1)]], loja, new Set(["ghl-c-1"])));
+    expect(oportunidades.get("opp-1")!.contact_id).toBe(antes);
+    expect(r.adiadas).toBe(1);
+    expect(r.atualizadas).toBe(0);
+  });
+
+  it("assinala etapa fora do funil real", async () => {
+    const { loja } = lojaMemoria();
+    const base = deps([[op(1, { pipelineStageId: "stage-fantasma" })]], loja);
+    const r = await sincronizarOportunidades({ ...base, etapasValidas: ["stage-1", "stage-2"] });
+    expect(r.completo).toBe(false);
+    expect(r.conflitos.join(" ")).toContain("não existe no funil");
+  });
+});
+
 describe("planearEtapas", () => {
   const stages = [
     { id: "s1", name: "Novo Lead", position: 0 },
@@ -136,6 +222,67 @@ describe("planearEtapas", () => {
     expect(plano.mapa["s3"]).not.toBe("pos_procedimento");
     expect(plano.criar.every((c) => c.ghl_pipeline_id === PIPELINE)).toBe(true);
     expect(plano.criar.map((c) => c.ghl_stage_position)).toEqual([1, 2]);
+  });
+
+  it("mantém o vínculo por stageId mesmo que o GHL renomeie a etapa", () => {
+    const plano = planearEtapas({
+      pipelineId: PIPELINE,
+      stages: [{ id: "s1", name: "Novo Lead (2026)", position: 0 }],
+      locais: [{ key: "novo_lead", name: "Novo Lead", position: 1, ghl_pipeline_id: PIPELINE, ghl_stage_id: "s1" }],
+    });
+    expect(plano.criar).toHaveLength(0);
+    expect(plano.atualizar[0]!.key).toBe("novo_lead");
+  });
+
+  it("repetir a configuração mantém as mesmas chaves", () => {
+    const stagesReais = [
+      { id: "s1", name: "Novo Lead", position: 0 },
+      { id: "s2", name: "Consulta Paga", position: 1 },
+    ];
+    const primeiro = planearEtapas({ pipelineId: PIPELINE, stages: stagesReais, locais: [] });
+    const locais = primeiro.criar.map((c) => ({
+      key: c.key,
+      name: c.name,
+      position: c.position,
+      ghl_pipeline_id: c.ghl_pipeline_id,
+      ghl_stage_id: c.ghl_stage_id,
+    }));
+    const segundo = planearEtapas({ pipelineId: PIPELINE, stages: stagesReais, locais });
+    expect(segundo.criar).toHaveLength(0);
+    expect(segundo.atualizar.map((a) => a.key)).toEqual(locais.map((l) => l.key));
+  });
+
+  it("não rouba etapa ligada a outro funil nem resolve nomes ambíguos", () => {
+    const plano = planearEtapas({
+      pipelineId: PIPELINE,
+      stages: [
+        { id: "s1", name: "Consulta", position: 0 },
+        { id: "s2", name: "Follow up", position: 1 },
+      ],
+      locais: [
+        { key: "consulta_outra", name: "Consulta", position: 1, ghl_pipeline_id: "outro-funil", ghl_stage_id: "x1" },
+        { key: "follow_a", name: "Follow up", position: 2, ghl_pipeline_id: null, ghl_stage_id: null },
+        { key: "follow_b", name: "follow up", position: 3, ghl_pipeline_id: null, ghl_stage_id: null },
+        { key: "follow_c", name: "Follow  Up", position: 4, ghl_pipeline_id: null, ghl_stage_id: null },
+      ],
+    });
+    expect(plano.atualizar).toHaveLength(0);
+    expect(plano.criar).toHaveLength(2);
+    expect(plano.mapa["s1"]).not.toBe("consulta_outra");
+  });
+
+  it("reserva cada etapa local só uma vez", () => {
+    const plano = planearEtapas({
+      pipelineId: PIPELINE,
+      stages: [
+        { id: "s1", name: "Consulta", position: 0 },
+        { id: "s2", name: "Consulta", position: 1 },
+      ],
+      locais: [{ key: "consulta", name: "Consulta", position: 1, ghl_pipeline_id: null, ghl_stage_id: null }],
+    });
+    expect(plano.atualizar).toHaveLength(1);
+    expect(plano.criar).toHaveLength(1);
+    expect(new Set(Object.values(plano.mapa)).size).toBe(2);
   });
 
   it("gera chaves distintas quando a chave derivada já existe", () => {
@@ -233,8 +380,9 @@ describe("sincronizarOportunidades", () => {
     const { loja } = lojaMemoria();
     const r = await sincronizarOportunidades(deps([[op(1)]], loja, new Set(["ghl-c-1"])));
     expect(r.completo).toBe(false);
-    expect(r.conflitos).toHaveLength(1);
-    expect([...r.conflitos][0]).toContain("Contacto não sincronizado");
+    expect(r.conflitos.some((c) => c.includes("Contacto não sincronizado"))).toBe(true);
+    expect(r.adiadas).toBe(1);
+    expect(r.inseridas).toBe(0);
   });
 
   it("não reporta sucesso completo quando uma página falha", async () => {

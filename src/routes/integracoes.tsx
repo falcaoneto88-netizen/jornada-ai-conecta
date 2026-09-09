@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, Copy, Lock, PlugZap, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -90,6 +91,12 @@ function MapeamentoPipelines({
   const [aCarregar, setACarregar] = useState(false);
   const [aGuardar, setAGuardar] = useState(false);
   const [aImportar, setAImportar] = useState(false);
+  const [ocorrencias, setOcorrencias] = useState<string[]>([]);
+  const qc = useQueryClient();
+
+  async function refrescarCaches(chaves: string[]) {
+    await Promise.all(chaves.map((k) => qc.invalidateQueries({ queryKey: [k] })));
+  }
 
   async function carregar() {
     setACarregar(true);
@@ -119,6 +126,8 @@ function MapeamentoPipelines({
         return;
       }
       setSelecionado(pipelineId);
+      setOcorrencias([]);
+      await refrescarCaches(["ligacao-ghl", "etapas", "etapas-pipeline", "oportunidades"]);
       toast.success(
         `Funil «${res.pipeline.name}» ligado: ${res.etapasAssociadas} etapa(s) associada(s), ${res.etapasCriadas} criada(s).`,
       );
@@ -139,8 +148,13 @@ function MapeamentoPipelines({
       }
       const r = res.resultado;
       const resumo = `${r.inseridas} novas, ${r.atualizadas} atualizadas, ${r.contactosNovos} contacto(s) novo(s)`;
+      setOcorrencias(r.conflitos);
+      await refrescarCaches(["ligacao-ghl", "etapas", "etapas-pipeline", "oportunidades", "contactos"]);
       if (r.completo) toast.success(`Oportunidades sincronizadas: ${resumo}.`);
-      else toast.warning(`Sincronização incompleta: ${resumo}. ${r.conflitos.length} ocorrência(s).`);
+      else
+        toast.warning(
+          `Sincronização incompleta: ${resumo}${r.adiadas ? `, ${r.adiadas} adiada(s)` : ""}. ${r.conflitos.length} ocorrência(s).`,
+        );
     } catch {
       toast.error("Não foi possível sincronizar as oportunidades.");
     } finally {
@@ -184,6 +198,20 @@ function MapeamentoPipelines({
       </div>
 
       {erro && <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{erro}</p>}
+
+      {ocorrencias.length > 0 && (
+        <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+          <h4 className="text-sm font-semibold">Ocorrências da última sincronização ({ocorrencias.length})</h4>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+            {ocorrencias.slice(0, 12).map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+          {ocorrencias.length > 12 && (
+            <p className="mt-2 text-xs text-muted-foreground">e mais {ocorrencias.length - 12} ocorrência(s).</p>
+          )}
+        </section>
+      )}
 
       {pipelines === null && !erro && (
         <div className="surface-card p-6 text-sm text-muted-foreground">
@@ -309,7 +337,8 @@ function Integracoes() {
     }
     guardar.mutate(
       {
-        default_pipeline_id: pipeline || null,
+        // Campo vazio não apaga o funil ligado em Mapeamento.
+        default_pipeline_id: pipeline.trim() ? pipeline.trim() : (ligacao?.default_pipeline_id ?? null),
         calendar_id: calendario || null,
         write_enabled: escrita,
       },

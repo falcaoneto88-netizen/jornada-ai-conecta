@@ -14,4 +14,4 @@
 ## Oportunidades do funil (2026-09-09)
 - [x] Mapeamento real de funis/etapas em Integrações (leitura)
 - [x] Sincronização paginada de oportunidades (status=all) + vista Oportunidades em Jornada
-- [ ] Importação real do funil "Pipeline Harmonização de Glúteo" — falta sessão de administrador (aguarda login do utilizador no preview)
+- [x] Importação real do funil "Pipeline Harmonização de Glúteo" (39 oportunidades, 11 etapas) — executada como operação administrativa do sistema, auditada sem atribuição a utilizador
