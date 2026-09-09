@@ -144,61 +144,73 @@ function Jornada() {
         </Button>
       }
     >
-      <div className="space-y-6">
-        {demo && (
-          <DemoNotice texto="Arraste os cartões entre etapas. Em modo demonstração, as automações são apenas simuladas." />
-        )}
+      <Tabs defaultValue="contactos" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="contactos">Contactos</TabsTrigger>
+          <TabsTrigger value="oportunidades">Oportunidades</TabsTrigger>
+        </TabsList>
 
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {journeyStages.map((etapa) => {
-            const cards = lista.filter((c) => c.etapa === etapa.id);
-            return (
-              <section
-                key={etapa.id}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => soltar(etapa.id)}
-                className="w-[272px] shrink-0 rounded-2xl border border-border bg-secondary/40 p-3"
-                aria-label={etapa.nome}
-              >
-                <header className="flex items-center justify-between px-1 pb-3">
-                  <h2 className="text-sm font-semibold text-heading">{etapa.nome}</h2>
-                  <span className="rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">
-                    {cards.length}
-                  </span>
-                </header>
-                <ul className="space-y-2">
-                  {cards.map((c) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        draggable
-                        onDragStart={() => setArrastado(c.id)}
-                        onClick={() => setDetalhe(c)}
-                        className="w-full cursor-grab rounded-xl border border-border bg-card p-3 text-left shadow-soft transition-shadow hover:shadow-card active:cursor-grabbing"
-                      >
-                        <p className="text-sm font-medium text-heading">{c.nome}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{c.proximaAcao}</p>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {c.tags.map((t) => (
-                            <Badge key={t} variant="outline" className="text-[10px]">
-                              {t}
-                            </Badge>
-                          ))}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                  {cards.length === 0 && (
-                    <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-                      {isLoading ? "A carregar…" : "Sem clientes nesta etapa"}
-                    </li>
-                  )}
-                </ul>
-              </section>
-            );
-          })}
-        </div>
-      </div>
+        <TabsContent value="contactos" className="space-y-6">
+          {demo && (
+            <DemoNotice texto="Arraste os cartões entre etapas. Em modo demonstração, as automações são apenas simuladas." />
+          )}
+
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {journeyStages.map((etapa) => {
+              const cards = lista.filter((c) => c.etapa === etapa.id);
+              return (
+                <section
+                  key={etapa.id}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => soltar(etapa.id)}
+                  className="w-[272px] shrink-0 rounded-2xl border border-border bg-secondary/40 p-3"
+                  aria-label={etapa.nome}
+                >
+                  <header className="flex items-center justify-between px-1 pb-3">
+                    <h2 className="text-sm font-semibold text-heading">{etapa.nome}</h2>
+                    <span className="rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">
+                      {cards.length}
+                    </span>
+                  </header>
+                  <ul className="space-y-2">
+                    {cards.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          draggable
+                          onDragStart={() => setArrastado(c.id)}
+                          onClick={() => setDetalhe(c)}
+                          className="w-full cursor-grab rounded-xl border border-border bg-card p-3 text-left shadow-soft transition-shadow hover:shadow-card active:cursor-grabbing"
+                        >
+                          <p className="text-sm font-medium text-heading">{c.nome}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{c.proximaAcao}</p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {c.tags.map((t) => (
+                              <Badge key={t} variant="outline" className="text-[10px]">
+                                {t}
+                              </Badge>
+                            ))}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                    {cards.length === 0 && (
+                      <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+                        {isLoading ? "A carregar…" : "Sem clientes nesta etapa"}
+                      </li>
+                    )}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="oportunidades" className="space-y-4">
+          <QuadroOportunidades />
+        </TabsContent>
+      </Tabs>
+
 
       <Dialog open={pendente !== null} onOpenChange={(o) => !o && setPendente(null)}>
         <DialogContent>
