@@ -21,3 +21,9 @@
 - [x] Escolha e validação da agenda em Integrações › Mapeamento
 - [x] Secção Agenda (leitura) + próxima marcação na ficha do cliente
 - [x] Importação real da agenda `nPXR1Fyp0r3CpaMMGSki` "Consulta Inicial — Harmonização": 34 marcações, 13 clientes novos, repetição idempotente (operação administrativa do sistema)
+
+## Atualização automática da agenda (2026-09-09)
+- [x] Rota interna `/api/public/hooks/sincronizar-agenda` protegida por CRON_SECRET
+- [x] Tarefa horária no backend (minuto 5) a importar a agenda em leitura
+- [x] Quadro da Agenda recarrega sozinho a cada 5 minutos
+- [ ] Publicar a aplicação para a tarefa horária atingir a versão em produção
