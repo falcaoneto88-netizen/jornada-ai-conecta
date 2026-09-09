@@ -224,6 +224,15 @@ export const OPERACOES: Record<string, DefinicaoOperacao> = {
     body: [],
     exigeContacto: false,
   },
+  "calendars.events": {
+    method: "GET",
+    path: () => "calendars/events",
+    escrita: false,
+    papeis: LEITURA,
+    query: ["calendarId", "startTime", "endTime"],
+    body: [],
+    exigeContacto: false,
+  },
   "users.list": {
     method: "GET",
     path: () => "users/",
