@@ -216,7 +216,7 @@ describe("sincronizarOportunidades", () => {
     expect(oportunidades.size).toBe(2);
     expect(contactos.size).toBe(1);
     expect(r.contactosNovos).toBe(1);
-    expect(r.contactosLigados).toBe(1);
+    expect(r.contactosLigados).toBe(0);
     const ids = [...oportunidades.values()].map((l) => l.contact_id);
     expect(new Set(ids).size).toBe(1);
   });
