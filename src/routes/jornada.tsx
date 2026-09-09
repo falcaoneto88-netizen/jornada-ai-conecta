@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -16,15 +18,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mascararTelefone, type Contact, type StageId } from "@/lib/demo-data";
+import { sincronizarOportunidadesGhl } from "@/lib/ghl-pipelines.functions";
 import {
   useAutomacoes,
   useContactos,
   useEtapas,
+  useEtapasPipeline,
   useGuardarMapeamentoEtapa,
+  useLigacaoGhl,
   useModoDados,
   useMoverContacto,
+  useOportunidades,
+  usePermissoes,
 } from "@/lib/repo";
+
 
 export const Route = createFileRoute("/jornada")({
   head: () => ({
