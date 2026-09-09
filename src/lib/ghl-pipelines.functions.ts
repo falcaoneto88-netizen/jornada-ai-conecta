@@ -92,7 +92,7 @@ export async function executarConfiguracaoPipeline(args: {
   orgId: string;
   cfg: { baseUrl: string; version: string; token: string; locationId: string };
   pipelineId: string;
-  ator: { id: string | null; nome: string };
+  ator: { id: string | null; nome: string | null };
 }) {
   const { supabase, orgId, cfg, pipelineId, ator } = args;
   const res = await lerPipelines(cfg);
@@ -255,7 +255,7 @@ export function criarLoja(supabase: SupabaseClient, orgId: string): LojaSincroni
   };
 }
 
-export type AtorSincronizacao = { id: string | null; nome: string };
+export type AtorSincronizacao = { id: string | null; nome: string | null };
 
 /**
  * Núcleo da importação em leitura. Reutilizável por qualquer chamador já
