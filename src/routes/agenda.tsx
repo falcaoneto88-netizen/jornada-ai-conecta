@@ -1,16 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, RefreshCw } from "lucide-react";
+import { addDays, addMonths, startOfDay } from "date-fns";
+import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { AgendaCalendario, rotuloPeriodo, varianteEstadoMarcacao, type VistaAgenda } from "@/components/agenda-calendario";
 import { AppShell } from "@/components/app-shell";
 import { DemoNotice } from "@/components/demo-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { sincronizarAgendaGhl } from "@/lib/ghl-agenda.functions";
-import { rotuloEstadoMarcacao, useLigacaoGhl, useMarcacoes, useModoDados, usePermissoes } from "@/lib/repo";
+import { rotuloEstadoMarcacao, useLigacaoGhl, useMarcacoes, useModoDados, usePermissoes, type Marcacao } from "@/lib/repo";
 
 export const Route = createFileRoute("/agenda")({
   head: () => ({
@@ -19,7 +24,7 @@ export const Route = createFileRoute("/agenda")({
       {
         name: "description",
         content:
-          "Marcações reais da agenda do GoHighLevel: dia, hora, cliente associado, estado e responsável, em modo leitura.",
+          "Agenda do GoHighLevel em vista de dia, semana ou mês: hora, cliente associado, estado e responsável, em modo leitura.",
       },
       { property: "og:title", content: "Agenda — Jornada AI" },
       { property: "og:description", content: "Marcações da clínica sincronizadas do GoHighLevel, em leitura." },
@@ -30,25 +35,11 @@ export const Route = createFileRoute("/agenda")({
   component: Agenda,
 });
 
-const VARIANTE: Record<string, "default" | "outline" | "destructive"> = {
-  confirmada: "default",
-  realizada: "default",
-  faltou: "destructive",
-  cancelada: "destructive",
-};
-
-function diaLegivel(iso: string) {
-  return new Date(iso).toLocaleDateString("pt-PT", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function hora(iso: string) {
-  return new Date(iso).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
-}
+const VISTAS: { valor: VistaAgenda; rotulo: string }[] = [
+  { valor: "dia", rotulo: "Dia" },
+  { valor: "semana", rotulo: "Semana" },
+  { valor: "mes", rotulo: "Mês" },
+];
 
 function Agenda() {
   const { demo } = useModoDados();
@@ -57,26 +48,31 @@ function Agenda() {
   const { data: marcacoes = [], isLoading, isError } = useMarcacoes();
   const sincronizar = useServerFn(sincronizarAgendaGhl);
   const qc = useQueryClient();
+
   const [aSincronizar, setASincronizar] = useState(false);
   const [ocorrencias, setOcorrencias] = useState<string[]>([]);
+  const [vista, setVista] = useState<VistaAgenda>("semana");
+  const [dataReferencia, setDataReferencia] = useState<Date>(() => startOfDay(new Date()));
+  const [selecionada, setSelecionada] = useState<Marcacao | null>(null);
+  const [responsavel, setResponsavel] = useState("todos");
 
-  const agora = Date.now();
-  const { proximas, passadas } = useMemo(() => {
-    const futuras = marcacoes.filter((m) => new Date(m.inicioIso).getTime() >= agora);
-    const antigas = marcacoes
-      .filter((m) => new Date(m.inicioIso).getTime() < agora)
-      .sort((a, b) => b.inicioIso.localeCompare(a.inicioIso));
-    return { proximas: futuras, passadas: antigas };
-  }, [marcacoes, agora]);
+  const responsaveis = useMemo(
+    () => [...new Set(marcacoes.map((m) => m.responsavel).filter((r): r is string => !!r))].sort(),
+    [marcacoes],
+  );
 
-  const porDia = useMemo(() => {
-    const grupos = new Map<string, typeof proximas>();
-    for (const m of proximas) {
-      const dia = m.inicioIso.slice(0, 10);
-      grupos.set(dia, [...(grupos.get(dia) ?? []), m]);
-    }
-    return [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [proximas]);
+  const visiveis = useMemo(
+    () => (responsavel === "todos" ? marcacoes : marcacoes.filter((m) => m.responsavel === responsavel)),
+    [marcacoes, responsavel],
+  );
+
+  function navegar(direcao: -1 | 1) {
+    setDataReferencia((ref) => {
+      if (vista === "dia") return addDays(ref, direcao);
+      if (vista === "semana") return addDays(ref, 7 * direcao);
+      return addMonths(ref, direcao);
+    });
+  }
 
   async function atualizar() {
     if (demo) {
@@ -146,6 +142,53 @@ function Agenda() {
           </section>
         )}
 
+        <section className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setDataReferencia(startOfDay(new Date()))}>
+            Hoje
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" aria-label="Período anterior" onClick={() => navegar(-1)}>
+              <ChevronLeft className="size-4" aria-hidden />
+            </Button>
+            <Button variant="outline" size="icon" aria-label="Período seguinte" onClick={() => navegar(1)}>
+              <ChevronRight className="size-4" aria-hidden />
+            </Button>
+          </div>
+          <p className="text-sm font-medium capitalize" aria-live="polite">
+            {rotuloPeriodo(vista, dataReferencia)}
+          </p>
+
+          <div className="ms-auto flex flex-wrap items-center gap-3">
+            {responsaveis.length > 0 && (
+              <Select value={responsavel} onValueChange={setResponsavel}>
+                <SelectTrigger className="w-48" aria-label="Filtrar por responsável">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os responsáveis</SelectItem>
+                  {responsaveis.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <ToggleGroup
+              type="single"
+              value={vista}
+              onValueChange={(v) => v && setVista(v as VistaAgenda)}
+              variant="outline"
+            >
+              {VISTAS.map((v) => (
+                <ToggleGroupItem key={v.valor} value={v.valor} aria-label={`Vista ${v.rotulo}`}>
+                  {v.rotulo}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+        </section>
+
         {isLoading && (
           <p className="text-sm text-muted-foreground" role="status">
             A carregar marcações…
@@ -163,54 +206,63 @@ function Agenda() {
           </div>
         )}
 
-        {porDia.length > 0 && (
-          <section className="space-y-4">
-            <h2 className="text-base font-semibold">Próximas marcações</h2>
-            {porDia.map(([dia, lista]) => (
-              <div key={dia} className="surface-card p-5">
-                <h3 className="text-sm font-semibold capitalize">{diaLegivel(dia)}</h3>
-                <ul className="mt-3 divide-y divide-border">
-                  {lista.map((m) => (
-                    <li key={m.id} className="flex flex-wrap items-center gap-3 py-3">
-                      <span className="w-14 shrink-0 font-mono text-sm">{hora(m.inicioIso)}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{m.cliente}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {m.titulo}
-                          {m.responsavel ? ` · ${m.responsavel}` : ""}
-                        </p>
-                      </div>
-                      <Badge variant={VARIANTE[m.estado] ?? "outline"}>{rotuloEstadoMarcacao(m.estado)}</Badge>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </section>
-        )}
-
-        {passadas.length > 0 && (
-          <section className="surface-card p-5">
-            <h2 className="text-base font-semibold">Histórico recente</h2>
-            <ul className="mt-3 divide-y divide-border">
-              {passadas.slice(0, 30).map((m) => (
-                <li key={m.id} className="flex flex-wrap items-center gap-3 py-3">
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{m.inicio}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{m.cliente}</p>
-                    <p className="truncate text-xs text-muted-foreground">{m.titulo}</p>
-                  </div>
-                  <Badge variant={VARIANTE[m.estado] ?? "outline"}>{rotuloEstadoMarcacao(m.estado)}</Badge>
-                </li>
-              ))}
-            </ul>
-          </section>
+        {!isLoading && !isError && marcacoes.length > 0 && (
+          <AgendaCalendario
+            vista={vista}
+            dataReferencia={dataReferencia}
+            marcacoes={visiveis}
+            onSelecionar={setSelecionada}
+            onAbrirDia={(d) => {
+              setDataReferencia(d);
+              setVista("dia");
+            }}
+          />
         )}
 
         <p className="text-xs text-muted-foreground">
           Leitura apenas: nada é criado, remarcado ou cancelado no GoHighLevel a partir daqui.
         </p>
       </div>
+
+      <Sheet open={!!selecionada} onOpenChange={(aberto) => !aberto && setSelecionada(null)}>
+        <SheetContent>
+          {selecionada && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{selecionada.cliente}</SheetTitle>
+                <SheetDescription>{selecionada.titulo}</SheetDescription>
+              </SheetHeader>
+              <div className="space-y-3 px-4 text-sm">
+                <p>
+                  <span className="text-muted-foreground">Início: </span>
+                  {selecionada.inicio}
+                </p>
+                {selecionada.fim && (
+                  <p>
+                    <span className="text-muted-foreground">Fim: </span>
+                    {selecionada.fim}
+                  </p>
+                )}
+                <p className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Estado:</span>
+                  <Badge variant={varianteEstadoMarcacao[selecionada.estado] ?? "outline"}>
+                    {rotuloEstadoMarcacao(selecionada.estado)}
+                  </Badge>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Responsável: </span>
+                  {selecionada.responsavel ?? "—"}
+                </p>
+                {selecionada.clienteId && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link to="/clientes">Ver ficha do cliente</Link>
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </AppShell>
   );
 }
