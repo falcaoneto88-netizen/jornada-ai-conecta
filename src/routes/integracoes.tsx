@@ -372,22 +372,9 @@ function Integracoes() {
           </TabsContent>
 
           <TabsContent value="mapeamento" className="mt-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {["Pipelines", "Stages", "Utilizadores", "Calendários"].map((m) => (
-                <section key={m} className="surface-card p-5">
-                  <h3 className="text-base font-semibold">{m}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {conectada
-                      ? "Faça o mapeamento por etapa no separador Jornada › Mapear Pipeline/Stage."
-                      : "A lista é carregada do GoHighLevel após validação da ligação."}
-                  </p>
-                  <div className="mt-3 rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
-                    {conectada ? "Ligação validada" : "Sem dados — ligação por validar"}
-                  </div>
-                </section>
-              ))}
-            </div>
+            <MapeamentoPipelines conectada={conectada} podeGerir={podeGerir} demo={demo} />
           </TabsContent>
+
 
           <TabsContent value="guia" className="mt-4">
             <article className="surface-card space-y-4 p-6 text-sm">
