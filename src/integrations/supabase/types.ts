@@ -472,6 +472,7 @@ export type Database = {
           created_at: string
           ghl_pipeline_id: string | null
           ghl_stage_id: string | null
+          ghl_stage_position: number | null
           id: string
           key: string
           name: string
@@ -484,6 +485,7 @@ export type Database = {
           created_at?: string
           ghl_pipeline_id?: string | null
           ghl_stage_id?: string | null
+          ghl_stage_position?: number | null
           id?: string
           key: string
           name: string
@@ -496,6 +498,7 @@ export type Database = {
           created_at?: string
           ghl_pipeline_id?: string | null
           ghl_stage_id?: string | null
+          ghl_stage_position?: number | null
           id?: string
           key?: string
           name?: string
