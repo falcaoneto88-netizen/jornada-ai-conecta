@@ -18,6 +18,11 @@ import {
   listarPipelinesGhl,
   sincronizarOportunidadesGhl,
 } from "@/lib/ghl-pipelines.functions";
+import {
+  configurarCalendarioGhl,
+  listarCalendariosGhl,
+  sincronizarAgendaGhl,
+} from "@/lib/ghl-agenda.functions";
 import { getGhlSecretsStatus, syncGhl, testGhlConnection } from "@/lib/ghl.functions";
 
 import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, usePermissoes, useWebhooks } from "@/lib/repo";
