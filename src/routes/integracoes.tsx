@@ -18,6 +18,11 @@ import {
   listarPipelinesGhl,
   sincronizarOportunidadesGhl,
 } from "@/lib/ghl-pipelines.functions";
+import {
+  configurarCalendarioGhl,
+  listarCalendariosGhl,
+  sincronizarAgendaGhl,
+} from "@/lib/ghl-agenda.functions";
 import { getGhlSecretsStatus, syncGhl, testGhlConnection } from "@/lib/ghl.functions";
 
 import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, usePermissoes, useWebhooks } from "@/lib/repo";
@@ -259,6 +264,171 @@ function MapeamentoPipelines({
   );
 }
 
+type CalendarioListado = { id: string; name: string; ativo: boolean };
+
+function MapeamentoCalendarios({
+  conectada,
+  podeGerir,
+  demo,
+}: {
+  conectada: boolean;
+  podeGerir: boolean;
+  demo: boolean;
+}) {
+  const listar = useServerFn(listarCalendariosGhl);
+  const configurar = useServerFn(configurarCalendarioGhl);
+  const sincronizarAgendaFn = useServerFn(sincronizarAgendaGhl);
+  const [calendarios, setCalendarios] = useState<CalendarioListado[] | null>(null);
+  const [selecionado, setSelecionado] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aCarregar, setACarregar] = useState(false);
+  const [aGuardar, setAGuardar] = useState(false);
+  const [aImportar, setAImportar] = useState(false);
+  const [ocorrencias, setOcorrencias] = useState<string[]>([]);
+  const qc = useQueryClient();
+
+  async function refrescar(chaves: string[]) {
+    await Promise.all(chaves.map((k) => qc.invalidateQueries({ queryKey: [k] })));
+  }
+
+  async function carregar() {
+    setACarregar(true);
+    setErro(null);
+    try {
+      const res = await listar();
+      if (!res.ok) {
+        setErro(res.message);
+        setCalendarios([]);
+        return;
+      }
+      setCalendarios(res.calendarios);
+      setSelecionado(res.selecionado ?? null);
+    } catch {
+      setErro("Não foi possível obter as agendas da conta.");
+    } finally {
+      setACarregar(false);
+    }
+  }
+
+  async function ligar(calendarId: string) {
+    setAGuardar(true);
+    try {
+      const res = await configurar({ data: { calendarId } });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      setSelecionado(calendarId);
+      await refrescar(["ligacao-ghl", "marcacoes"]);
+      toast.success(`Agenda «${res.calendario.name}» ligada.`);
+    } catch {
+      toast.error("Não foi possível ligar a agenda.");
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  async function importar() {
+    setAImportar(true);
+    try {
+      const res = await sincronizarAgendaFn();
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      const r = res.resultado;
+      setOcorrencias(r.conflitos);
+      await refrescar(["ligacao-ghl", "marcacoes", "contactos"]);
+      const resumo = `${r.inseridas} nova(s), ${r.atualizadas} atualizada(s), ${r.contactosNovos} cliente(s) novo(s)`;
+      if (r.completo) toast.success(`Marcações sincronizadas: ${resumo}.`);
+      else toast.warning(`Sincronização com ${r.conflitos.length} ocorrência(s): ${resumo}.`);
+    } catch {
+      toast.error("Não foi possível sincronizar as marcações.");
+    } finally {
+      setAImportar(false);
+    }
+  }
+
+  if (demo || !podeGerir) {
+    return (
+      <div className="surface-card p-6 text-sm text-muted-foreground">
+        Apenas administradores da conta podem ligar agendas do GoHighLevel.
+      </div>
+    );
+  }
+
+  if (!conectada) {
+    return (
+      <div className="surface-card p-6 text-sm text-muted-foreground">
+        Valide primeiro a ligação no separador Ligação para carregar as agendas reais.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">Agenda do GoHighLevel</h3>
+          <p className="text-sm text-muted-foreground">
+            Escolha a agenda a acompanhar. As marcações aparecem depois na secção Agenda, em leitura.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => void carregar()} disabled={aCarregar}>
+            <RefreshCw className="size-4" /> {aCarregar ? "A carregar…" : "Carregar agendas"}
+          </Button>
+          <Button onClick={() => void importar()} disabled={!selecionado || aImportar}>
+            {aImportar ? "A sincronizar…" : "Sincronizar marcações"}
+          </Button>
+        </div>
+      </div>
+
+      {erro && <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{erro}</p>}
+
+      {ocorrencias.length > 0 && (
+        <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+          <h4 className="text-sm font-semibold">Ocorrências da última sincronização ({ocorrencias.length})</h4>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+            {ocorrencias.slice(0, 12).map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {calendarios === null && !erro && (
+        <div className="surface-card p-6 text-sm text-muted-foreground">
+          Clique em «Carregar agendas» para ler as agendas reais da conta ligada.
+        </div>
+      )}
+
+      {calendarios?.length === 0 && !erro && (
+        <div className="surface-card p-6 text-sm text-muted-foreground">Nenhuma agenda encontrada nesta conta.</div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {(calendarios ?? []).map((c) => (
+          <section key={c.id} className="surface-card flex items-start justify-between gap-3 p-5">
+            <div className="min-w-0">
+              <h4 className="text-sm font-semibold break-words">{c.name}</h4>
+              <p className="font-mono text-xs break-all text-muted-foreground">{c.id}</p>
+              {!c.ativo && <p className="text-xs text-muted-foreground">Agenda inativa no GoHighLevel.</p>}
+            </div>
+            {selecionado === c.id ? (
+              <Badge>Ligada</Badge>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => void ligar(c.id)} disabled={aGuardar}>
+                Ligar
+              </Button>
+            )}
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Integracoes() {
 
   const { demo } = useModoDados();
@@ -339,7 +509,8 @@ function Integracoes() {
       {
         // Campo vazio não apaga o funil ligado em Mapeamento.
         default_pipeline_id: pipeline.trim() ? pipeline.trim() : (ligacao?.default_pipeline_id ?? null),
-        calendar_id: calendario || null,
+        // Campo vazio não apaga a agenda ligada em Mapeamento.
+        calendar_id: calendario.trim() ? calendario.trim() : (ligacao?.calendar_id ?? null),
         write_enabled: escrita,
       },
       {
@@ -569,7 +740,10 @@ function Integracoes() {
           </TabsContent>
 
           <TabsContent value="mapeamento" className="mt-4">
-            <MapeamentoPipelines conectada={conectada} podeGerir={podeGerir} demo={demo} />
+            <div className="space-y-8">
+              <MapeamentoPipelines conectada={conectada} podeGerir={podeGerir} demo={demo} />
+              <MapeamentoCalendarios conectada={conectada} podeGerir={podeGerir} demo={demo} />
+            </div>
           </TabsContent>
 
 

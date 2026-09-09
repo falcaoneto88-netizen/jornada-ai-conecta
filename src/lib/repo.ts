@@ -252,6 +252,70 @@ export function useOportunidades(pipelineId: string | null | undefined) {
   });
 }
 
+/* ---------------- Agenda (marcações do GoHighLevel) ---------------- */
+
+export type Marcacao = {
+  id: string;
+  titulo: string;
+  cliente: string;
+  clienteId: string | null;
+  inicio: string;
+  inicioIso: string;
+  fim: string | null;
+  estado: string;
+  responsavel: string | null;
+};
+
+const ROTULO_ESTADO: Record<string, string> = {
+  confirmada: "Confirmada",
+  realizada: "Realizada",
+  faltou: "Não compareceu",
+  cancelada: "Cancelada",
+};
+
+export function rotuloEstadoMarcacao(estado: string) {
+  return ROTULO_ESTADO[estado] ?? estado;
+}
+
+type LinhaMarcacaoBd = {
+  id: string;
+  title: string;
+  start_at: string;
+  end_at: string | null;
+  status: string;
+  assigned_user_name: string | null;
+  contact_id: string | null;
+  contacts: { full_name: string } | null;
+};
+
+/** Marcações reais da organização (só leitura). Em demonstração fica vazia. */
+export function useMarcacoes() {
+  const { demo, escopo } = useModoDados();
+  return useQuery<Marcacao[]>({
+    queryKey: ["marcacoes", escopo],
+    queryFn: async () => {
+      if (demo) return [];
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("id,title,start_at,end_at,status,assigned_user_name,contact_id,contacts(full_name)")
+        .eq("is_demo", false)
+        .order("start_at", { ascending: true });
+      if (error) throw error;
+      return (data as unknown as LinhaMarcacaoBd[]).map((m) => ({
+        id: m.id,
+        titulo: m.title,
+        cliente: m.contacts?.full_name ?? "Cliente por associar",
+        clienteId: m.contact_id,
+        inicio: dataHoraPt(m.start_at),
+        inicioIso: m.start_at,
+        fim: m.end_at ? dataHoraPt(m.end_at) : null,
+        estado: m.status,
+        responsavel: m.assigned_user_name,
+      }));
+    },
+  });
+}
+
 /* ---------------- Contactos ---------------- */
 
 
@@ -266,6 +330,19 @@ export function useContactos() {
         .select("*")
         .order("updated_at", { ascending: false });
       if (error) throw error;
+
+      // Próxima marcação real de cada cliente, para mostrar na Jornada e em Clientes.
+      const proximas = new Map<string, string>();
+      const { data: marcacoes } = await supabase
+        .from("appointments")
+        .select("contact_id,start_at")
+        .eq("is_demo", false)
+        .gte("start_at", new Date().toISOString())
+        .order("start_at", { ascending: true });
+      for (const m of marcacoes ?? []) {
+        if (m.contact_id && !proximas.has(m.contact_id)) proximas.set(m.contact_id, m.start_at);
+      }
+
       return (data ?? []).map((c) => ({
         id: c.id,
         nome: c.full_name,
@@ -278,9 +355,22 @@ export function useContactos() {
         responsavel: c.owner_name ?? "—",
         proximaAcao: c.next_action ?? "—",
         ultimaInteracao: dataPt(c.last_interaction_at ?? c.updated_at),
-        agendamento: c.next_action_at ? dataHoraPt(c.next_action_at) : null,
+        agendamento: proximas.has(c.id)
+          ? dataHoraPt(proximas.get(c.id))
+          : c.next_action_at
+            ? dataHoraPt(c.next_action_at)
+            : null,
         timeline: [
           { data: dataPt(c.created_at), titulo: "Registo criado", detalhe: c.source ?? "Origem não indicada" },
+          ...(proximas.has(c.id)
+            ? [
+                {
+                  data: dataPt(proximas.get(c.id)),
+                  titulo: "Marcação agendada",
+                  detalhe: `Agenda GoHighLevel — ${dataHoraPt(proximas.get(c.id))}`,
+                },
+              ]
+            : []),
           ...(c.notes ? [{ data: dataPt(c.updated_at), titulo: "Nota", detalhe: c.notes }] : []),
         ],
       }));

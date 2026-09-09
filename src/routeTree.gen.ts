@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AgendaRouteImport } from './routes/agenda'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AutomacoesRouteImport } from './routes/automacoes'
 import { Route as CaixaDeEntradaRouteImport } from './routes/caixa-de-entrada'
@@ -26,6 +27,11 @@ import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgendaRoute = AgendaRouteImport.update({
+  id: '/agenda',
+  path: '/agenda',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -92,6 +98,7 @@ const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agenda': typeof AgendaRoute
   '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agenda': typeof AgendaRoute
   '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
@@ -123,6 +131,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/agenda': typeof AgendaRoute
   '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agenda'
     | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agenda'
     | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/agenda'
     | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
@@ -186,6 +198,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AgendaRoute: typeof AgendaRoute
   AuthRoute: typeof AuthRoute
   AutomacoesRoute: typeof AutomacoesRoute
   CaixaDeEntradaRoute: typeof CaixaDeEntradaRoute
@@ -207,6 +220,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agenda': {
+      id: '/agenda'
+      path: '/agenda'
+      fullPath: '/agenda'
+      preLoaderRoute: typeof AgendaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -298,6 +318,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AgendaRoute: AgendaRoute,
   AuthRoute: AuthRoute,
   AutomacoesRoute: AutomacoesRoute,
   CaixaDeEntradaRoute: CaixaDeEntradaRoute,
