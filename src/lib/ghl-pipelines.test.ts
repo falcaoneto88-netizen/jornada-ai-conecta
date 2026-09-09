@@ -41,8 +41,9 @@ function lojaMemoria() {
       return id;
     },
     async oportunidadesPorGhlId(ids) {
-      const m = new Map<string, string>();
-      for (const id of ids) if (oportunidades.has(id)) m.set(id, `op-${id}`);
+      const m = new Map<string, { id: string; contactId: string | null }>();
+      for (const id of ids)
+        if (oportunidades.has(id)) m.set(id, { id: `op-${id}`, contactId: oportunidades.get(id)!.contact_id });
       return m;
     },
     async inserirOportunidade(linha) {
