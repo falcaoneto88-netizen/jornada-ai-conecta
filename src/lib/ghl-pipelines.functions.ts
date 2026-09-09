@@ -239,6 +239,171 @@ export function criarLoja(supabase: SupabaseClient, orgId: string): LojaSincroni
   };
 }
 
+export type AtorSincronizacao = { id: string | null; nome: string };
+
+/**
+ * Núcleo da importação em leitura. Reutilizável por qualquer chamador já
+ * autorizado (sessão de administrador ou operação administrativa do sistema).
+ */
+export async function executarSincronizacaoOportunidades(args: {
+  supabase: SupabaseClient;
+  orgId: string;
+  locationId: string;
+  cfg: { baseUrl: string; version: string; token: string; locationId: string };
+  pipelineId: string;
+  ator: AtorSincronizacao;
+}) {
+  const { supabase, orgId, locationId, cfg, pipelineId, ator } = args;
+  const { ghlFetch } = await import("./ghl.server");
+
+  // O pipeline configurado tem de continuar a existir na lista oficial da location.
+  const oficiais = await lerPipelines(cfg);
+  if (!oficiais.ok) {
+    return { ok: false as const, code: oficiais.code, message: oficiais.message };
+  }
+  const pipeline = oficiais.pipelines.find((p) => p.id === pipelineId);
+  if (!pipeline) {
+    return {
+      ok: false as const,
+      code: "not_found" as const,
+      message: "O funil configurado já não existe na localização autorizada. Volte a ligá-lo em Mapeamento.",
+    };
+  }
+  const etapasValidas = pipeline.stages.map((s) => s.id);
+
+  const { data: etapas, error: erroEtapas } = await supabase
+    .from("journey_stages")
+    .select("key, ghl_stage_id, position")
+    .eq("organization_id", orgId)
+    .eq("ghl_pipeline_id", pipelineId);
+  if (erroEtapas) {
+    return { ok: false as const, code: "server_error" as const, message: "Não foi possível ler as etapas locais." };
+  }
+  const mapaEtapas: Record<string, string> = {};
+  for (const e of etapas ?? []) if (e.ghl_stage_id) mapaEtapas[e.ghl_stage_id] = e.key;
+  if (Object.keys(mapaEtapas).length === 0) {
+    return {
+      ok: false as const,
+      code: "bad_request" as const,
+      message: "As etapas deste pipeline ainda não estão ligadas. Volte a guardar o pipeline em Mapeamento.",
+    };
+  }
+
+  const { data: primeira, error: erroPrimeira } = await supabase
+    .from("journey_stages")
+    .select("key")
+    .eq("organization_id", orgId)
+    .order("position")
+    .limit(1)
+    .maybeSingle();
+  if (erroPrimeira || !primeira?.key) {
+    return {
+      ok: false as const,
+      code: "server_error" as const,
+      message: "Não foi possível determinar a etapa inicial dos contactos.",
+    };
+  }
+  const etapaInicialContacto = primeira.key;
+
+  const resultado = await sincronizarOportunidades({
+    orgId,
+    locationId,
+    pipelineId,
+    mapaEtapas,
+    etapasValidas,
+    etapaInicialContacto,
+    limitePagina: LIMITE_PAGINA,
+    loja: criarLoja(supabase, orgId),
+    buscarPagina: async (cursor) => {
+      const res = await ghlFetch<{ opportunities?: OportunidadeGhl[]; meta?: unknown }>(
+        cfg,
+        "opportunities/search",
+        {
+          query: {
+            location_id: locationId,
+            pipeline_id: pipelineId,
+            status: "all",
+            limit: String(LIMITE_PAGINA),
+            ...(cursor.startAfter ? { startAfter: cursor.startAfter } : {}),
+            ...(cursor.startAfterId ? { startAfterId: cursor.startAfterId } : {}),
+          },
+        },
+      );
+      if (!res.ok) return { ok: false as const, message: res.message };
+      return {
+        ok: true as const,
+        oportunidades: Array.isArray(res.data?.opportunities) ? res.data.opportunities : [],
+        meta: res.data?.meta ?? null,
+      };
+    },
+    buscarContacto: async (ghlContactId) => {
+      const res = await ghlFetch<{ contact?: Record<string, unknown> }>(
+        cfg,
+        `contacts/${encodeURIComponent(ghlContactId)}`,
+      );
+      if (!res.ok) return { ok: false as const, message: res.message };
+      const c = res.data?.contact;
+      if (!c || c["id"] !== ghlContactId) return { ok: false as const, message: "contacto não encontrado" };
+      if (c["locationId"] !== locationId) {
+        return { ok: false as const, message: "contacto de outra localização" };
+      }
+      const telefone = typeof c["phone"] === "string" ? c["phone"] : null;
+      const contacto: ContactoNovo = {
+        organization_id: orgId,
+        ghl_contact_id: ghlContactId,
+        full_name:
+          limparTexto([c["firstName"], c["lastName"]].filter(Boolean).join(" ")) ||
+          limparTexto(c["contactName"] as string) ||
+          limparTexto(c["email"] as string) ||
+          "Sem nome",
+        phone: telefone,
+        phone_normalized: telefone ? telefone.replace(/\D/g, "") : null,
+        email: typeof c["email"] === "string" ? c["email"] : null,
+        tags: Array.isArray(c["tags"]) ? (c["tags"] as string[]) : [],
+        source: typeof c["source"] === "string" && c["source"] ? c["source"] : "GoHighLevel",
+        stage_key: etapaInicialContacto,
+        is_demo: false,
+      };
+      return { ok: true as const, contacto };
+    },
+  });
+
+  // O carimbo de sucesso só avança quando a importação ficou de facto completa.
+  const syncedAt = resultado.completo ? new Date().toISOString() : null;
+  if (syncedAt) {
+    const { error } = await supabase
+      .from("ghl_connections")
+      .update({ last_sync_at: syncedAt })
+      .eq("organization_id", orgId);
+    if (error) {
+      resultado.completo = false;
+      resultado.conflitos.push(`Falha ao registar a data de sincronização: ${error.message}`);
+    }
+  }
+
+  await supabase.from("audit_logs").insert({
+    organization_id: orgId,
+    actor_id: ator.id,
+    actor_name: ator.nome,
+    action: "ghl.sync.oportunidades",
+    entity: "opportunities",
+    metadata: {
+      pipeline_id: pipelineId,
+      pipeline: pipeline.name,
+      lidas: resultado.lidas,
+      inseridas: resultado.inseridas,
+      atualizadas: resultado.atualizadas,
+      adiadas: resultado.adiadas,
+      ignoradas: resultado.ignoradas,
+      total_anunciado: resultado.total,
+      completo: resultado.completo,
+      conflitos: resultado.conflitos.slice(0, 20),
+    },
+  });
+
+  return { ok: true as const, resultado, syncedAt };
+}
+
 /** Importa em leitura todas as oportunidades do pipeline configurado. */
 export const sincronizarOportunidadesGhl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -260,112 +425,15 @@ export const sincronizarOportunidadesGhl = createServerFn({ method: "POST" })
       };
     }
 
-    const { ghlFetch } = await import("./ghl.server");
-
-    // Mapa etapa GHL -> etapa local, apenas do pipeline configurado.
-    const { data: etapas } = await ctx.supabase
-      .from("journey_stages")
-      .select("key, ghl_stage_id, position")
-      .eq("organization_id", orgId)
-      .eq("ghl_pipeline_id", pipelineId);
-    const mapaEtapas: Record<string, string> = {};
-    for (const e of etapas ?? []) if (e.ghl_stage_id) mapaEtapas[e.ghl_stage_id] = e.key;
-    if (Object.keys(mapaEtapas).length === 0) {
-      return {
-        ok: false as const,
-        code: "bad_request" as const,
-        message: "As etapas deste pipeline ainda não estão ligadas. Volte a guardar o pipeline em Mapeamento.",
-      };
-    }
-
-    const { data: primeira } = await ctx.supabase
-      .from("journey_stages")
-      .select("key")
-      .eq("organization_id", orgId)
-      .order("position")
-      .limit(1)
-      .maybeSingle();
-    const etapaInicialContacto = primeira?.key ?? "novo_lead";
-
-    const resultado = await sincronizarOportunidades({
+    return executarSincronizacaoOportunidades({
+      supabase: ctx.supabase,
       orgId,
       locationId,
+      cfg: base.cfg,
       pipelineId,
-      mapaEtapas,
-      etapaInicialContacto,
-      loja: criarLoja(ctx.supabase, orgId),
-      buscarPagina: async (cursor) => {
-        const res = await ghlFetch<{ opportunities?: OportunidadeGhl[]; meta?: unknown }>(
-          base.cfg,
-          "opportunities/search",
-          {
-            query: {
-              location_id: locationId,
-              pipeline_id: pipelineId,
-              status: "all",
-              limit: String(LIMITE_PAGINA),
-              ...(cursor.startAfter ? { startAfter: cursor.startAfter } : {}),
-              ...(cursor.startAfterId ? { startAfterId: cursor.startAfterId } : {}),
-            },
-          },
-        );
-        if (!res.ok) return { ok: false as const, message: res.message };
-        return {
-          ok: true as const,
-          oportunidades: Array.isArray(res.data?.opportunities) ? res.data.opportunities : [],
-          meta: res.data?.meta ?? null,
-        };
-      },
-      buscarContacto: async (ghlContactId) => {
-        const res = await ghlFetch<{ contact?: Record<string, unknown> }>(
-          base.cfg,
-          `contacts/${encodeURIComponent(ghlContactId)}`,
-        );
-        if (!res.ok) return { ok: false as const, message: res.message };
-        const c = res.data?.contact;
-        if (!c || c["id"] !== ghlContactId) return { ok: false as const, message: "contacto não encontrado" };
-        if (c["locationId"] !== locationId) {
-          return { ok: false as const, message: "contacto de outra localização" };
-        }
-        const telefone = typeof c["phone"] === "string" ? c["phone"] : null;
-        const contacto: ContactoNovo = {
-          organization_id: orgId,
-          ghl_contact_id: ghlContactId,
-          full_name:
-            limparTexto([c["firstName"], c["lastName"]].filter(Boolean).join(" ")) ||
-            limparTexto(c["contactName"] as string) ||
-            limparTexto(c["email"] as string) ||
-            "Sem nome",
-          phone: telefone,
-          phone_normalized: telefone ? telefone.replace(/\D/g, "") : null,
-          email: typeof c["email"] === "string" ? c["email"] : null,
-          tags: Array.isArray(c["tags"]) ? (c["tags"] as string[]) : [],
-          source: typeof c["source"] === "string" && c["source"] ? c["source"] : "GoHighLevel",
-          stage_key: etapaInicialContacto,
-          is_demo: false,
-        };
-        return { ok: true as const, contacto };
-      },
+      ator: { id: ctx.userId, nome },
     });
-
-    const agora = new Date().toISOString();
-    await ctx.supabase.from("ghl_connections").update({ last_sync_at: agora }).eq("organization_id", orgId);
-    await ctx.supabase.from("audit_logs").insert({
-      organization_id: orgId,
-      actor_id: ctx.userId,
-      actor_name: nome,
-      action: "ghl.sync.oportunidades",
-      entity: "opportunities",
-      metadata: {
-        pipeline_id: pipelineId,
-        lidas: resultado.lidas,
-        inseridas: resultado.inseridas,
-        atualizadas: resultado.atualizadas,
-        completo: resultado.completo,
-      },
-    });
-
-    return { ok: true as const, resultado, syncedAt: agora };
   });
 
 export type { LinhaOportunidade };
+
