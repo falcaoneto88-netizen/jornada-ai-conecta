@@ -203,18 +203,20 @@ export function criarLoja(supabase: SupabaseClient, orgId: string): LojaSincroni
       return data.id;
     },
     async oportunidadesPorGhlId(ids) {
-      const mapa = new Map<string, string>();
+      const mapa = new Map<string, { id: string; contactId: string | null }>();
       for (let i = 0; i < ids.length; i += 100) {
         const { data, error } = await supabase
           .from("opportunities")
-          .select("id, ghl_opportunity_id")
+          .select("id, ghl_opportunity_id, contact_id")
           .eq("organization_id", orgId)
           .in("ghl_opportunity_id", ids.slice(i, i + 100));
         if (error) throw new Error(error.message);
-        for (const l of data ?? []) if (l.ghl_opportunity_id) mapa.set(l.ghl_opportunity_id, l.id);
+        for (const l of data ?? [])
+          if (l.ghl_opportunity_id) mapa.set(l.ghl_opportunity_id, { id: l.id, contactId: l.contact_id ?? null });
       }
       return mapa;
     },
+
     async inserirOportunidade(linha) {
       const { error } = await supabase.from("opportunities").insert(linha);
       if (!error) return "inserida";
