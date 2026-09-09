@@ -339,7 +339,7 @@ export const sincronizarOportunidadesGhl = createServerFn({ method: "POST" })
           email: typeof c["email"] === "string" ? c["email"] : null,
           tags: Array.isArray(c["tags"]) ? (c["tags"] as string[]) : [],
           source: typeof c["source"] === "string" && c["source"] ? c["source"] : "GoHighLevel",
-          stage_key: "novo_lead",
+          stage_key: etapaInicialContacto,
           is_demo: false,
         };
         return { ok: true as const, contacto };
