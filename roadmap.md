@@ -27,3 +27,6 @@
 - [x] Tarefa horária no backend (minuto 5) a importar a agenda em leitura
 - [x] Quadro da Agenda recarrega sozinho a cada 5 minutos
 - [ ] Publicar a aplicação para a tarefa horária atingir a versão em produção
+
+## Pagamentos (2026-09-10)
+- [ ] Ativar recebimento de pagamentos (Paddle) — a aguardar confirmação do utilizador
