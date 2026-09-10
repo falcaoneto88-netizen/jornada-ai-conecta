@@ -107,11 +107,15 @@ export async function ghlFetch<T = unknown>(
   }
 
   let ultimo: { status: number; code: GhlErrorCode } = { status: 0, code: "network_error" };
+  const method = (init.method ?? "GET").toUpperCase();
+  const leitura = method === "GET" || method === "HEAD";
+  const tentativas = leitura ? MAX_TENTATIVAS : 1;
 
-  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
     try {
       const res = await fetch(url.toString(), {
-        method: init.method ?? "GET",
+        method,
+
         headers: {
           Authorization: `Bearer ${cfg.token}`,
           Version: GHL_VERSION,
@@ -140,15 +144,16 @@ export async function ghlFetch<T = unknown>(
       }
 
       const code = codeForStatus(res.status);
-      ultimo = { status: res.status, code };
+      ultimo = { status: res.status, code: !leitura && res.status >= 500 ? "outcome_unknown" : code };
       // Só vale a pena repetir em rate-limit ou erro do servidor.
       if (code !== "rate_limited" && code !== "server_error") break;
     } catch (erro) {
       const isTimeout = erro instanceof Error && (erro.name === "TimeoutError" || erro.name === "AbortError");
-      ultimo = { status: 0, code: isTimeout ? "timeout" : "network_error" };
+      ultimo = { status: 0, code: !leitura ? "outcome_unknown" : isTimeout ? "timeout" : "network_error" };
     }
 
-    if (tentativa < MAX_TENTATIVAS) {
+    if (tentativa < tentativas) {
+
       await new Promise((r) => setTimeout(r, 400 * 2 ** (tentativa - 1)));
     }
   }

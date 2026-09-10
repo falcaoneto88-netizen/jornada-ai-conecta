@@ -8,17 +8,8 @@ type Ctx = { supabase: SupabaseClient; userId: string };
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
-type GhlContact = {
-  id?: string;
-  firstName?: string;
-  lastName?: string;
-  contactName?: string;
-  phone?: string;
-  email?: string;
-  tags?: string[];
-  source?: string;
-  dateUpdated?: string;
-};
+
+
 
 export const SEM_INTEGRACAO = "Integração não configurada para esta organização.";
 export const SEM_PERMISSAO = "Não tem permissão para esta ação.";
