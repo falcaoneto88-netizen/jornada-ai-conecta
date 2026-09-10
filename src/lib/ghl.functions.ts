@@ -244,7 +244,11 @@ export const ghlProxy = createServerFn({ method: "POST" })
       return { ok: false as const, code: "forbidden" as const, message: autorizacao.message };
     }
 
+    if (op.escrita && conn?.["status"] !== "conectada") {
+      return { ok: false as const, code: "forbidden" as const, message: "Teste a ligação antes de enviar alterações." };
+    }
     const query = filtrarQuery(op, data.query);
+
     if (!query.ok) return { ok: false as const, code: "bad_request" as const, message: query.motivo };
     const body = filtrarBody(op, data.body);
     if (!body.ok) return { ok: false as const, code: "bad_request" as const, message: body.motivo };
@@ -280,21 +284,35 @@ export const ghlProxy = createServerFn({ method: "POST" })
     }
 
     const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
-    const res = await ghlFetch(cfg, op.path({ locationId, ghlContactId }), {
+    const executar = () => ghlFetch(cfg, op.path({ locationId, ghlContactId }), {
       method: op.method,
       query: { ...query.valor, ...parametrosDoServidor(op, { locationId, ghlContactId }) },
       ...(op.method === "POST"
         ? { body: { ...body.valor, ...(ghlContactId ? { contactId: ghlContactId } : {}) } }
         : {}),
     });
-
-    if (op.escrita) {
-      await auditar(ctx, orgId, nome, `ghl.${data.operacao}`, { ok: res.ok });
-    }
+    const { executarEscritaAuditada } = await import("./ghl-write.core");
+    const tentativaId = crypto.randomUUID();
+    const res = op.escrita ? await executarEscritaAuditada({
+      executar,
+      registar: async (fase, resultado) => {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { error } = await supabaseAdmin.from("audit_logs").insert({
+          organization_id: orgId, actor_id: ctx.userId, actor_name: nome,
+          action: `ghl.${data.operacao}.${fase}`, entity: "contacts", entity_id: data.contactoId ?? null,
+          verified: true,
+          metadata: { tentativa_id: tentativaId, ...(resultado ? {
+            ok: resultado.ok, status: resultado.status, code: resultado.ok ? null : resultado.code,
+          } : {}) },
+        });
+        return !error;
+      },
+    }) : { ...await executar(), warning: undefined };
     return res.ok
-      ? { ok: true as const, data: (res.data ?? null) as Json }
-      : { ok: false as const, code: res.code, message: res.message };
+      ? { ok: true as const, data: (res.data ?? null) as Json, warning: res.warning }
+      : { ok: false as const, code: res.code, message: res.message, warning: res.warning };
   });
+
 
 /** Sincronização em modo leitura: importa contactos do GHL para a base local. */
 export const syncGhl = createServerFn({ method: "POST" })
