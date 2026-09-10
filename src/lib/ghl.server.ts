@@ -24,7 +24,9 @@ export type GhlErrorCode =
   | "timeout"
   | "server_error"
   | "network_error"
+  | "outcome_unknown"
   | "bad_request";
+
 
 export function readGhlSecrets(): { token: string | null; locationId: string | null } {
   return {
@@ -44,7 +46,10 @@ function codeForStatus(status: number): GhlErrorCode {
 
 export function mensagemErro(code: GhlErrorCode): string {
   switch (code) {
+    case "outcome_unknown":
+      return "Não foi possível confirmar o resultado. A operação pode ter sido aplicada. Verifique no GoHighLevel antes de repetir.";
     case "missing_secrets":
+
       return "Credenciais do GoHighLevel não configuradas no backend.";
     case "unauthorized":
       return "Token inválido ou expirado. Gere um novo Private Integration Token no GoHighLevel.";
@@ -88,7 +93,7 @@ export function urlOficial(path: string, query: Record<string, string | undefine
   return url;
 }
 
-/** Pedido com timeout, retry com backoff exponencial e erros legíveis. */
+/** Apenas leituras podem ser repetidas: escritas sem idempotency key têm resultado incerto. */
 export async function ghlFetch<T = unknown>(
   cfg: GhlConfig,
   path: string,

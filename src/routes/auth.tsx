@@ -9,10 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { ativarDemo, desativarDemo, useSessao } from "@/lib/session";
+import { caminhoSeguro } from "@/lib/auth-redirect";
 
-function caminhoSeguro(valor: unknown): string {
-  return typeof valor === "string" && valor.startsWith("/") && !valor.startsWith("//") ? valor : "";
-}
 
 export const Route = createFileRoute("/auth")({
   ssr: false,

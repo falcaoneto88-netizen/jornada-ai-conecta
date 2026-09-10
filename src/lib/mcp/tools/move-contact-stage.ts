@@ -9,8 +9,9 @@ export default defineTool({
   description:
     "Move um cliente para outra etapa da jornada e regista a alteração na auditoria. Confirme com o utilizador antes de usar.",
   inputSchema: {
-    contact_id: z.string().describe("Identificador do cliente."),
-    stage_key: z.string().describe("Chave da etapa de destino."),
+    contact_id: z.string().uuid().describe("Identificador do cliente."),
+    stage_key: z.string().min(1).max(100).describe("Chave da etapa de destino."),
+
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: async ({ contact_id, stage_key }, ctx) => {
@@ -52,16 +53,8 @@ export default defineTool({
       return erro("A alteração não foi aplicada: sem permissão ou cliente fora da sua organização.");
     }
 
-    const { error: erroAuditoria } = await supabase.from("audit_logs").insert({
-      organization_id: anterior.organization_id,
-      actor_id: ctx.getUserId?.() ?? null,
-      action: "contacto.mover_etapa",
-      entity: "contacts",
-      entity_id: contact_id,
-      actor_name: ctx.getUserEmail() ?? "MCP",
-      metadata: { de: anterior.stage_key, para: stage_key, origem: "mcp" },
-    });
-    if (erroAuditoria) return erro(`Alteração aplicada, mas a auditoria falhou: ${erroAuditoria.message}`);
+    // O gatilho grava a auditoria atomicamente, sem duplicar eventos em repetições.
+
 
     return texto({ movido: data[0], etapa: etapa.name });
   },

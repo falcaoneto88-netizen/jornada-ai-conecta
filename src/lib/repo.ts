@@ -385,12 +385,15 @@ export function useMoverContacto() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { id: string; etapa: StageId; nome: string }) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("contacts")
         .update({ stage_key: input.etapa, last_interaction_at: new Date().toISOString() })
-        .eq("id", input.id);
+        .eq("id", input.id)
+        .select("id");
       if (error) throw error;
-      await registarAuditoria("contacto.etapa_alterada", "contacts", { id: input.id, etapa: input.etapa });
+      if (data?.length !== 1) throw new Error("Cliente não encontrado ou sem permissão para mover.");
+      // A auditoria é gravada pelo gatilho, na mesma transação da alteração.
+
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contactos"] }),
   });
