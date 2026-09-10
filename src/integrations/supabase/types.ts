@@ -91,6 +91,7 @@ export type Database = {
           id: string
           metadata: Json
           organization_id: string
+          verified: boolean
         }
         Insert: {
           action: string
@@ -102,6 +103,7 @@ export type Database = {
           id?: string
           metadata?: Json
           organization_id: string
+          verified?: boolean
         }
         Update: {
           action?: string
@@ -113,6 +115,7 @@ export type Database = {
           id?: string
           metadata?: Json
           organization_id?: string
+          verified?: boolean
         }
         Relationships: [
           {
@@ -959,6 +962,15 @@ export type Database = {
         }
         Returns: Json
       }
+      ghl_apply_contact_snapshot: {
+        Args: {
+          _actor: string
+          _contact: Json
+          _location: string
+          _org: string
+        }
+        Returns: Json
+      }
       ghl_claim_delivery: {
         Args: {
           _content_fallback: boolean
@@ -973,6 +985,16 @@ export type Database = {
           _source_version: string
         }
         Returns: Json
+      }
+      ghl_finish_contact_sync: {
+        Args: {
+          _actor: string
+          _ignorados: number
+          _importados: number
+          _location: string
+          _org: string
+        }
+        Returns: string
       }
       ghl_mark_delivery_failed: {
         Args: {

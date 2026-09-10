@@ -133,8 +133,10 @@ function CaixaEntrada() {
       } else {
         toast.error(res.message);
       }
+      if ("warning" in res && res.warning) toast.warning(res.warning);
     } catch {
-      toast.error("Falha ao enviar a mensagem.");
+      toast.error("Resultado do envio não confirmado. Verifique no GoHighLevel antes de repetir.");
+
     } finally {
       setAEnviar(false);
       setConfirmar(false);

@@ -24,7 +24,9 @@ export type GhlErrorCode =
   | "timeout"
   | "server_error"
   | "network_error"
+  | "outcome_unknown"
   | "bad_request";
+
 
 export function readGhlSecrets(): { token: string | null; locationId: string | null } {
   return {
@@ -44,7 +46,10 @@ function codeForStatus(status: number): GhlErrorCode {
 
 export function mensagemErro(code: GhlErrorCode): string {
   switch (code) {
+    case "outcome_unknown":
+      return "Não foi possível confirmar o resultado. A operação pode ter sido aplicada. Verifique no GoHighLevel antes de repetir.";
     case "missing_secrets":
+
       return "Credenciais do GoHighLevel não configuradas no backend.";
     case "unauthorized":
       return "Token inválido ou expirado. Gere um novo Private Integration Token no GoHighLevel.";
@@ -88,7 +93,7 @@ export function urlOficial(path: string, query: Record<string, string | undefine
   return url;
 }
 
-/** Pedido com timeout, retry com backoff exponencial e erros legíveis. */
+/** Apenas leituras podem ser repetidas: escritas sem idempotency key têm resultado incerto. */
 export async function ghlFetch<T = unknown>(
   cfg: GhlConfig,
   path: string,
@@ -102,11 +107,15 @@ export async function ghlFetch<T = unknown>(
   }
 
   let ultimo: { status: number; code: GhlErrorCode } = { status: 0, code: "network_error" };
+  const method = (init.method ?? "GET").toUpperCase();
+  const leitura = method === "GET" || method === "HEAD";
+  const tentativas = leitura ? MAX_TENTATIVAS : 1;
 
-  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
     try {
       const res = await fetch(url.toString(), {
-        method: init.method ?? "GET",
+        method,
+
         headers: {
           Authorization: `Bearer ${cfg.token}`,
           Version: GHL_VERSION,
@@ -135,15 +144,16 @@ export async function ghlFetch<T = unknown>(
       }
 
       const code = codeForStatus(res.status);
-      ultimo = { status: res.status, code };
+      ultimo = { status: res.status, code: !leitura && res.status >= 500 ? "outcome_unknown" : code };
       // Só vale a pena repetir em rate-limit ou erro do servidor.
       if (code !== "rate_limited" && code !== "server_error") break;
     } catch (erro) {
       const isTimeout = erro instanceof Error && (erro.name === "TimeoutError" || erro.name === "AbortError");
-      ultimo = { status: 0, code: isTimeout ? "timeout" : "network_error" };
+      ultimo = { status: 0, code: !leitura ? "outcome_unknown" : isTimeout ? "timeout" : "network_error" };
     }
 
-    if (tentativa < MAX_TENTATIVAS) {
+    if (tentativa < tentativas) {
+
       await new Promise((r) => setTimeout(r, 400 * 2 ** (tentativa - 1)));
     }
   }

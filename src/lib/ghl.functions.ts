@@ -8,17 +8,8 @@ type Ctx = { supabase: SupabaseClient; userId: string };
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
-type GhlContact = {
-  id?: string;
-  firstName?: string;
-  lastName?: string;
-  contactName?: string;
-  phone?: string;
-  email?: string;
-  tags?: string[];
-  source?: string;
-  dateUpdated?: string;
-};
+
+
 
 export const SEM_INTEGRACAO = "Integração não configurada para esta organização.";
 export const SEM_PERMISSAO = "Não tem permissão para esta ação.";
@@ -253,7 +244,11 @@ export const ghlProxy = createServerFn({ method: "POST" })
       return { ok: false as const, code: "forbidden" as const, message: autorizacao.message };
     }
 
+    if (op.escrita && conn?.["status"] !== "conectada") {
+      return { ok: false as const, code: "forbidden" as const, message: "Teste a ligação antes de enviar alterações." };
+    }
     const query = filtrarQuery(op, data.query);
+
     if (!query.ok) return { ok: false as const, code: "bad_request" as const, message: query.motivo };
     const body = filtrarBody(op, data.body);
     if (!body.ok) return { ok: false as const, code: "bad_request" as const, message: body.motivo };
@@ -289,21 +284,35 @@ export const ghlProxy = createServerFn({ method: "POST" })
     }
 
     const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
-    const res = await ghlFetch(cfg, op.path({ locationId, ghlContactId }), {
+    const executar = () => ghlFetch(cfg, op.path({ locationId, ghlContactId }), {
       method: op.method,
       query: { ...query.valor, ...parametrosDoServidor(op, { locationId, ghlContactId }) },
       ...(op.method === "POST"
         ? { body: { ...body.valor, ...(ghlContactId ? { contactId: ghlContactId } : {}) } }
         : {}),
     });
-
-    if (op.escrita) {
-      await auditar(ctx, orgId, nome, `ghl.${data.operacao}`, { ok: res.ok });
-    }
+    const { executarEscritaAuditada } = await import("./ghl-write.core");
+    const tentativaId = crypto.randomUUID();
+    const res = op.escrita ? await executarEscritaAuditada({
+      executar,
+      registar: async (fase, resultado) => {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { error } = await supabaseAdmin.from("audit_logs").insert({
+          organization_id: orgId, actor_id: ctx.userId, actor_name: nome,
+          action: `ghl.${data.operacao}.${fase}`, entity: "contacts", entity_id: data.contactoId ?? null,
+          verified: true,
+          metadata: { tentativa_id: tentativaId, ...(resultado ? {
+            ok: resultado.ok, status: resultado.status, code: resultado.ok ? null : resultado.code,
+          } : {}) },
+        });
+        return !error;
+      },
+    }) : { ...await executar(), warning: undefined };
     return res.ok
-      ? { ok: true as const, data: (res.data ?? null) as Json }
-      : { ok: false as const, code: res.code, message: res.message };
+      ? { ok: true as const, data: (res.data ?? null) as Json, warning: res.warning }
+      : { ok: false as const, code: res.code, message: res.message, warning: res.warning };
   });
+
 
 /** Sincronização em modo leitura: importa contactos do GHL para a base local. */
 export const syncGhl = createServerFn({ method: "POST" })
@@ -313,7 +322,7 @@ export const syncGhl = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const acesso = await resolverAcesso(ctx, ["administrador"]);
     if (!acesso.ok) return { ok: false as const, code: acesso.code, message: acesso.message };
-    const { orgId, nome, locationId, conn } = acesso.acesso;
+    const { orgId, locationId, conn } = acesso.acesso;
 
     const { token } = readGhlSecrets();
     if (!token) {
@@ -329,87 +338,44 @@ export const syncGhl = createServerFn({ method: "POST" })
 
     const cfg = { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
 
-    const res = await ghlFetch<{ contacts?: GhlContact[] }>(cfg, "contacts/", { query: { locationId, limit: "100" } });
-    if (!res.ok) {
-      return { ok: false as const, code: res.code, message: res.message };
-    }
-
-    const contactos = res.data?.contacts ?? [];
-    const limpar = (v?: string | null) =>
-      (v ?? "").replace(/\bundefined\b|\bnull\b/gi, "").replace(/\s+/g, " ").trim();
-
-    const linhas = contactos.map((c) => ({
-      organization_id: orgId,
-      ghl_contact_id: String(c.id),
-      full_name:
-        limpar([c.firstName, c.lastName].filter(Boolean).join(" ")) ||
-        limpar(c.contactName) ||
-        limpar(c.email) ||
-        "Sem nome",
-      phone: c.phone ?? null,
-      phone_normalized: c.phone ? String(c.phone).replace(/\D/g, "") : null,
-      email: c.email ?? null,
-      tags: Array.isArray(c.tags) ? c.tags : [],
-      source: c.source ?? "GoHighLevel",
-      last_interaction_at: c.dateUpdated ?? null,
-      is_demo: false,
-    }));
-
-    let importados = 0;
-    if (linhas.length > 0) {
-      // Os índices únicos são parciais, por isso não é possível usar `upsert`/ON CONFLICT.
-      // Lemos os contactos já existentes e decidimos inserir ou atualizar cada um.
-      const ids = linhas.map((l) => l.ghl_contact_id);
-      const { data: existentes, error: erroLeitura } = await ctx.supabase
-        .from("contacts")
-        .select("id, ghl_contact_id")
-        .eq("organization_id", orgId)
-        .in("ghl_contact_id", ids);
-      if (erroLeitura) {
-        return {
-          ok: false as const,
-          code: "server_error" as const,
-          message: `Falha ao ler contactos: ${erroLeitura.message}`,
-        };
-      }
-
-      const mapa = new Map<string, string>();
-      for (const e of existentes ?? []) {
-        if (e.ghl_contact_id) mapa.set(e.ghl_contact_id, e.id);
-      }
-
-      const novos = linhas.filter((l) => !mapa.has(l.ghl_contact_id));
-      if (novos.length > 0) {
-        const { error } = await ctx.supabase.from("contacts").insert(novos);
-        if (error) {
-          return {
-            ok: false as const,
-            code: "server_error" as const,
-            message: `Falha ao gravar contactos: ${error.message}`,
-          };
+    const { sincronizarContactos, ErroContacto } = await import("./ghl-contacts.core");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const resultado = await sincronizarContactos({
+      locationId,
+      pagina: async (cursor) => {
+        const res = await ghlFetch<{ contacts?: unknown; meta?: unknown }>(cfg, "contacts/", {
+          query: { locationId, limit: "100", ...cursor },
+        });
+        if (!res.ok) throw new Error(res.message);
+        return res.data;
+      },
+      detalhe: async (id) => {
+        const res = await ghlFetch<{ contact?: unknown }>(cfg, `contacts/${encodeURIComponent(id)}`);
+        if (!res.ok) throw new Error(res.message);
+        return res.data?.contact;
+      },
+      aplicar: async (contacto) => {
+        const { data, error } = await supabaseAdmin.rpc("ghl_apply_contact_snapshot", {
+          _org: orgId, _location: locationId, _actor: ctx.userId, _contact: { ...contacto },
+        });
+        if (error) throw new Error("Falha ao gravar contacto e auditoria; o resultado deste contacto não pôde ser confirmado.");
+        const estado = data && typeof data === "object" && !Array.isArray(data) ? data["estado"] : null;
+        if (estado === "aplicado" || estado === "ignorado") return estado;
+        if (estado === "conflito_telefone" || estado === "conflito_concorrente") {
+          throw new ErroContacto(estado, "Conflito de identidade/telefone. Reveja este contacto antes de repetir.");
         }
-      }
-
-      for (const linha of linhas) {
-        const idExistente = mapa.get(linha.ghl_contact_id);
-        if (!idExistente) continue;
-        const { organization_id: _org, ghl_contact_id: _ghl, ...campos } = linha;
-        const { error } = await ctx.supabase.from("contacts").update(campos).eq("id", idExistente);
-        if (error) {
-          return {
-            ok: false as const,
-            code: "server_error" as const,
-            message: `Falha ao atualizar contactos: ${error.message}`,
-          };
-        }
-      }
-
-      importados = linhas.length;
-    }
-
-    const agora = new Date().toISOString();
-    await ctx.supabase.from("ghl_connections").update({ last_sync_at: agora }).eq("organization_id", orgId);
-    await auditar(ctx, orgId, nome, "ghl.sync.leitura", { importados });
-
-    return { ok: true as const, importados, syncedAt: agora };
+        throw new Error("Resultado de gravação desconhecido.");
+      },
+    });
+    if (!resultado.ok) return resultado;
+    const { data: syncedAt, error } = await supabaseAdmin.rpc("ghl_finish_contact_sync", {
+      _org: orgId, _location: locationId, _actor: ctx.userId,
+      _importados: resultado.importados, _ignorados: resultado.ignorados,
+    });
+    if (error || !syncedAt) return {
+      ...resultado, ok: false as const, code: "partial_sync" as const,
+      message: `Contactos processados (${resultado.importados} gravados, ${resultado.ignorados} preservados), mas não foi possível confirmar o resumo da sincronização.`,
+    };
+    return { ...resultado, syncedAt };
   });
+

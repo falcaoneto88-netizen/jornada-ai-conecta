@@ -1,4 +1,8 @@
+import { SyncPendencias } from "@/components/sync-pendencias";
+import type { PendenciaContacto } from "@/lib/ghl-contacts.core";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+
 import { Download, RefreshCw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -31,7 +35,9 @@ export const Route = createFileRoute("/clientes")({
 });
 
 function Clientes() {
-  const { demo } = useModoDados();
+  const qc = useQueryClient();
+  const { demo, escopo } = useModoDados();
+  const [pendenciasSync, setPendenciasSync] = useState<{ escopo: string; items: PendenciaContacto[] } | null>(null);
   const { data: contacts = [], isLoading, error } = useContactos();
   const { data: etapas = [] } = useEtapas();
   const sincronizar = useServerFn(syncGhl);
@@ -45,17 +51,21 @@ function Clientes() {
       toast.error("Sincronização indisponível em modo demonstração.");
       return;
     }
+    setPendenciasSync(null);
     setASincronizar(true);
     try {
       const res = await sincronizar();
-      if (res.ok) toast.success(`Sincronização concluída: ${res.importados} contactos importados.`);
+      setPendenciasSync({ escopo, items: "pendencias" in res ? res.pendencias : [] });
+      if (res.ok) toast.success(`Sincronização concluída: ${res.importados} gravados, ${res.ignorados} já atualizados.`);
       else toast.error(res.message);
     } catch {
-      toast.error("Falha ao contactar o servidor de sincronização.");
+      toast.error("Conclusão não confirmada. Alguns contactos podem ter sido importados; a lista será atualizada.");
     } finally {
+      await qc.invalidateQueries({ queryKey: ["contactos"] });
       setASincronizar(false);
     }
   }
+
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -109,7 +119,9 @@ function Clientes() {
       }
     >
       <div className="space-y-6">
+        <SyncPendencias pendencias={pendenciasSync?.escopo === escopo ? pendenciasSync.items : []} />
         {demo && (
+
           <DemoNotice texto="Registos DEMO. A deduplicação usa GHL Contact ID, telefone normalizado e e-mail quando a ligação estiver ativa." />
         )}
 

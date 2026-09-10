@@ -3,7 +3,7 @@
  * Cria um esquema `auth` sintético (nunca dados reais) e os papéis do Supabase,
  * para poder exercitar as políticas RLS com `set role authenticated`.
  */
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,9 @@ export type Resultado = { ok: boolean; erro: string; linhas: string[][] };
 export type DbReal = {
   /** Executa SQL como superutilizador (preparação de cenários). */
   admin: (sql: string) => Resultado;
+  /** Sessão independente para testar concorrência real. */
+  adminAsync: (sql: string) => Promise<Resultado>;
+
   /** Executa SQL como utilizador autenticado (RLS ativa) numa transação. */
   comoUtilizador: (userId: string, sql: string) => Resultado;
   /** Executa SQL como service_role (backend de confiança). */
@@ -130,6 +133,14 @@ export async function iniciarDbReal(): Promise<DbReal> {
 
   return {
     admin: (sql) => executar(sql),
+    adminAsync: (sql) => new Promise((resolve) => {
+      const child = execFile("psql", ["-h", socket, "-U", "postgres", "-d", "jornada", "-v", "ON_ERROR_STOP=1", "-t", "-A"],
+        { encoding: "utf8", env: ambiente }, (error, stdout, stderr) => {
+          resolve({ ok: !error, erro: stderr, linhas: stdout.trim().split("\n").map((l) => [l]) });
+        });
+      child.stdin?.end(sql);
+    }),
+
     comoUtilizador: (userId, sql) => executar(envolver("authenticated", userId, sql)),
     comoServico: (sql) => executar(envolver("service_role", null, sql)),
     stop: () => {

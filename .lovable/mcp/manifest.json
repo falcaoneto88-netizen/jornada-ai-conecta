@@ -79,10 +79,14 @@
           "properties": {
             "contact_id": {
               "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
               "description": "Identificador do cliente."
             },
             "stage_key": {
               "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
               "description": "Chave da etapa de destino."
             }
           },
@@ -133,7 +137,7 @@
       {
         "name": "recent_activity",
         "title": "Atividade recente",
-        "description": "Lista os registos de auditoria mais recentes da organização (ações, entidades e datas).",
+        "description": "Lista a auditoria da organização. verified=true indica registo emitido pelo backend ou banco; false inclui registos históricos ou declarados pelo cliente e não atesta a identidade indicada.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,

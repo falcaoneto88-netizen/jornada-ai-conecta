@@ -1,4 +1,7 @@
+import { SyncPendencias } from "@/components/sync-pendencias";
+import type { PendenciaContacto } from "@/lib/ghl-contacts.core";
 import { createFileRoute } from "@tanstack/react-router";
+
 import { useServerFn } from "@tanstack/react-start";
 import { Check, Copy, Lock, PlugZap, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -430,8 +433,11 @@ function MapeamentoCalendarios({
 }
 
 function Integracoes() {
+  const qc = useQueryClient();
 
-  const { demo } = useModoDados();
+  const { demo, escopo } = useModoDados();
+  const [pendenciasSync, setPendenciasSync] = useState<{ escopo: string; items: PendenciaContacto[] } | null>(null);
+
   const permissoes = usePermissoes();
   const podeGerir = permissoes.gerirIntegracao;
   const { data: ligacao } = useLigacaoGhl();
@@ -488,17 +494,24 @@ function Integracoes() {
       toast.error("Sincronização indisponível em modo demonstração.");
       return;
     }
+    setPendenciasSync(null);
     setASincronizar(true);
     try {
       const res = await sincronizar();
-      if (res.ok) toast.success(`Sincronização em leitura concluída: ${res.importados} contactos.`);
+      setPendenciasSync({ escopo, items: "pendencias" in res ? res.pendencias : [] });
+      if (res.ok) toast.success(`Sincronização em leitura concluída: ${res.importados} gravados, ${res.ignorados} já atualizados.`);
       else toast.error(res.message);
     } catch {
-      toast.error("Falha na sincronização.");
+      toast.error("Conclusão não confirmada. Alguns contactos podem ter sido importados; os dados serão atualizados.");
     } finally {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["contactos"] }),
+        qc.invalidateQueries({ queryKey: ["ligacao-ghl"] }),
+      ]);
       setASincronizar(false);
     }
   }
+
 
   function guardarConfig() {
     if (demo) {
@@ -523,7 +536,9 @@ function Integracoes() {
   return (
     <AppShell title="Integrações" description="GoHighLevel / LeadConnector (API v2)">
       <div className="space-y-6">
+        <SyncPendencias pendencias={pendenciasSync?.escopo === escopo ? pendenciasSync.items : []} />
         {demo && <DemoNotice texto="Modo demonstração: nenhuma chamada é feita ao GoHighLevel." />}
+
 
         <section className="surface-card flex flex-wrap items-center justify-between gap-4 p-6">
           <div className="flex items-start gap-3">
