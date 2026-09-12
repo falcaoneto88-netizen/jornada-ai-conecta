@@ -301,6 +301,131 @@ export type Database = {
           },
         ]
       }
+      bioreport_consultation_links: {
+        Row: {
+          consultation_id: string
+          organization_id: string
+          patient_id: string
+        }
+        Insert: {
+          consultation_id: string
+          organization_id: string
+          patient_id: string
+        }
+        Update: {
+          consultation_id?: string
+          organization_id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bioreport_consultation_links_organization_id_patient_id_fkey"
+            columns: ["organization_id", "patient_id"]
+            isOneToOne: false
+            referencedRelation: "bioreport_patient_links"
+            referencedColumns: ["organization_id", "patient_id"]
+          },
+        ]
+      }
+      bioreport_events: {
+        Row: {
+          consultation_id: string
+          contact_id: string
+          event_data: Json
+          event_id: string
+          event_type: string
+          ghl_contact_id: string
+          id: string
+          occurred_at: string
+          organization_id: string
+          patient_id: string
+          received_at: string
+          record_id: string
+        }
+        Insert: {
+          consultation_id: string
+          contact_id: string
+          event_data: Json
+          event_id: string
+          event_type: string
+          ghl_contact_id: string
+          id?: string
+          occurred_at: string
+          organization_id: string
+          patient_id: string
+          received_at?: string
+          record_id: string
+        }
+        Update: {
+          consultation_id?: string
+          contact_id?: string
+          event_data?: Json
+          event_id?: string
+          event_type?: string
+          ghl_contact_id?: string
+          id?: string
+          occurred_at?: string
+          organization_id?: string
+          patient_id?: string
+          received_at?: string
+          record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bioreport_events_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bioreport_events_organization_id_consultation_id_fkey"
+            columns: ["organization_id", "consultation_id"]
+            isOneToOne: false
+            referencedRelation: "bioreport_consultation_links"
+            referencedColumns: ["organization_id", "consultation_id"]
+          },
+        ]
+      }
+      bioreport_patient_links: {
+        Row: {
+          contact_id: string
+          created_at: string
+          ghl_contact_id: string
+          organization_id: string
+          patient_id: string
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          ghl_contact_id: string
+          organization_id: string
+          patient_id: string
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          ghl_contact_id?: string
+          organization_id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bioreport_patient_links_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bioreport_patient_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           created_at: string
@@ -1033,6 +1158,10 @@ export type Database = {
         Returns: boolean
       }
       pedido_de_cliente: { Args: never; Returns: boolean }
+      receive_bioreport_event: {
+        Args: { _body: string; _signature: string }
+        Returns: Json
+      }
       tem_papel: {
         Args: { _papeis: Database["public"]["Enums"]["app_role"][] }
         Returns: boolean
