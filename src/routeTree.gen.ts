@@ -22,6 +22,7 @@ import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ModelosRouteImport } from './routes/modelos'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as ApiPublicBioreportEventRouteImport } from './routes/api/public/bioreport-event'
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
 import { Route as ApiPublicHooksSincronizarAgendaRouteImport } from './routes/api/public/hooks/sincronizar-agenda'
 
@@ -91,6 +92,11 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicBioreportEventRoute = ApiPublicBioreportEventRouteImport.update({
+  id: '/api/public/bioreport-event',
+  path: '/api/public/bioreport-event',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
   id: '/api/public/ghl-webhook',
   path: '/api/public/ghl-webhook',
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/modelos': typeof ModelosRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/modelos': typeof ModelosRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/modelos': typeof ModelosRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/modelos'
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
+    | '/api/public/bioreport-event'
     | '/api/public/ghl-webhook'
     | '/api/public/hooks/sincronizar-agenda'
   fileRoutesByTo: FileRoutesByTo
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/modelos'
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
+    | '/api/public/bioreport-event'
     | '/api/public/ghl-webhook'
     | '/api/public/hooks/sincronizar-agenda'
   id:
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | '/modelos'
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
+    | '/api/public/bioreport-event'
     | '/api/public/ghl-webhook'
     | '/api/public/hooks/sincronizar-agenda'
   fileRoutesById: FileRoutesById
@@ -223,6 +235,7 @@ export interface RootRouteChildren {
   ModelosRoute: typeof ModelosRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
+  ApiPublicBioreportEventRoute: typeof ApiPublicBioreportEventRoute
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
   ApiPublicHooksSincronizarAgendaRoute: typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -320,6 +333,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/bioreport-event': {
+      id: '/api/public/bioreport-event'
+      path: '/api/public/bioreport-event'
+      fullPath: '/api/public/bioreport-event'
+      preLoaderRoute: typeof ApiPublicBioreportEventRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/ghl-webhook': {
       id: '/api/public/ghl-webhook'
       path: '/api/public/ghl-webhook'
@@ -352,6 +372,7 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
+  ApiPublicBioreportEventRoute: ApiPublicBioreportEventRoute,
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
   ApiPublicHooksSincronizarAgendaRoute: ApiPublicHooksSincronizarAgendaRoute,
 }

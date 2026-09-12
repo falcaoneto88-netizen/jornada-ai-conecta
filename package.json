@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:bioreport": "vitest run src/lib/bioreport-events.test.ts src/lib/mcp/tools/list-bioreport-events.test.ts",
+    "test:bioreport:db": "node test/bioreport-events.db.mjs",
+    "bioreport:configure": "node scripts/configure-bioreport-integration.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"

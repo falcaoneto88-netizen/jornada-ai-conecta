@@ -12,7 +12,7 @@
   "mcp": {
     "server": {
       "name": "jornada-ai",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "title": "Jornada AI"
     },
     "tools": [
@@ -152,6 +152,40 @@
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_bioreport_events",
+        "title": "Consultar eventos do BioReport",
+        "description": "Lista eventos assinados recebidos do BioReport e seus vínculos de consulta/contato. Apenas administradores. Recebimento não significa mensagem enviada, etapa alterada ou workflow executado.",
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "contact_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "consultation_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "limit": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
             }
           }
         },
