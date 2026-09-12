@@ -151,6 +151,38 @@ try {
       throw e;
     }
   }
+  const setupSql = "select configure_bioreport_integration($1,$2,$3,$4,$5) as result";
+  const setupArgs = [orgA, "admin-setup", secret, "location-a", true];
+  for (const [role, user, args, code, label] of [
+    ["anon", null, setupArgs, "42501", "anônimo não cadastra chave"],
+    ["authenticated", null, setupArgs, "42501", "sem sessão não cadastra chave"],
+    ["authenticated", viewer, setupArgs, "42501", "visualizador não cadastra chave"],
+    ["authenticated", b, setupArgs, "42501", "admin de outra organização não cadastra chave"],
+    ["authenticated", a, [...setupArgs.slice(0,4),false], "22023", "cadastro exige confirmação"],
+    ["authenticated", a, [orgA,"admin-setup",secret,"location-b",true], "42501", "cadastro verifica location vinculada"],
+    ["authenticated", a, [orgA,"admin-setup","invalid","location-a",true], "22023", "cadastro valida formato da chave"],
+  ]) {
+    await assert.rejects(as(role,user,setupSql,args), e => e.code === code);
+    count++;
+    console.log("PASS", label);
+  }
+  check((await as("authenticated",a,setupSql,setupArgs)).rows[0].result,
+    { configured: true }, "admin cadastra sem retorno de credenciais");
+  check((await as("authenticated",a,setupSql,setupArgs)).rows[0].result,
+    { configured: true }, "cadastro repetido é idempotente");
+  await assert.rejects(as("authenticated",a,setupSql,[orgA,"admin-setup","b".repeat(64),"location-a",true]),
+    e => e.code === "23505");
+  count++; console.log("PASS", "admin não substitui silenciosamente uma chave");
+  check((await db.query("select count(*)::int as n from audit_logs where action='bioreport.integration_configured' and verified")).rows[0].n,
+    1,"cadastro tem auditoria verificada sem duplicação");
+  await db.query("update bioreport_private.signing_keys set enabled=false where key_id='admin-setup'");
+  await assert.rejects(as("authenticated",a,setupSql,setupArgs), e => e.code === "23505");
+  count++; console.log("PASS", "admin não reativa chave revogada");
+  await db.query("alter table audit_logs add constraint setup_atomic check(action <> 'bioreport.integration_configured') not valid");
+  await assert.rejects(as("authenticated",a,setupSql,[orgA,"rollback-setup",secret,"location-a",true]), e => e.code === "23514");
+  check((await db.query("select count(*)::int as n from bioreport_private.signing_keys where key_id='rollback-setup'")).rows[0].n,
+    0,"falha de auditoria desfaz cadastro privado");
+  await db.query("alter table audit_logs drop constraint setup_atomic");
   const receive = async (p = event, signature) => {
     const body = JSON.stringify(p);
     return (
