@@ -14,6 +14,113 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointment_followup_events: {
+        Row: {
+          actor_id: string
+          actor_name: string
+          appointment_end_at: string | null
+          appointment_id: string
+          appointment_start_at: string
+          contact_id: string
+          conversation_id: string
+          deadline_at: string | null
+          evidence: Json
+          ghl_appointment_id: string
+          ghl_contact_id: string
+          id: string
+          message_at: string
+          message_id: string
+          message_status: string | null
+          message_text: string
+          message_type: string
+          organization_id: string
+          previous_id: string | null
+          recorded_at: string
+          request_id: string
+          seq: number
+          state: string
+        }
+        Insert: {
+          actor_id: string
+          actor_name: string
+          appointment_end_at?: string | null
+          appointment_id: string
+          appointment_start_at: string
+          contact_id: string
+          conversation_id: string
+          deadline_at?: string | null
+          evidence: Json
+          ghl_appointment_id: string
+          ghl_contact_id: string
+          id?: string
+          message_at: string
+          message_id: string
+          message_status?: string | null
+          message_text: string
+          message_type: string
+          organization_id: string
+          previous_id?: string | null
+          recorded_at?: string
+          request_id: string
+          seq?: never
+          state: string
+        }
+        Update: {
+          actor_id?: string
+          actor_name?: string
+          appointment_end_at?: string | null
+          appointment_id?: string
+          appointment_start_at?: string
+          contact_id?: string
+          conversation_id?: string
+          deadline_at?: string | null
+          evidence?: Json
+          ghl_appointment_id?: string
+          ghl_contact_id?: string
+          id?: string
+          message_at?: string
+          message_id?: string
+          message_status?: string | null
+          message_text?: string
+          message_type?: string
+          organization_id?: string
+          previous_id?: string | null
+          recorded_at?: string
+          request_id?: string
+          seq?: never
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_followup_events_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_followup_events_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_followup_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_followup_events_previous_id_fkey"
+            columns: ["previous_id"]
+            isOneToOne: false
+            referencedRelation: "appointment_followup_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointments: {
         Row: {
           assigned_user_name: string | null
@@ -1171,6 +1278,16 @@ export type Database = {
       receive_bioreport_event: {
         Args: { _body: string; _signature: string }
         Returns: Json
+      }
+      record_appointment_followup: {
+        Args: {
+          _actor: string
+          _appointment: string
+          _event: Json
+          _org: string
+          _request: string
+        }
+        Returns: string
       }
       tem_papel: {
         Args: { _papeis: Database["public"]["Enums"]["app_role"][] }
