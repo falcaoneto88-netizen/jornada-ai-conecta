@@ -825,10 +825,14 @@ export type Database = {
           id: string
           is_demo: boolean
           language: string
+          lifecycle: string
           name: string
           organization_id: string
+          revision: number
           stage_key: string | null
+          starter_key: string | null
           updated_at: string
+          usage_note: string
         }
         Insert: {
           body: string
@@ -837,10 +841,14 @@ export type Database = {
           id?: string
           is_demo?: boolean
           language?: string
+          lifecycle?: string
           name: string
           organization_id: string
+          revision?: number
           stage_key?: string | null
+          starter_key?: string | null
           updated_at?: string
+          usage_note?: string
         }
         Update: {
           body?: string
@@ -849,10 +857,14 @@ export type Database = {
           id?: string
           is_demo?: boolean
           language?: string
+          lifecycle?: string
           name?: string
           organization_id?: string
+          revision?: number
           stage_key?: string | null
+          starter_key?: string | null
           updated_at?: string
+          usage_note?: string
         }
         Relationships: [
           {
@@ -1288,6 +1300,15 @@ export type Database = {
           _request: string
         }
         Returns: string
+      }
+      save_message_template_draft: {
+        Args: {
+          _draft: Json
+          _expected_revision: number
+          _id: string
+          _org: string
+        }
+        Returns: Json
       }
       tem_papel: {
         Args: { _papeis: Database["public"]["Enums"]["app_role"][] }

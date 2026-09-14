@@ -100,7 +100,7 @@
       {
         "name": "list_message_templates",
         "title": "Listar modelos de mensagem",
-        "description": "Lista os modelos de mensagem da organização, com filtro opcional por etapa da jornada.",
+        "description": "Lista rascunhos da biblioteca da organização. Não indica publicação ou uso no GHL. Pode incluir modelos arquivados.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -113,6 +113,10 @@
             "stage_key": {
               "description": "Chave da etapa da jornada para filtrar.",
               "type": "string"
+            },
+            "include_archived": {
+              "description": "Incluir arquivados (padrão: false).",
+              "type": "boolean"
             }
           }
         },
