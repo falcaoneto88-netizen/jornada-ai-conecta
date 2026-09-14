@@ -20,7 +20,7 @@ it.each(["dia", "semana", "mes"] as const)(
             cliente: "Cliente teste",
             titulo: "Consulta",
             clienteId: "a",
-            inicioIso: "20626-09-14T23:30:00Z",
+            inicioIso: "2026-09-14T23:30:00Z",
             inicio: "",
             fim: null,
             estado: "confirmada",
