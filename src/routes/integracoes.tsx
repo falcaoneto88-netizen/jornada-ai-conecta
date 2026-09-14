@@ -1,3 +1,5 @@
+import { useOrganizacao } from "@/lib/organization";
+import { FUSO_DEMO, formatarDataHora } from "@/lib/clinic-time";
 import { SyncPendencias } from "@/components/sync-pendencias";
 import { BioreportSetup } from "@/components/bioreport-setup";
 import type { PendenciaContacto } from "@/lib/ghl-contacts.core";
@@ -29,7 +31,13 @@ import {
 } from "@/lib/ghl-agenda.functions";
 import { getGhlSecretsStatus, syncGhl, testGhlConnection } from "@/lib/ghl.functions";
 
-import { useGuardarLigacaoGhl, useLigacaoGhl, useModoDados, usePermissoes, useWebhooks } from "@/lib/repo";
+import {
+  useGuardarLigacaoGhl,
+  useLigacaoGhl,
+  useModoDados,
+  usePermissoes,
+  useWebhooks,
+} from "@/lib/repo";
 
 export const Route = createFileRoute("/integracoes")({
   head: () => ({
@@ -41,7 +49,10 @@ export const Route = createFileRoute("/integracoes")({
           "Ligação ao GoHighLevel: token privado, Location ID, pipelines, calendários, webhooks e sincronização manual.",
       },
       { property: "og:title", content: "Integrações — Jornada AI" },
-      { property: "og:description", content: "Ligação segura ao GoHighLevel com webhooks e sincronização." },
+      {
+        property: "og:description",
+        content: "Ligação segura ao GoHighLevel com webhooks e sincronização.",
+      },
     ],
   }),
   component: Integracoes,
@@ -49,7 +60,10 @@ export const Route = createFileRoute("/integracoes")({
 
 const CALLBACK_URL = "https://jornada-ai-conecta.lovable.app/api/public/ghl-webhook";
 
-const ESTADO_WEBHOOK: Record<string, { rotulo: string; variante: "default" | "outline" | "destructive" }> = {
+const ESTADO_WEBHOOK: Record<
+  string,
+  { rotulo: string; variante: "default" | "outline" | "destructive" }
+> = {
   processado: { rotulo: "Processado", variante: "default" },
   a_processar: { rotulo: "Em processamento", variante: "outline" },
   falhado: { rotulo: "Falhado", variante: "destructive" },
@@ -64,7 +78,15 @@ type EstadoSecrets = {
   ia: boolean;
 };
 
-function LinhaSecret({ nome, ativo, descricao }: { nome: string; ativo: boolean; descricao: string }) {
+function LinhaSecret({
+  nome,
+  ativo,
+  descricao,
+}: {
+  nome: string;
+  ativo: boolean;
+  descricao: string;
+}) {
   return (
     <li className="flex items-start gap-3 rounded-xl border border-border p-3">
       {ativo ? (
@@ -74,13 +96,19 @@ function LinhaSecret({ nome, ativo, descricao }: { nome: string; ativo: boolean;
       )}
       <div className="min-w-0">
         <p className="font-mono text-sm break-all">{nome}</p>
-        <p className="text-xs text-muted-foreground">{ativo ? "Configurado no backend." : descricao}</p>
+        <p className="text-xs text-muted-foreground">
+          {ativo ? "Configurado no backend." : descricao}
+        </p>
       </div>
     </li>
   );
 }
 
-type PipelineListado = { id: string; name: string; stages: { id: string; name: string; position: number }[] };
+type PipelineListado = {
+  id: string;
+  name: string;
+  stages: { id: string; name: string; position: number }[];
+};
 
 function MapeamentoPipelines({
   conectada,
@@ -158,7 +186,13 @@ function MapeamentoPipelines({
       const r = res.resultado;
       const resumo = `${r.inseridas} novas, ${r.atualizadas} atualizadas, ${r.contactosNovos} contacto(s) novo(s)`;
       setOcorrencias(r.conflitos);
-      await refrescarCaches(["ligacao-ghl", "etapas", "etapas-pipeline", "oportunidades", "contactos"]);
+      await refrescarCaches([
+        "ligacao-ghl",
+        "etapas",
+        "etapas-pipeline",
+        "oportunidades",
+        "contactos",
+      ]);
       if (r.completo) toast.success(`Oportunidades sincronizadas: ${resumo}.`);
       else
         toast.warning(
@@ -193,7 +227,8 @@ function MapeamentoPipelines({
         <div>
           <h3 className="text-base font-semibold">Funis e etapas do GoHighLevel</h3>
           <p className="text-sm text-muted-foreground">
-            Escolha o funil a acompanhar. As etapas são criadas ou associadas apenas por nome exatamente igual.
+            Escolha o funil a acompanhar. As etapas são criadas ou associadas apenas por nome
+            exatamente igual.
           </p>
         </div>
         <div className="flex gap-2">
@@ -206,18 +241,26 @@ function MapeamentoPipelines({
         </div>
       </div>
 
-      {erro && <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{erro}</p>}
+      {erro && (
+        <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">
+          {erro}
+        </p>
+      )}
 
       {ocorrencias.length > 0 && (
         <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
-          <h4 className="text-sm font-semibold">Ocorrências da última sincronização ({ocorrencias.length})</h4>
+          <h4 className="text-sm font-semibold">
+            Ocorrências da última sincronização ({ocorrencias.length})
+          </h4>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
             {ocorrencias.slice(0, 12).map((c, i) => (
               <li key={i}>{c}</li>
             ))}
           </ul>
           {ocorrencias.length > 12 && (
-            <p className="mt-2 text-xs text-muted-foreground">e mais {ocorrencias.length - 12} ocorrência(s).</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              e mais {ocorrencias.length - 12} ocorrência(s).
+            </p>
           )}
         </section>
       )}
@@ -229,7 +272,9 @@ function MapeamentoPipelines({
       )}
 
       {pipelines?.length === 0 && !erro && (
-        <div className="surface-card p-6 text-sm text-muted-foreground">Nenhum funil encontrado nesta conta.</div>
+        <div className="surface-card p-6 text-sm text-muted-foreground">
+          Nenhum funil encontrado nesta conta.
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -243,7 +288,12 @@ function MapeamentoPipelines({
               {selecionado === p.id ? (
                 <Badge>Ligado</Badge>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => void guardar(p.id)} disabled={aGuardar}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void guardar(p.id)}
+                  disabled={aGuardar}
+                >
                   Ligar
                 </Button>
               )}
@@ -375,7 +425,8 @@ function MapeamentoCalendarios({
         <div>
           <h3 className="text-base font-semibold">Agenda do GoHighLevel</h3>
           <p className="text-sm text-muted-foreground">
-            Escolha a agenda a acompanhar. As marcações aparecem depois na secção Agenda, em leitura.
+            Escolha a agenda a acompanhar. As marcações aparecem depois na secção Agenda, em
+            leitura.
           </p>
         </div>
         <div className="flex gap-2">
@@ -388,11 +439,17 @@ function MapeamentoCalendarios({
         </div>
       </div>
 
-      {erro && <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{erro}</p>}
+      {erro && (
+        <p className="rounded-xl border border-destructive/40 p-4 text-sm text-destructive">
+          {erro}
+        </p>
+      )}
 
       {ocorrencias.length > 0 && (
         <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
-          <h4 className="text-sm font-semibold">Ocorrências da última sincronização ({ocorrencias.length})</h4>
+          <h4 className="text-sm font-semibold">
+            Ocorrências da última sincronização ({ocorrencias.length})
+          </h4>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
             {ocorrencias.slice(0, 12).map((c, i) => (
               <li key={i}>{c}</li>
@@ -408,7 +465,9 @@ function MapeamentoCalendarios({
       )}
 
       {calendarios?.length === 0 && !erro && (
-        <div className="surface-card p-6 text-sm text-muted-foreground">Nenhuma agenda encontrada nesta conta.</div>
+        <div className="surface-card p-6 text-sm text-muted-foreground">
+          Nenhuma agenda encontrada nesta conta.
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -417,12 +476,19 @@ function MapeamentoCalendarios({
             <div className="min-w-0">
               <h4 className="text-sm font-semibold break-words">{c.name}</h4>
               <p className="font-mono text-xs break-all text-muted-foreground">{c.id}</p>
-              {!c.ativo && <p className="text-xs text-muted-foreground">Agenda inativa no GoHighLevel.</p>}
+              {!c.ativo && (
+                <p className="text-xs text-muted-foreground">Agenda inativa no GoHighLevel.</p>
+              )}
             </div>
             {selecionado === c.id ? (
               <Badge>Ligada</Badge>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => void ligar(c.id)} disabled={aGuardar}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void ligar(c.id)}
+                disabled={aGuardar}
+              >
                 Ligar
               </Button>
             )}
@@ -434,10 +500,15 @@ function MapeamentoCalendarios({
 }
 
 function Integracoes() {
+  const organizacao = useOrganizacao();
+  const fuso = organizacao.data?.organizacao.timezone ?? FUSO_DEMO;
   const qc = useQueryClient();
 
   const { demo, escopo } = useModoDados();
-  const [pendenciasSync, setPendenciasSync] = useState<{ escopo: string; items: PendenciaContacto[] } | null>(null);
+  const [pendenciasSync, setPendenciasSync] = useState<{
+    escopo: string;
+    items: PendenciaContacto[];
+  } | null>(null);
 
   const permissoes = usePermissoes();
   const podeGerir = permissoes.gerirIntegracao;
@@ -459,7 +530,9 @@ function Integracoes() {
 
   useEffect(() => {
     if (demo) return;
-    void verSecrets().then(setSecrets).catch(() => setSecrets(null));
+    void verSecrets()
+      .then(setSecrets)
+      .catch(() => setSecrets(null));
   }, [demo, verSecrets]);
 
   useEffect(() => {
@@ -500,10 +573,15 @@ function Integracoes() {
     try {
       const res = await sincronizar();
       setPendenciasSync({ escopo, items: "pendencias" in res ? res.pendencias : [] });
-      if (res.ok) toast.success(`Sincronização em leitura concluída: ${res.importados} gravados, ${res.ignorados} já atualizados.`);
+      if (res.ok)
+        toast.success(
+          `Sincronização em leitura concluída: ${res.importados} gravados, ${res.ignorados} já atualizados.`,
+        );
       else toast.error(res.message);
     } catch {
-      toast.error("Conclusão não confirmada. Alguns contactos podem ter sido importados; os dados serão atualizados.");
+      toast.error(
+        "Conclusão não confirmada. Alguns contactos podem ter sido importados; os dados serão atualizados.",
+      );
     } finally {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["contactos"] }),
@@ -513,7 +591,6 @@ function Integracoes() {
     }
   }
 
-
   function guardarConfig() {
     if (demo) {
       toast.error("Configuração indisponível em modo demonstração.");
@@ -522,7 +599,9 @@ function Integracoes() {
     guardar.mutate(
       {
         // Campo vazio não apaga o funil ligado em Mapeamento.
-        default_pipeline_id: pipeline.trim() ? pipeline.trim() : (ligacao?.default_pipeline_id ?? null),
+        default_pipeline_id: pipeline.trim()
+          ? pipeline.trim()
+          : (ligacao?.default_pipeline_id ?? null),
         // Campo vazio não apaga a agenda ligada em Mapeamento.
         calendar_id: calendario.trim() ? calendario.trim() : (ligacao?.calendar_id ?? null),
         write_enabled: escrita,
@@ -537,9 +616,10 @@ function Integracoes() {
   return (
     <AppShell title="Integrações" description="GoHighLevel / LeadConnector (API v2)">
       <div className="space-y-6">
-        <SyncPendencias pendencias={pendenciasSync?.escopo === escopo ? pendenciasSync.items : []} />
+        <SyncPendencias
+          pendencias={pendenciasSync?.escopo === escopo ? pendenciasSync.items : []}
+        />
         {demo && <DemoNotice texto="Modo demonstração: nenhuma chamada é feita ao GoHighLevel." />}
-
 
         <section className="surface-card flex flex-wrap items-center justify-between gap-4 p-6">
           <div className="flex items-start gap-3">
@@ -550,7 +630,7 @@ function Integracoes() {
                 {demo
                   ? "Modo demonstração."
                   : conectada
-                    ? `Ligação validada${ligacao?.last_test_at ? ` em ${new Date(ligacao.last_test_at).toLocaleString("pt-PT")}` : ""}.`
+                    ? `Ligação validada${ligacao?.last_test_at ? ` em ${`${formatarDataHora(ligacao.last_test_at, fuso)} (${fuso})`}` : ""}.`
                     : "Ligação por validar. Teste a conexão para confirmar as credenciais."}
               </p>
             </div>
@@ -572,9 +652,10 @@ function Integracoes() {
             <BioreportSetup allowed={!demo && podeGerir} />
             <div className="surface-card space-y-5 p-6">
               <p className="flex items-start gap-2 text-sm text-muted-foreground">
-                <Lock className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                O token privado, o Location ID e o segredo do webhook vivem apenas como secrets do backend. Não existem
-                campos para os escrever aqui: o administrador regista-os em Definições do projeto › Secrets.
+                <Lock className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />O token privado,
+                o Location ID e o segredo do webhook vivem apenas como secrets do backend. Não
+                existem campos para os escrever aqui: o administrador regista-os em Definições do
+                projeto › Secrets.
               </p>
 
               {demo && (
@@ -609,9 +690,16 @@ function Integracoes() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <Label htmlFor="base-url">Endereço da API (fixo)</Label>
-                  <Input id="base-url" value={baseUrl} readOnly disabled className="mt-1.5 bg-card" />
+                  <Input
+                    id="base-url"
+                    value={baseUrl}
+                    readOnly
+                    disabled
+                    className="mt-1.5 bg-card"
+                  />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Definido no servidor e não editável, para o token nunca poder ser enviado a outro destino.
+                    Definido no servidor e não editável, para o token nunca poder ser enviado a
+                    outro destino.
                   </p>
                 </div>
                 <div>
@@ -664,7 +752,10 @@ function Integracoes() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void testarLigacao()} disabled={aTestar || demo || !podeGerir}>
+                <Button
+                  onClick={() => void testarLigacao()}
+                  disabled={aTestar || demo || !podeGerir}
+                >
                   <ShieldCheck className="size-4" /> {aTestar ? "A testar…" : "Testar conexão"}
                 </Button>
                 <Button
@@ -672,16 +763,23 @@ function Integracoes() {
                   onClick={() => void sincronizarAgora()}
                   disabled={aSincronizar || demo || !podeGerir}
                 >
-                  <RefreshCw className="size-4" /> {aSincronizar ? "A sincronizar…" : "Sincronização (leitura)"}
+                  <RefreshCw className="size-4" />{" "}
+                  {aSincronizar ? "A sincronizar…" : "Sincronização (leitura)"}
                 </Button>
-                <Button variant="outline" onClick={guardarConfig} disabled={demo || guardar.isPending || !podeGerir}>
+                <Button
+                  variant="outline"
+                  onClick={guardarConfig}
+                  disabled={demo || guardar.isPending || !podeGerir}
+                >
                   Guardar configuração
                 </Button>
               </div>
 
               <p className="text-xs text-muted-foreground">
                 Última sincronização:{" "}
-                {ligacao?.last_sync_at ? new Date(ligacao.last_sync_at).toLocaleString("pt-PT") : "—"}
+                {ligacao?.last_sync_at
+                  ? `${formatarDataHora(ligacao.last_sync_at, fuso)} (${fuso})`
+                  : "—"}
               </p>
             </div>
           </TabsContent>
@@ -706,18 +804,20 @@ function Integracoes() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
                   • Autenticação por cabeçalho: <code>x-webhook-secret</code> com o valor de{" "}
-                  <code>GHL_WEBHOOK_SECRET</code> (caminho «Custom Webhook» dos workflows do GoHighLevel).
+                  <code>GHL_WEBHOOK_SECRET</code> (caminho «Custom Webhook» dos workflows do
+                  GoHighLevel).
                 </li>
                 <li>
-                  • Eventos suportados: <code>contact.created</code> e <code>contact.updated</code>. Outros eventos são
-                  recusados em vez de marcados como processados.
+                  • Eventos suportados: <code>contact.created</code> e <code>contact.updated</code>.
+                  Outros eventos são recusados em vez de marcados como processados.
                 </li>
                 <li>
-                  • Cada evento é confirmado na API oficial do GoHighLevel antes de gravar; entregas repetidas não
-                  duplicam clientes nem registos.
+                  • Cada evento é confirmado na API oficial do GoHighLevel antes de gravar; entregas
+                  repetidas não duplicam clientes nem registos.
                 </li>
                 <li>
-                  • Só sincroniza a ficha do cliente. Não executa automações da jornada nem move oportunidades.
+                  • Só sincroniza a ficha do cliente. Não executa automações da jornada nem move
+                  oportunidades.
                 </li>
               </ul>
               {webhooks.length === 0 ? (
@@ -727,7 +827,8 @@ function Integracoes() {
               ) : (
                 <ul className="divide-y divide-border rounded-xl border border-border">
                   {webhooks.map((w) => {
-                    const estado = ESTADO_WEBHOOK[w.status ?? "recebido"] ?? ESTADO_WEBHOOK["recebido"]!;
+                    const estado =
+                      ESTADO_WEBHOOK[w.status ?? "recebido"] ?? ESTADO_WEBHOOK["recebido"]!;
                     return (
                       <li key={w.id} className="space-y-1 p-3 text-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -735,18 +836,20 @@ function Integracoes() {
                           <div className="flex items-center gap-2">
                             <Badge variant={estado.variante}>{estado.rotulo}</Badge>
                             <span className="text-muted-foreground">
-                              {new Date(w.created_at).toLocaleString("pt-PT")}
+                              {`${formatarDataHora(w.created_at, fuso)} (${fuso})`}
                             </span>
                           </div>
                         </div>
                         <p className="text-xs text-muted-foreground">
                           Tentativas: {w.attempts ?? 0}
                           {w.processed_at
-                            ? ` · processado em ${new Date(w.processed_at).toLocaleString("pt-PT")}`
+                            ? ` · processado em ${`${formatarDataHora(w.processed_at, fuso)} (${fuso})`}`
                             : ""}
                         </p>
                         {w.error_message && (
-                          <p className="text-xs break-words text-destructive">Falha: {w.error_message}</p>
+                          <p className="text-xs break-words text-destructive">
+                            Falha: {w.error_message}
+                          </p>
                         )}
                       </li>
                     );
@@ -763,42 +866,55 @@ function Integracoes() {
             </div>
           </TabsContent>
 
-
           <TabsContent value="guia" className="mt-4">
             <article className="surface-card space-y-4 p-6 text-sm">
               <h3 className="text-base font-semibold">Guia de conexão — checklist</h3>
               <ol className="list-decimal space-y-3 pl-5">
                 <li>
-                  No GoHighLevel, abra <strong>Settings › Private Integrations</strong> e crie uma integração com os
-                  escopos mínimos: locations.readonly, contacts.readonly/write, opportunities.readonly/write,
-                  calendars.readonly, users.readonly, conversations.readonly e conversations/message.write.
+                  No GoHighLevel, abra <strong>Settings › Private Integrations</strong> e crie uma
+                  integração com os escopos mínimos: locations.readonly, contacts.readonly/write,
+                  opportunities.readonly/write, calendars.readonly, users.readonly,
+                  conversations.readonly e conversations/message.write.
                 </li>
                 <li>Copie o token gerado e o Location ID da sub-conta da clínica.</li>
                 <li>
-                  Peça ao administrador para registar no backend os secrets <code>GHL_PRIVATE_TOKEN</code>,{" "}
-                  <code>GHL_LOCATION_ID</code> e <code>GHL_WEBHOOK_SECRET</code> (e{" "}
-                  <code>LOVABLE_API_KEY</code> para a IA). O estado aparece no separador Credenciais.
+                  Peça ao administrador para registar no backend os secrets{" "}
+                  <code>GHL_PRIVATE_TOKEN</code>, <code>GHL_LOCATION_ID</code> e{" "}
+                  <code>GHL_WEBHOOK_SECRET</code> (e <code>LOVABLE_API_KEY</code> para a IA). O
+                  estado aparece no separador Credenciais.
                 </li>
-                <li>Preencha o Pipeline ID e o Calendar ID e mapeie as etapas em Jornada › Mapear Pipeline/Stage.</li>
+                <li>
+                  Preencha o Pipeline ID e o Calendar ID e mapeie as etapas em Jornada › Mapear
+                  Pipeline/Stage.
+                </li>
                 <li>Clique em «Testar conexão» e confirme o nome da conta devolvido.</li>
-                <li>Execute a «Sincronização (leitura)» e verifique os contactos importados em Clientes.</li>
-                <li>Só depois de validar os dados ative «Permitir escrita» para libertar envios e alterações.</li>
+                <li>
+                  Execute a «Sincronização (leitura)» e verifique os contactos importados em
+                  Clientes.
+                </li>
+                <li>
+                  Só depois de validar os dados ative «Permitir escrita» para libertar envios e
+                  alterações.
+                </li>
               </ol>
 
-              <h3 className="text-base font-semibold">Receber contactos em tempo real (Custom Webhook)</h3>
+              <h3 className="text-base font-semibold">
+                Receber contactos em tempo real (Custom Webhook)
+              </h3>
               <p className="text-muted-foreground">
-                O endereço de callback só responde depois de a versão atual da aplicação estar publicada. Enquanto não
-                publicar, use este guia apenas para preparar os workflows.
+                O endereço de callback só responde depois de a versão atual da aplicação estar
+                publicada. Enquanto não publicar, use este guia apenas para preparar os workflows.
               </p>
               <ol className="list-decimal space-y-3 pl-5">
                 <li>
-                  No GoHighLevel, abra <strong>Automation › Workflows</strong> e crie um workflow com o gatilho{" "}
-                  <em>Contact Created</em>. Deixe-o em <em>Draft</em> por agora.
+                  No GoHighLevel, abra <strong>Automation › Workflows</strong> e crie um workflow
+                  com o gatilho <em>Contact Created</em>. Deixe-o em <em>Draft</em> por agora.
                 </li>
                 <li>
-                  Adicione a ação chamada <strong>Custom Webhook</strong> e configure: <em>Event</em> ={" "}
-                  <code>CUSTOM</code>, <em>Method</em> = <code>POST</code>, <em>Authorization</em> = <code>None</code>,
-                  e cole o endereço de callback do separador Webhooks.
+                  Adicione a ação chamada <strong>Custom Webhook</strong> e configure:{" "}
+                  <em>Event</em> = <code>CUSTOM</code>, <em>Method</em> = <code>POST</code>,{" "}
+                  <em>Authorization</em> = <code>None</code>, e cole o endereço de callback do
+                  separador Webhooks.
                 </li>
                 <li>
                   Em <em>Headers</em>, adicione <code>Content-Type: application/json</code> e{" "}
@@ -808,7 +924,7 @@ function Integracoes() {
                 <li>
                   Escolha <em>Raw Body</em> (JSON) e envie:
                   <pre className="mt-2 overflow-x-auto rounded-lg bg-secondary/40 p-3 text-xs">
-{`{
+                    {`{
   "type": "contact.created",
   "locationId": "ok2UHC2QMZsd8UHsAgEa",
   "contactId": "{{contact.id}}"
@@ -816,30 +932,32 @@ function Integracoes() {
                   </pre>
                 </li>
                 <li>
-                  Ainda em <em>Draft</em>, crie um contacto de teste dedicado e use <em>Test Workflow</em> com esse
-                  contacto. Para o gatilho «Contact Created» não basta editar um contacto existente: tem mesmo de criar
-                  um novo.
+                  Ainda em <em>Draft</em>, crie um contacto de teste dedicado e use{" "}
+                  <em>Test Workflow</em> com esse contacto. Para o gatilho «Contact Created» não
+                  basta editar um contacto existente: tem mesmo de criar um novo.
                 </li>
                 <li>
-                  Volte a este separador Webhooks e confirme o estado <strong>Processado</strong>; depois confirme a
-                  ficha real do contacto de teste em Clientes. Só depois de ambos estarem corretos deve publicar
-                  (<em>Publish</em>) o workflow.
+                  Volte a este separador Webhooks e confirme o estado <strong>Processado</strong>;
+                  depois confirme a ficha real do contacto de teste em Clientes. Só depois de ambos
+                  estarem corretos deve publicar (<em>Publish</em>) o workflow.
                 </li>
                 <li>
-                  <strong>Opcional:</strong> repita com um segundo workflow de atualizações, usando o gatilho de
-                  alteração de contacto disponível na sua conta (por exemplo <em>Contact Changed</em>, limitado aos
-                  campos que quer sincronizar) e trocando o tipo para <code>contact.updated</code>. Só estes dois tipos
-                  são aceites; os restantes são recusados.
+                  <strong>Opcional:</strong> repita com um segundo workflow de atualizações, usando
+                  o gatilho de alteração de contacto disponível na sua conta (por exemplo{" "}
+                  <em>Contact Changed</em>, limitado aos campos que quer sincronizar) e trocando o
+                  tipo para <code>contact.updated</code>. Só estes dois tipos são aceites; os
+                  restantes são recusados.
                 </li>
               </ol>
               <p className="text-muted-foreground">
-                O recetor confirma sempre o contacto na API oficial do GoHighLevel antes de gravar, mantém a etapa de
-                jornada dos clientes já existentes e não executa automações nem envia mensagens.
+                O recetor confirma sempre o contacto na API oficial do GoHighLevel antes de gravar,
+                mantém a etapa de jornada dos clientes já existentes e não executa automações nem
+                envia mensagens.
               </p>
 
               <p className="text-muted-foreground">
-                Nenhuma chave é escrita no código ou no navegador. Todas as chamadas passam por um proxy no backend com
-                lista de operações permitidas, tempo limite e novas tentativas.
+                Nenhuma chave é escrita no código ou no navegador. Todas as chamadas passam por um
+                proxy no backend com lista de operações permitidas, tempo limite e novas tentativas.
               </p>
             </article>
           </TabsContent>

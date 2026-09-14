@@ -1,160 +1,269 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { toast } from "sonner";
-
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { equipa } from "@/lib/demo-data";
+import { useOrganizacao, useEquipaOrganizacao } from "@/lib/organization";
+import { useLigacaoGhl, usePapeis, usePermissoes } from "@/lib/repo";
+import { useSessao } from "@/lib/session";
+import { getGhlSecretsStatus } from "@/lib/ghl.functions";
+import { formatarDataHora } from "@/lib/clinic-time";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
     meta: [
-      { title: "Configurações — Jornada AI | Dr. João Falcão" },
+      { title: "Configurações — Jornada AI" },
       {
         name: "description",
-        content: "Utilizadores e papéis, identidade da clínica, fuso horário, retenção de registos e saúde do sistema.",
+        content: "Dados da organização, utilizadores e estado das integrações.",
       },
-      { property: "og:title", content: "Configurações — Jornada AI" },
-      { property: "og:description", content: "Papéis, identidade da clínica, fusos horários e saúde do sistema." },
     ],
   }),
   component: Configuracoes,
 });
 
-const permissoes = [
-  { acao: "Ver painéis e clientes", papeis: "Todos os papéis" },
-  { acao: "Enviar mensagens", papeis: "Administrador, Gestor, Comercial" },
-  { acao: "Mover etapas da jornada", papeis: "Administrador, Gestor, Comercial" },
-  { acao: "Criar e ativar automações", papeis: "Administrador, Gestor" },
-  { acao: "Gerir integrações e secrets", papeis: "Administrador" },
-  { acao: "Gerir utilizadores e papéis", papeis: "Administrador" },
-];
+const rotulos: Record<string, string> = {
+  administrador: "Administrador",
+  gestor: "Gestor",
+  comercial: "Comercial",
+  visualizador: "Visualizador",
+};
 
 function Configuracoes() {
+  const { modo, user } = useSessao();
+  const contexto = useOrganizacao();
+  const equipa = useEquipaOrganizacao();
+  const papeis = usePapeis();
+  const permissoes = usePermissoes();
+  const ligacao = useLigacaoGhl();
+  const consultarSecrets = useServerFn(getGhlSecretsStatus);
+  const secrets = useQuery({
+    queryKey: ["estado-secrets", user?.id ?? "anonimo"],
+    enabled: modo === "conta",
+    queryFn: () => consultarSecrets(),
+    staleTime: 60_000,
+  });
+  const org = contexto.data?.organizacao;
+  const estadoGhl = ligacao.isError
+    ? "Não foi possível consultar"
+    : ligacao.isPending
+      ? "A consultar…"
+      : ligacao.data?.status === "conectada"
+        ? "Ligação validada"
+        : ligacao.data?.status === "erro"
+          ? "Erro na última validação"
+          : "Ligação ainda não validada";
+  const estadoIa = secrets.isError
+    ? "Não foi possível verificar"
+    : secrets.isPending
+      ? "A verificar…"
+      : !secrets.data?.configurada
+        ? "Estado indisponível nesta organização"
+        : secrets.data.ia
+          ? "Chave configurada; operação não testada"
+          : "Chave não configurada";
+
   return (
-    <AppShell title="Configurações" description="Equipa, clínica e sistema">
-      <Tabs defaultValue="equipa">
-        <TabsList>
-          <TabsTrigger value="equipa">Utilizadores</TabsTrigger>
-          <TabsTrigger value="clinica">Clínica</TabsTrigger>
-          <TabsTrigger value="sistema">Sistema</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="equipa" className="mt-4 space-y-4">
-          <div className="surface-card overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead className="bg-heading text-background">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Nome</th>
-                  <th className="px-4 py-3 text-left font-medium">E-mail</th>
-                  <th className="px-4 py-3 text-left font-medium">Papel</th>
-                </tr>
-              </thead>
-              <tbody>
-                {equipa.map((u, i) => (
-                  <tr key={u.email} className={i % 2 === 1 ? "bg-secondary/40" : undefined}>
-                    <td className="px-4 py-3 font-medium text-heading">{u.nome}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline">{u.papel}</Badge>
-                    </td>
-                  </tr>
+    <AppShell title="Configurações" description={org?.name ?? "Equipa, clínica e sistema"}>
+      {modo === "demo" ? (
+        <section className="surface-card p-6">
+          <h2 className="font-semibold">Modo demonstração</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Inicie sessão para consultar a clínica e os utilizadores reais.
+          </p>
+          <Button asChild variant="outline" className="mt-4">
+            <Link to="/auth" search={{ next: "" }}>
+              Iniciar sessão
+            </Link>
+          </Button>
+        </section>
+      ) : contexto.isError ? (
+        <section role="alert" className="surface-card p-6">
+          <p>{contexto.error.message}</p>
+          <Button variant="outline" className="mt-3" onClick={() => void contexto.refetch()}>
+            Tentar novamente
+          </Button>
+        </section>
+      ) : !org ? (
+        <p role="status">A carregar configuração…</p>
+      ) : (
+        <Tabs defaultValue="equipa">
+          <TabsList>
+            <TabsTrigger value="equipa">Utilizadores</TabsTrigger>
+            <TabsTrigger value="clinica">Clínica</TabsTrigger>
+            <TabsTrigger value="sistema">Sistema</TabsTrigger>
+          </TabsList>
+          <TabsContent value="equipa" className="mt-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Utilizadores da organização atual. Convites e alteração de papéis ainda não estão
+              disponíveis nesta tela. Apenas os seus papéis são consultáveis pela sessão atual.
+            </p>
+            {equipa.isError ? (
+              <p role="alert">
+                Não foi possível ler os utilizadores.{" "}
+                <Button variant="outline" size="sm" onClick={() => void equipa.refetch()}>
+                  Tentar novamente
+                </Button>
+              </p>
+            ) : equipa.isPending ? (
+              <p role="status">A carregar utilizadores…</p>
+            ) : (
+              <div className="surface-card overflow-x-auto">
+                <table className="w-full min-w-[520px] text-sm">
+                  <thead className="bg-heading text-background">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Nome</th>
+                      <th className="px-4 py-3 text-left">E-mail</th>
+                      <th className="px-4 py-3 text-left">Papel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equipa.data?.map((u) => (
+                      <tr key={u.id} className="border-b border-border">
+                        <td className="px-4 py-3">
+                          {u.full_name || "Nome não informado"}
+                          {u.id === user?.id ? " (você)" : ""}
+                        </td>
+                        <td className="px-4 py-3">{u.email || "Não informado"}</td>
+                        <td className="px-4 py-3">
+                          {u.id !== user?.id
+                            ? "Não consultável"
+                            : papeis.isError
+                              ? "Não foi possível consultar"
+                              : papeis.isPending
+                                ? "A consultar…"
+                                : papeis.data?.map((p) => rotulos[p] ?? p).join(", ") ||
+                                  "Sem papel atribuído"}
+                        </td>
+                      </tr>
+                    ))}
+                    {equipa.data?.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="p-4">
+                          Nenhum utilizador visível nesta organização.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <section className="surface-card p-6">
+              <h2 className="font-semibold">Permissões da sua conta</h2>
+              {papeis.isError ? (
+                <p role="alert" className="mt-3">
+                  Não foi possível consultar os seus papéis.
+                </p>
+              ) : papeis.isPending ? (
+                <p role="status">A consultar…</p>
+              ) : (
+                <ul className="mt-3 divide-y divide-border text-sm">
+                  {[
+                    { acao: "Operar contactos e mensagens", permitida: permissoes.operar },
+                    {
+                      acao: "Gerir definições locais da jornada",
+                      permitida: permissoes.gerirJornada,
+                    },
+                    { acao: "Gerir integrações", permitida: permissoes.gerirIntegracao },
+                  ].map((p) => (
+                    <li key={p.acao} className="flex flex-wrap justify-between gap-3 py-3">
+                      <span>{p.acao}</span>
+                      <Badge variant="outline">
+                        {p.permitida ? "Permitido pelo papel" : "Não permitido"}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-3 text-xs text-muted-foreground">
+                O envio também depende da integração e da habilitação de escrita no GHL. A permissão
+                não confirma que uma função esteja implementada.
+              </p>
+            </section>
+          </TabsContent>
+          <TabsContent value="clinica" className="mt-4">
+            <section className="surface-card p-6">
+              <h2 className="font-semibold">Dados cadastrados da clínica</h2>
+              <dl className="mt-4 grid gap-5 sm:grid-cols-2">
+                {[
+                  ["Nome", org.name],
+                  ["Fuso horário", org.timezone],
+                  ["Organização", org.id],
+                  ["Tipo de organização", org.is_demo ? "Demonstração" : "Conta real"],
+                  ["E-mail da clínica", "Não cadastrado no modelo atual"],
+                  ["Horário de atendimento", "Não cadastrado no modelo atual"],
+                ].map(([titulo, valor]) => (
+                  <div key={titulo}>
+                    <dt className="text-sm text-muted-foreground">{titulo}</dt>
+                    <dd className="mt-1 break-words font-medium">{valor}</dd>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          <section className="surface-card p-6">
-            <h2 className="text-base font-semibold">Permissões por ação</h2>
-            <ul className="mt-3 divide-y divide-border text-sm">
-              {permissoes.map((p) => (
-                <li key={p.acao} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                  <span className="text-heading">{p.acao}</span>
-                  <span className="text-muted-foreground">{p.papeis}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="clinica" className="mt-4">
-          <section className="surface-card grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
-            <div>
-              <Label htmlFor="nome-clinica">Nome da clínica</Label>
-              <Input id="nome-clinica" defaultValue="Clínica Dr. João Falcão" className="mt-1.5 bg-card" />
-            </div>
-            <div>
-              <Label htmlFor="email-clinica">E-mail de contacto</Label>
-              <Input id="email-clinica" defaultValue="contacto@exemplo.pt" className="mt-1.5 bg-card" />
-            </div>
-            <div>
-              <Label htmlFor="fuso">Fuso horário</Label>
-              <Select defaultValue="lisboa">
-                <SelectTrigger id="fuso" className="mt-1.5 bg-card">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="lisboa">Portugal — Europe/Lisbon</SelectItem>
-                  <SelectItem value="saopaulo">Brasil — America/Sao_Paulo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="horario">Horário de atendimento</Label>
-              <Input id="horario" defaultValue="09:00 — 19:00" className="mt-1.5 bg-card" />
-            </div>
-            <div className="md:col-span-2">
-              <Button onClick={() => toast.success("Identidade da clínica guardada (demonstração).")}>Guardar</Button>
-            </div>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="sistema" className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <section className="surface-card p-6">
-            <h2 className="text-base font-semibold">Retenção de registos</h2>
-            <div className="mt-3 space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span>Registos de auditoria</span>
-                <Badge variant="outline">24 meses</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Execuções de automações</span>
-                <Badge variant="outline">12 meses</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Eventos de webhook</span>
-                <Badge variant="outline">6 meses</Badge>
-              </div>
-            </div>
-          </section>
-
-          <section className="surface-card p-6">
-            <h2 className="text-base font-semibold">Saúde do sistema</h2>
-            <ul className="mt-3 space-y-2 text-sm">
-              <li className="flex items-center justify-between">
-                <span>Aplicação</span>
-                <Badge>Operacional</Badge>
-              </li>
-              <li className="flex items-center justify-between">
-                <span>Base de dados</span>
-                <Badge variant="outline">Por configurar (Fase 2)</Badge>
-              </li>
-              <li className="flex items-center justify-between">
-                <span>Integração GoHighLevel</span>
-                <Badge variant="outline">Demonstração</Badge>
-              </li>
-              <li className="flex items-center justify-between">
-                <span>Assistente de IA</span>
-                <Badge variant="outline">Por configurar (Fase 2)</Badge>
-              </li>
-            </ul>
-          </section>
-        </TabsContent>
-      </Tabs>
+              </dl>
+              <p className="mt-5 text-sm text-muted-foreground">
+                Consulta dos dados guardados. A edição da clínica ainda não está disponível nesta
+                tela.
+              </p>
+            </section>
+          </TabsContent>
+          <TabsContent value="sistema" className="mt-4 space-y-4">
+            <section className="surface-card p-6">
+              <h2 className="font-semibold">Estado consultado</h2>
+              <dl className="mt-4 space-y-4">
+                {[
+                  ["Base de dados", "Leitura da organização concluída"],
+                  ["GoHighLevel", estadoGhl],
+                  [
+                    "Última validação GHL",
+                    formatarDataHora(ligacao.data?.last_test_at, org.timezone),
+                  ],
+                  [
+                    "Escrita GHL",
+                    ligacao.isError
+                      ? "Não foi possível consultar"
+                      : ligacao.isPending
+                        ? "A consultar…"
+                        : ligacao.data?.write_enabled
+                          ? "Habilitada"
+                          : "Desativada",
+                  ],
+                  [
+                    "Calendário associado",
+                    ligacao.isError
+                      ? "Não foi possível consultar"
+                      : ligacao.isPending
+                        ? "A consultar…"
+                        : ligacao.data?.calendar_id
+                          ? "Configurado"
+                          : "Não configurado",
+                  ],
+                  ["Assistente de IA", estadoIa],
+                ].map(([titulo, valor]) => (
+                  <div key={titulo} className="flex flex-wrap justify-between gap-3 text-sm">
+                    <dt>{titulo}</dt>
+                    <dd className="text-muted-foreground">{valor}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-4 text-xs text-muted-foreground">
+                Horários em {org.timezone}. Configuração e última validação não garantem
+                disponibilidade atual de todas as operações.
+              </p>
+              <Button asChild variant="outline" className="mt-4">
+                <Link to="/integracoes">Ver integrações</Link>
+              </Button>
+            </section>
+            <section className="surface-card p-6">
+              <h2 className="font-semibold">Retenção de registos</h2>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Não há política automática de retenção implementada no app para auditoria, execuções
+                ou webhooks. Nenhum prazo de eliminação está configurado nesta tela.
+              </p>
+            </section>
+          </TabsContent>
+        </Tabs>
+      )}
     </AppShell>
   );
 }

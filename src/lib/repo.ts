@@ -26,6 +26,12 @@ import {
   type StageId,
 } from "@/lib/demo-data";
 import { useSessao } from "@/lib/session";
+import {
+  FUSO_DEMO,
+  formatarData as dataPt,
+  formatarDataHora as dataHoraPt,
+} from "@/lib/clinic-time";
+import { opcoesOrganizacao } from "@/lib/organization";
 
 function gerarId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -98,16 +104,6 @@ export function usePermissoes(): Permissoes {
   };
 }
 
-function dataPt(valor: string | null | undefined) {
-  if (!valor) return "—";
-  return new Date(valor).toLocaleDateString("pt-PT");
-}
-
-function dataHoraPt(valor: string | null | undefined) {
-  if (!valor) return "—";
-  return new Date(valor).toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" });
-}
-
 async function orgIdAtual(): Promise<string> {
   const { data: userData } = await supabase.auth.getUser();
   const uid = userData.user?.id;
@@ -121,8 +117,11 @@ async function orgIdAtual(): Promise<string> {
   return data.organization_id;
 }
 
-
-export async function registarAuditoria(action: string, entity: string, metadata: Record<string, unknown> = {}) {
+export async function registarAuditoria(
+  action: string,
+  entity: string,
+  metadata: Record<string, unknown> = {},
+) {
   try {
     const organization_id = await orgIdAtual();
     const { data: userData } = await supabase.auth.getUser();
@@ -165,7 +164,11 @@ export function useEtapas() {
 export function useGuardarMapeamentoEtapa() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { key: string; pipelineId: string | null; stageId: string | null }) => {
+    mutationFn: async (input: {
+      key: string;
+      pipelineId: string | null;
+      stageId: string | null;
+    }) => {
       const { error } = await supabase
         .from("journey_stages")
         .update({ ghl_pipeline_id: input.pipelineId, ghl_stage_id: input.stageId })
@@ -179,7 +182,12 @@ export function useGuardarMapeamentoEtapa() {
 
 /* ---------------- Oportunidades (leitura do GoHighLevel) ---------------- */
 
-export type EtapaPipeline = { key: string; nome: string; posicao: number; ghlStageId: string | null };
+export type EtapaPipeline = {
+  key: string;
+  nome: string;
+  posicao: number;
+  ghlStageId: string | null;
+};
 
 export type Oportunidade = {
   id: string;
@@ -216,12 +224,16 @@ export function useEtapasPipeline(pipelineId: string | null | undefined) {
 }
 
 export function useOportunidades(pipelineId: string | null | undefined) {
-  const { demo, escopo } = useModoDados();
+  const { demo, escopo, user, carregando } = useModoDados();
+  const qc = useQueryClient();
   return useQuery<Oportunidade[]>({
     queryKey: ["oportunidades", escopo, pipelineId ?? "sem"],
-    enabled: Boolean(pipelineId) && !demo,
+    enabled: Boolean(pipelineId) && !demo && !carregando,
     queryFn: async () => {
       if (!pipelineId) return [];
+      const fuso = demo
+        ? FUSO_DEMO
+        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
       const { data, error } = await supabase
         .from("opportunities")
         .select("id,name,stage_key,monetary_value,status,updated_at,contacts(full_name)")
@@ -246,7 +258,7 @@ export function useOportunidades(pipelineId: string | null | undefined) {
         etapa: o.stage_key,
         valor: o.monetary_value,
         estado: o.status,
-        atualizada: dataHoraPt(o.updated_at),
+        atualizada: dataHoraPt(o.updated_at, fuso),
       }));
     },
   });
@@ -290,14 +302,19 @@ type LinhaMarcacaoBd = {
 
 /** Marcações reais da organização (só leitura). Em demonstração fica vazia. */
 export function useMarcacoes() {
-  const { demo, escopo } = useModoDados();
+  const { demo, escopo, user, carregando } = useModoDados();
+  const qc = useQueryClient();
   return useQuery<Marcacao[]>({
     queryKey: ["marcacoes", escopo],
     // A importação corre de hora a hora no backend; o quadro recarrega sozinho.
     refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: !carregando && (demo || Boolean(user)),
     queryFn: async () => {
       if (demo) return [];
+      const fuso = demo
+        ? FUSO_DEMO
+        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
       const { data, error } = await supabase
         .from("appointments")
         .select("id,title,start_at,end_at,status,assigned_user_name,contact_id,contacts(full_name)")
@@ -309,9 +326,9 @@ export function useMarcacoes() {
         titulo: m.title,
         cliente: m.contacts?.full_name ?? "Cliente por associar",
         clienteId: m.contact_id,
-        inicio: dataHoraPt(m.start_at),
+        inicio: dataHoraPt(m.start_at, fuso),
         inicioIso: m.start_at,
-        fim: m.end_at ? dataHoraPt(m.end_at) : null,
+        fim: m.end_at ? dataHoraPt(m.end_at, fuso) : null,
         estado: m.status,
         responsavel: m.assigned_user_name,
       }));
@@ -321,13 +338,17 @@ export function useMarcacoes() {
 
 /* ---------------- Contactos ---------------- */
 
-
 export function useContactos() {
-  const { demo, escopo } = useModoDados();
+  const { demo, escopo, user, carregando } = useModoDados();
+  const qc = useQueryClient();
   return useQuery<Contact[]>({
     queryKey: ["contactos", escopo],
+    enabled: !carregando && (demo || Boolean(user)),
     queryFn: async () => {
       if (demo) return demoContacts;
+      const fuso = demo
+        ? FUSO_DEMO
+        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
       const { data, error } = await supabase
         .from("contacts")
         .select("*")
@@ -357,24 +378,30 @@ export function useContactos() {
         canal: "whatsapp" as Canal,
         responsavel: c.owner_name ?? "—",
         proximaAcao: c.next_action ?? "—",
-        ultimaInteracao: dataPt(c.last_interaction_at ?? c.updated_at),
+        ultimaInteracao: dataPt(c.last_interaction_at ?? c.updated_at, fuso),
         agendamento: proximas.has(c.id)
-          ? dataHoraPt(proximas.get(c.id))
+          ? dataHoraPt(proximas.get(c.id), fuso)
           : c.next_action_at
-            ? dataHoraPt(c.next_action_at)
+            ? dataHoraPt(c.next_action_at, fuso)
             : null,
         timeline: [
-          { data: dataPt(c.created_at), titulo: "Registo criado", detalhe: c.source ?? "Origem não indicada" },
+          {
+            data: dataPt(c.created_at, fuso),
+            titulo: "Registo criado",
+            detalhe: c.source ?? "Origem não indicada",
+          },
           ...(proximas.has(c.id)
             ? [
                 {
-                  data: dataPt(proximas.get(c.id)),
+                  data: dataPt(proximas.get(c.id), fuso),
                   titulo: "Marcação agendada",
-                  detalhe: `Agenda GoHighLevel — ${dataHoraPt(proximas.get(c.id))}`,
+                  detalhe: `Agenda GoHighLevel — ${dataHoraPt(proximas.get(c.id), fuso)}`,
                 },
               ]
             : []),
-          ...(c.notes ? [{ data: dataPt(c.updated_at), titulo: "Nota", detalhe: c.notes }] : []),
+          ...(c.notes
+            ? [{ data: dataPt(c.updated_at, fuso), titulo: "Nota", detalhe: c.notes }]
+            : []),
         ],
       }));
     },
@@ -391,9 +418,9 @@ export function useMoverContacto() {
         .eq("id", input.id)
         .select("id");
       if (error) throw error;
-      if (data?.length !== 1) throw new Error("Cliente não encontrado ou sem permissão para mover.");
+      if (data?.length !== 1)
+        throw new Error("Cliente não encontrado ou sem permissão para mover.");
       // A auditoria é gravada pelo gatilho, na mesma transação da alteração.
-
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contactos"] }),
   });
@@ -409,7 +436,10 @@ export function useModelos() {
     queryKey: ["modelos", escopo],
     queryFn: async () => {
       if (demo) return demoTemplates;
-      const { data, error } = await supabase.from("message_templates").select("*").order("created_at");
+      const { data, error } = await supabase
+        .from("message_templates")
+        .select("*")
+        .order("created_at");
       if (error) throw error;
       return (data ?? []).map((t) => ({
         id: t.id,
@@ -464,11 +494,16 @@ export function useApagarModelo() {
 /* ---------------- Automações ---------------- */
 
 export function useAutomacoes() {
-  const { demo, escopo } = useModoDados();
+  const { demo, escopo, user, carregando } = useModoDados();
+  const qc = useQueryClient();
   return useQuery<Automation[]>({
     queryKey: ["automacoes", escopo],
+    enabled: !carregando && (demo || Boolean(user)),
     queryFn: async () => {
       if (demo) return demoAutomations;
+      const fuso = demo
+        ? FUSO_DEMO
+        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
       const { data, error } = await supabase.from("automations").select("*").order("created_at");
       if (error) throw error;
       return (data ?? []).map((a) => ({
@@ -479,7 +514,7 @@ export function useAutomacoes() {
         versao: a.current_version,
         gatilho: a.trigger_type,
         passos: parsePassos(a.steps),
-        ultimaExecucao: dataHoraPt(a.last_run_at),
+        ultimaExecucao: dataHoraPt(a.last_run_at, fuso),
         taxaSucesso: a.runs_total > 0 ? Math.round((a.runs_success / a.runs_total) * 100) : 0,
         erros: a.runs_error,
       }));
@@ -560,7 +595,10 @@ export function useGuardarAutomacao() {
           definition: definicao,
         });
       }
-      await registarAuditoria("automacao.guardada", "automations", { nome: input.nome, status: input.status });
+      await registarAuditoria("automacao.guardada", "automations", {
+        nome: input.nome,
+        status: input.status,
+      });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["automacoes"] }),
   });
@@ -570,7 +608,10 @@ export function useAlterarEstadoAutomacao() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { id: string; status: AutomationStatus }) => {
-      const { error } = await supabase.from("automations").update({ status: input.status }).eq("id", input.id);
+      const { error } = await supabase
+        .from("automations")
+        .update({ status: input.status })
+        .eq("id", input.id);
       if (error) throw error;
       await registarAuditoria("automacao.estado_alterado", "automations", input);
     },
@@ -582,7 +623,11 @@ export function useAlterarEstadoAutomacao() {
 export function useTestarAutomacao() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { automacao: Automation; contactoId?: string | null; contactoNome: string }) => {
+    mutationFn: async (input: {
+      automacao: Automation;
+      contactoId?: string | null;
+      contactoNome: string;
+    }) => {
       const organization_id = await orgIdAtual();
       const log = input.automacao.passos.map((p) => ({
         passo: labelPasso(p),
@@ -613,24 +658,31 @@ export function useTestarAutomacao() {
 }
 
 export function useExecucoes() {
-  const { demo, escopo } = useModoDados();
+  const { demo, escopo, user, carregando } = useModoDados();
+  const qc = useQueryClient();
   return useQuery<AutomationRun[]>({
     queryKey: ["execucoes", escopo],
+    enabled: !carregando && (demo || Boolean(user)),
     queryFn: async () => {
       if (demo) return demoRuns;
+      const fuso = demo
+        ? FUSO_DEMO
+        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
       const { data, error } = await supabase
         .from("automation_runs")
         .select("*, automations(name), contacts(full_name)")
         .order("started_at", { ascending: false })
         .limit(50);
       if (error) throw error;
-      return (data ?? []).map((r: any) => ({
+      return (data ?? []).map((r) => ({
         id: r.id,
         automacao: r.automations?.name ?? "—",
         cliente: r.contacts?.full_name ?? "—",
-        quando: dataHoraPt(r.started_at),
+        quando: dataHoraPt(r.started_at, fuso),
         estado: (r.mode === "simulacao" ? "simulado" : r.status) as AutomationRun["estado"],
-        detalhe: r.error_message ?? (r.mode === "simulacao" ? "Execução em simulação — nada foi enviado." : "Execução real."),
+        detalhe:
+          r.error_message ??
+          (r.mode === "simulacao" ? "Execução em simulação — nada foi enviado." : "Execução real."),
       }));
     },
   });
@@ -775,11 +827,16 @@ export function useCarregarDadosDemo() {
 /* ---------------- Conversas ---------------- */
 
 export function useConversas() {
-  const { demo, escopo } = useModoDados();
+  const { demo, escopo, user, carregando } = useModoDados();
+  const qc = useQueryClient();
   return useQuery<Conversation[]>({
     queryKey: ["conversas", escopo],
+    enabled: !carregando && (demo || Boolean(user)),
     queryFn: async () => {
       if (demo) return demoConversations;
+      const fuso = demo
+        ? FUSO_DEMO
+        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
       const { data, error } = await supabase
         .from("conversations")
         .select("*, contacts(full_name), messages(body, direction, sent_at, author_name)")
@@ -796,16 +853,19 @@ export function useConversas() {
         priority: string | null;
         unread: boolean;
         last_message_at: string | null;
-        messages: { body: string; direction: string; sent_at: string; author_name: string | null }[] | null;
+        messages:
+          { body: string; direction: string; sent_at: string; author_name: string | null }[] | null;
       };
       return (data as unknown as Linha[]).map((c) => {
-        const mensagens = [...(c.messages ?? [])].sort((a, b) => a.sent_at.localeCompare(b.sent_at));
+        const mensagens = [...(c.messages ?? [])].sort((a, b) =>
+          a.sent_at.localeCompare(b.sent_at),
+        );
         return {
           id: c.id,
           contactId: c.contact_id ?? "",
           canal: c.channel,
           ultimaMensagem: mensagens.at(-1)?.body ?? "",
-          quando: dataHoraPt(c.last_message_at),
+          quando: dataHoraPt(c.last_message_at, fuso),
           naoLidas: c.unread ? 1 : 0,
           resumo: c.summary ?? "Sem resumo gerado.",
           intencao: (c.intent ?? "informacao") as Conversation["intencao"],
@@ -815,7 +875,7 @@ export function useConversas() {
           mensagens: mensagens.map((m) => ({
             autor: (m.direction === "entrada" ? "cliente" : "clinica") as "cliente" | "clinica",
             texto: m.body,
-            hora: dataHoraPt(m.sent_at),
+            hora: dataHoraPt(m.sent_at, fuso),
           })),
         };
       });

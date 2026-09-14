@@ -1,54 +1,76 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, CalendarCheck, FileText, HeartPulse, TrendingUp, UserPlus, Users } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { CalendarCheck, TrendingUp, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
-
 import { AppShell } from "@/components/app-shell";
-import { DemoNotice } from "@/components/demo-notice";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { acoesPrioritarias, funil, kpis } from "@/lib/demo-data";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { usePainel } from "@/lib/dashboard";
+import { formatarDataHora } from "@/lib/clinic-time";
+import { useSessao } from "@/lib/session";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Visão Geral — Jornada AI | Dr. João Falcão" },
+      { title: "Visão Geral — Jornada AI" },
       {
         name: "description",
         content:
-          "Painel clínico com KPIs de leads, consultas, orçamentos e automações da jornada do cliente integrada ao GoHighLevel.",
-      },
-      { property: "og:title", content: "Visão Geral — Jornada AI | Dr. João Falcão" },
-      {
-        property: "og:description",
-        content: "KPIs de leads, consultas, orçamentos e automações da jornada do cliente.",
+          "Indicadores dos contactos, consultas e oportunidades importados para a organização.",
       },
     ],
   }),
   component: VisaoGeral,
 });
 
-const kpiCards = [
-  { label: "Novos leads", valor: kpis.novosLeads, icon: UserPlus },
-  { label: "Consultas agendadas", valor: kpis.consultasAgendadas, icon: CalendarCheck },
-  { label: "Taxa de confirmação", valor: `${kpis.taxaConfirmacao}%`, icon: TrendingUp },
-  { label: "Orçamentos pendentes", valor: kpis.orcamentosPendentes, icon: FileText },
-  { label: "Procedimentos agendados", valor: kpis.procedimentosAgendados, icon: HeartPulse },
-  { label: "Pacientes em follow-up", valor: kpis.pacientesFollowUp, icon: Users },
-  { label: "Automações com erro", valor: kpis.automacoesComErro, icon: AlertTriangle },
-];
-
 function VisaoGeral() {
   const [periodo, setPeriodo] = useState("30");
-  const maximo = Math.max(...funil.map((f) => f.valor));
+  const { modo, carregando } = useSessao();
+  const painel = usePainel(Number(periodo));
+  const dados = painel.data;
+  const maximo = Math.max(1, ...(dados?.distribuicao.map((e) => e.quantidade) ?? []));
+  const cards = dados
+    ? [
+        {
+          label: "Contactos adicionados",
+          valor: dados.contactos,
+          icon: UserPlus,
+          criterio: "Criados na base local no período, incluindo importações.",
+        },
+        {
+          label: "Marcações no período",
+          valor: dados.marcacoes,
+          icon: CalendarCheck,
+          criterio: "Pela data da consulta; inclui canceladas.",
+        },
+        {
+          label: "Estado «Confirmada» no app",
+          valor: dados.taxaConfirmacao === null ? "—" : `${dados.taxaConfirmacao}%`,
+          icon: TrendingUp,
+          criterio: `${dados.confirmadas} de ${dados.elegiveis} marcações não canceladas/inválidas. Estado registrado no app; não comprova resposta SIM.`,
+        },
+        {
+          label: "Oportunidades atualizadas",
+          valor: dados.oportunidades,
+          icon: Users,
+          criterio: "Atualizadas na base local no período, incluindo sincronizações.",
+        },
+      ]
+    : [];
 
   return (
     <AppShell
       title="Visão Geral"
-      description="Desempenho da jornada do cliente"
+      description="Dados importados da organização"
       actions={
         <Select value={periodo} onValueChange={setPeriodo}>
-          <SelectTrigger className="w-[160px] bg-card" aria-label="Período">
-            <SelectValue placeholder="Período" />
+          <SelectTrigger className="w-[170px] bg-card" aria-label="Período">
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="7">Últimos 7 dias</SelectItem>
@@ -59,61 +81,121 @@ function VisaoGeral() {
       }
     >
       <div className="space-y-6">
-        <DemoNotice texto="Está em modo demonstração. Os números apresentados são dados DEMO e não provêm do GoHighLevel." />
-
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {kpiCards.map(({ label, valor, icon: Icon }) => (
-            <article key={label} className="surface-card p-5">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <Icon className="size-4 text-primary" aria-hidden />
-              </div>
-              <p className="mt-3 text-3xl font-semibold text-heading">{valor}</p>
-            </article>
-          ))}
-        </section>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-          <section className="surface-card p-6 lg:col-span-3">
-            <h2 className="text-base font-semibold">Conversão por etapa</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Contactos por etapa da jornada no período escolhido.</p>
-            <ul className="mt-6 space-y-4">
-              {funil.map((f) => (
-                <li key={f.etapa}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground">{f.etapa}</span>
-                    <span className="font-medium text-heading">{f.valor}</span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-secondary">
-                    <div
-                      className="h-2 rounded-full bg-primary transition-all"
-                      style={{ width: `${(f.valor / maximo) * 100}%` }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
+        {modo === "demo" && (
+          <section className="surface-card p-6">
+            <h2 className="font-semibold">Modo demonstração</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Os indicadores reais ficam disponíveis ao iniciar sessão. As outras páginas de
+              demonstração contêm exemplos identificados.
+            </p>
+            <Button asChild variant="outline" className="mt-4">
+              <Link to="/auth" search={{ next: "" }}>
+                Iniciar sessão
+              </Link>
+            </Button>
           </section>
-
-          <section className="surface-card p-6 lg:col-span-2">
-            <h2 className="text-base font-semibold">Ações prioritárias</h2>
-            <p className="mt-1 text-sm text-muted-foreground">O que precisa de atenção da equipa hoje.</p>
-            <ul className="mt-5 space-y-3">
-              {acoesPrioritarias.map((a) => (
-                <li key={a.tipo + a.cliente} className="rounded-xl border border-border bg-secondary/40 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-heading">{a.cliente}</p>
-                    <Badge variant={a.urgencia === "alta" ? "destructive" : "secondary"}>
-                      {a.urgencia === "alta" ? "Urgente" : "Atenção"}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-sm text-foreground">{a.tipo}</p>
-                  <p className="text-xs text-muted-foreground">{a.detalhe}</p>
-                </li>
-              ))}
-            </ul>
+        )}
+        {(carregando || (modo === "conta" && painel.isPending)) && (
+          <p role="status">A carregar indicadores…</p>
+        )}
+        {modo === "conta" && painel.isError && (
+          <section role="alert" className="surface-card p-6">
+            <p>Não foi possível carregar os indicadores da organização.</p>
+            <Button variant="outline" className="mt-3" onClick={() => void painel.refetch()}>
+              Tentar novamente
+            </Button>
           </section>
-        </div>
+        )}
+        {modo === "conta" && dados && !painel.isError && (
+          <>
+            <p className="text-sm text-muted-foreground">
+              De {dados.periodo.primeiroDia} a {dados.periodo.ultimoDia}, incluindo hoje. Horário da
+              clínica: <strong>{dados.fuso}</strong>. Dados consultados em{" "}
+              {formatarDataHora(dados.consultadoEm, dados.fuso)}. A consulta ao app não força nova
+              sincronização com o GHL.
+            </p>
+            <section
+              aria-label="Indicadores do período"
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+            >
+              {cards.map(({ label, valor, icon: Icon, criterio }) => (
+                <article key={label} className="surface-card p-5">
+                  <div className="flex justify-between gap-3">
+                    <h2 className="text-sm text-muted-foreground">{label}</h2>
+                    <Icon className="size-4 shrink-0 text-primary" aria-hidden />
+                  </div>
+                  <p className="mt-3 text-3xl font-semibold text-heading">{valor}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{criterio}</p>
+                </article>
+              ))}
+            </section>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+              <section className="surface-card p-6 lg:col-span-3">
+                <h2 className="text-base font-semibold">Etapa atual dos contactos adicionados</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Distribuição local dos contactos criados no período. Não representa conversão
+                  histórica nem a etapa da oportunidade no GHL.
+                </p>
+                {dados.contactos === 0 ? (
+                  <p className="mt-5 text-sm">Nenhum contacto real adicionado neste período.</p>
+                ) : (
+                  <ul className="mt-6 space-y-4">
+                    {dados.distribuicao.map((e) => (
+                      <li key={e.key}>
+                        <div className="flex justify-between gap-3 text-sm">
+                          <span>{e.nome}</span>
+                          <span>{e.quantidade}</span>
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-secondary">
+                          <div
+                            className="h-2 rounded-full bg-primary"
+                            style={{ width: `${(e.quantidade / maximo) * 100}%` }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Button asChild variant="outline" className="mt-5">
+                  <Link to="/jornada">Ver jornada</Link>
+                </Button>
+              </section>
+              <section className="surface-card p-6 lg:col-span-2">
+                <h2 className="text-base font-semibold">Próximas consultas de amanhã</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Até cinco marcações no horário da clínica, independentemente do filtro de
+                  indicadores.
+                </p>
+                {dados.proximas.length === 0 ? (
+                  <p className="mt-5 text-sm">Nenhuma marcação válida importada para amanhã.</p>
+                ) : (
+                  <ul className="mt-5 space-y-3">
+                    {dados.proximas.map((m) => (
+                      <li key={m.id} className="rounded-xl border border-border p-4">
+                        <p className="font-medium">
+                          {m.contacts?.full_name ?? "Contacto por associar"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatarDataHora(m.start_at, dados.fuso)} · {m.title}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Button asChild variant="outline" className="mt-5">
+                  <Link to="/agenda">Ver agenda</Link>
+                </Button>
+              </section>
+            </div>
+            <section className="surface-card p-5">
+              <h2 className="text-sm font-semibold">Indicadores ainda indisponíveis</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Respostas SIM/NÃO, falhas de workflows GHL, orçamentos pendentes e conversão por
+                procedimento ainda não têm dados integrados suficientes para um indicador confiável.
+              </p>
+            </section>
+          </>
+        )}
       </div>
     </AppShell>
   );
