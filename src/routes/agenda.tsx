@@ -1,21 +1,47 @@
+import { useOrganizacao } from "@/lib/organization";
+import { diaCivil, FUSO_DEMO } from "@/lib/clinic-time";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { addDays, addMonths, startOfDay } from "date-fns";
+import { addDays, addMonths } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { AgendaCalendario, rotuloPeriodo, varianteEstadoMarcacao, type VistaAgenda } from "@/components/agenda-calendario";
+import {
+  AgendaCalendario,
+  rotuloPeriodo,
+  varianteEstadoMarcacao,
+  type VistaAgenda,
+} from "@/components/agenda-calendario";
 import { AppShell } from "@/components/app-shell";
 import { DemoNotice } from "@/components/demo-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { sincronizarAgendaGhl } from "@/lib/ghl-agenda.functions";
-import { rotuloEstadoMarcacao, useLigacaoGhl, useMarcacoes, useModoDados, usePermissoes, type Marcacao } from "@/lib/repo";
+import {
+  rotuloEstadoMarcacao,
+  useLigacaoGhl,
+  useMarcacoes,
+  useModoDados,
+  usePermissoes,
+  type Marcacao,
+} from "@/lib/repo";
 
 export const Route = createFileRoute("/agenda")({
   head: () => ({
@@ -27,7 +53,10 @@ export const Route = createFileRoute("/agenda")({
           "Agenda do GoHighLevel em vista de dia, semana ou mês: hora, cliente associado, estado e responsável, em modo leitura.",
       },
       { property: "og:title", content: "Agenda — Jornada AI" },
-      { property: "og:description", content: "Marcações da clínica sincronizadas do GoHighLevel, em leitura." },
+      {
+        property: "og:description",
+        content: "Marcações da clínica sincronizadas do GoHighLevel, em leitura.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -43,6 +72,8 @@ const VISTAS: { valor: VistaAgenda; rotulo: string }[] = [
 
 function Agenda() {
   const { demo } = useModoDados();
+  const organizacao = useOrganizacao();
+  const fuso = organizacao.data?.organizacao.timezone ?? FUSO_DEMO;
   const permissoes = usePermissoes();
   const { data: ligacao } = useLigacaoGhl();
   const { data: marcacoes = [], isLoading, isError } = useMarcacoes();
@@ -52,7 +83,8 @@ function Agenda() {
   const [aSincronizar, setASincronizar] = useState(false);
   const [ocorrencias, setOcorrencias] = useState<string[]>([]);
   const [vista, setVista] = useState<VistaAgenda>("semana");
-  const [dataReferencia, setDataReferencia] = useState<Date>(() => startOfDay(new Date()));
+  const [referenciaEscolhida, setDataReferencia] = useState<Date | null>(null);
+  const dataReferencia = referenciaEscolhida ?? diaCivil(new Date(), fuso);
   const [selecionada, setSelecionada] = useState<Marcacao | null>(null);
   const [responsavel, setResponsavel] = useState("todos");
 
@@ -62,15 +94,17 @@ function Agenda() {
   );
 
   const visiveis = useMemo(
-    () => (responsavel === "todos" ? marcacoes : marcacoes.filter((m) => m.responsavel === responsavel)),
+    () =>
+      responsavel === "todos" ? marcacoes : marcacoes.filter((m) => m.responsavel === responsavel),
     [marcacoes, responsavel],
   );
 
   function navegar(direcao: -1 | 1) {
     setDataReferencia((ref) => {
-      if (vista === "dia") return addDays(ref, direcao);
-      if (vista === "semana") return addDays(ref, 7 * direcao);
-      return addMonths(ref, direcao);
+      const data = ref ?? diaCivil(new Date(), fuso);
+      if (vista === "dia") return addDays(data, direcao);
+      if (vista === "semana") return addDays(data, 7 * direcao);
+      return addMonths(data, direcao);
     });
   }
 
@@ -89,7 +123,9 @@ function Agenda() {
       const r = res.resultado;
       setOcorrencias(r.conflitos);
       await Promise.all(
-        ["marcacoes", "contactos", "ligacao-ghl"].map((k) => qc.invalidateQueries({ queryKey: [k] })),
+        ["marcacoes", "contactos", "ligacao-ghl"].map((k) =>
+          qc.invalidateQueries({ queryKey: [k] }),
+        ),
       );
       const resumo = `${r.inseridas} nova(s), ${r.atualizadas} atualizada(s)`;
       if (r.completo) toast.success(`Agenda atualizada: ${resumo}.`);
@@ -110,13 +146,22 @@ function Agenda() {
       actions={
         permissoes.gerirJornada && !demo ? (
           <Button onClick={() => void atualizar()} disabled={aSincronizar || semAgenda}>
-            <RefreshCw className="size-4" aria-hidden /> {aSincronizar ? "A atualizar…" : "Atualizar agenda"}
+            <RefreshCw className="size-4" aria-hidden />{" "}
+            {aSincronizar ? "A atualizar…" : "Atualizar agenda"}
           </Button>
         ) : null
       }
     >
       <div className="space-y-6">
-        {demo && <DemoNotice texto="Modo demonstração: a agenda real só aparece com conta iniciada." />}
+        <p className="text-sm text-muted-foreground">
+          Horário da clínica: <strong>{!demo && !organizacao.data ? "A consultar…" : fuso}</strong>
+        </p>
+        {organizacao.isError && !demo && (
+          <p role="alert">Não foi possível consultar o fuso da clínica.</p>
+        )}
+        {demo && (
+          <DemoNotice texto="Modo demonstração: a agenda real só aparece com conta iniciada." />
+        )}
 
         {semAgenda && (
           <section className="surface-card flex items-start gap-3 p-6">
@@ -124,8 +169,8 @@ function Agenda() {
             <div>
               <h2 className="text-base font-semibold">Agenda por escolher</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Vá a Integrações › Mapeamento e escolha a agenda a acompanhar. Depois volte aqui e clique em «Atualizar
-                agenda».
+                Vá a Integrações › Mapeamento e escolha a agenda a acompanhar. Depois volte aqui e
+                clique em «Atualizar agenda».
               </p>
             </div>
           </section>
@@ -133,7 +178,9 @@ function Agenda() {
 
         {ocorrencias.length > 0 && (
           <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
-            <h3 className="text-sm font-semibold">Ocorrências da última atualização ({ocorrencias.length})</h3>
+            <h3 className="text-sm font-semibold">
+              Ocorrências da última atualização ({ocorrencias.length})
+            </h3>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
               {ocorrencias.slice(0, 12).map((c, i) => (
                 <li key={i}>{c}</li>
@@ -143,14 +190,28 @@ function Agenda() {
         )}
 
         <section className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" size="sm" onClick={() => setDataReferencia(startOfDay(new Date()))}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDataReferencia(diaCivil(new Date(), fuso))}
+          >
             Hoje
           </Button>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" aria-label="Período anterior" onClick={() => navegar(-1)}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Período anterior"
+              onClick={() => navegar(-1)}
+            >
               <ChevronLeft className="size-4" aria-hidden />
             </Button>
-            <Button variant="outline" size="icon" aria-label="Período seguinte" onClick={() => navegar(1)}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Período seguinte"
+              onClick={() => navegar(1)}
+            >
               <ChevronRight className="size-4" aria-hidden />
             </Button>
           </div>
@@ -202,13 +263,15 @@ function Agenda() {
 
         {!isLoading && !isError && marcacoes.length === 0 && !semAgenda && (
           <div className="surface-card p-6 text-sm text-muted-foreground">
-            Ainda não há marcações importadas. Clique em «Atualizar agenda» para as trazer do GoHighLevel.
+            Ainda não há marcações importadas. Clique em «Atualizar agenda» para as trazer do
+            GoHighLevel.
           </div>
         )}
 
-        {!isLoading && !isError && marcacoes.length > 0 && (
+        {!isLoading && !isError && organizacao.data && marcacoes.length > 0 && (
           <AgendaCalendario
             vista={vista}
+            fuso={fuso}
             dataReferencia={dataReferencia}
             marcacoes={visiveis}
             onSelecionar={setSelecionada}
@@ -230,7 +293,9 @@ function Agenda() {
             <>
               <SheetHeader>
                 <SheetTitle>{selecionada.cliente}</SheetTitle>
-                <SheetDescription>{selecionada.titulo}</SheetDescription>
+                <SheetDescription>
+                  {selecionada.titulo} · Horário da clínica: {fuso}
+                </SheetDescription>
               </SheetHeader>
               <div className="space-y-3 px-4 text-sm">
                 <p>

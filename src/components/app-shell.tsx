@@ -19,11 +19,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
-import { useAppMode } from "@/lib/app-mode";
+
 import { supabase } from "@/integrations/supabase/client";
 import { desativarDemo, useSessao } from "@/lib/session";
 import { useLigacaoGhl } from "@/lib/repo";
-
+import { useOrganizacao } from "@/lib/organization";
 
 const navItems = [
   { to: "/", label: "Visão Geral", icon: LayoutDashboard },
@@ -38,9 +38,19 @@ const navItems = [
 ] as const;
 
 export function ConnectionBadge() {
-  const modo = useAppMode();
-  const { data: ligacao } = useLigacaoGhl();
-  const conectado = modo === "conectado" || ligacao?.status === "conectada";
+  const { modo } = useSessao();
+  const ligacao = useLigacaoGhl();
+  const conectado = modo === "conta" && !ligacao.isError && ligacao.data?.status === "conectada";
+  const rotulo =
+    modo !== "conta"
+      ? "GHL indisponível em demonstração"
+      : ligacao.isPending
+        ? "A consultar ligação GHL…"
+        : ligacao.isError
+          ? "Estado GHL indisponível"
+          : conectado
+            ? "Ligação GHL validada"
+            : "Ligação GHL não validada";
 
   return (
     <span
@@ -52,7 +62,7 @@ export function ConnectionBadge() {
       )}
     >
       <span className={cn("size-1.5 rounded-full", conectado ? "bg-success" : "bg-primary")} />
-      {conectado ? "GoHighLevel conectado" : "GoHighLevel não ligado"}
+      {rotulo}
     </span>
   );
 }
@@ -110,6 +120,7 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const organizacao = useOrganizacao();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { modo, carregando } = useSessao();
@@ -149,7 +160,9 @@ export function AppShell({
           collapsed ? "w-[76px]" : "w-[264px]",
         )}
       >
-        <div className={cn("flex items-center gap-3 px-5 py-6", collapsed && "justify-center px-2")}>
+        <div
+          className={cn("flex items-center gap-3 px-5 py-6", collapsed && "justify-center px-2")}
+        >
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-heading text-sm font-semibold text-background">
             JF
           </span>
@@ -168,7 +181,11 @@ export function AppShell({
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-sidebar-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-heading"
           >
-            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+            {collapsed ? (
+              <PanelLeftOpen className="size-4" />
+            ) : (
+              <PanelLeftClose className="size-4" />
+            )}
             {!collapsed && "Recolher menu"}
           </button>
         </div>
@@ -198,7 +215,9 @@ export function AppShell({
         </div>
       )}
 
-      <div className={cn("transition-all duration-200", collapsed ? "md:pl-[76px]" : "md:pl-[264px]")}>
+      <div
+        className={cn("transition-all duration-200", collapsed ? "md:pl-[76px]" : "md:pl-[264px]")}
+      >
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
             <button
@@ -211,7 +230,14 @@ export function AppShell({
             </button>
             <div className="min-w-0 flex-1">
               <h1 className="display-title truncate text-xl sm:text-2xl">{title}</h1>
-              {description && <p className="mt-0.5 truncate text-sm text-muted-foreground">{description}</p>}
+              {description && (
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">{description}</p>
+              )}
+              {modo === "conta" && organizacao.data && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Horários: {organizacao.data.organizacao.timezone}
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <ModoBadge />
