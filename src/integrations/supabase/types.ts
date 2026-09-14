@@ -825,6 +825,10 @@ export type Database = {
           id: string
           is_demo: boolean
           language: string
+          lifecycle: string
+          usage_note: string
+          revision: number
+          starter_key: string | null
           name: string
           organization_id: string
           stage_key: string | null
@@ -837,6 +841,10 @@ export type Database = {
           id?: string
           is_demo?: boolean
           language?: string
+          lifecycle?: string
+          usage_note?: string
+          revision?: number
+          starter_key?: string | null
           name: string
           organization_id: string
           stage_key?: string | null
@@ -849,6 +857,10 @@ export type Database = {
           id?: string
           is_demo?: boolean
           language?: string
+          lifecycle?: string
+          usage_note?: string
+          revision?: number
+          starter_key?: string | null
           name?: string
           organization_id?: string
           stage_key?: string | null
@@ -1158,6 +1170,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      save_message_template_draft: {
+        Args: { _org: string; _id: string; _expected_revision: number; _draft: Json }
+        Returns: Json
+      }
       configure_bioreport_integration: {
         Args: {
           _confirm: boolean
