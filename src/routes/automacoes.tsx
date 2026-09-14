@@ -3,6 +3,7 @@ import { Edit, PlayCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { GhlWorkflows } from "@/components/ghl-workflows";
 import { AppShell } from "@/components/app-shell";
 import { AutomationEditor } from "@/components/automation-editor";
 import { DemoNotice } from "@/components/demo-notice";
@@ -19,12 +20,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type Automation, type AutomationStatus, labelPasso, resumoPasso } from "@/lib/demo-data";
 import {
-  useAlterarEstadoAutomacao,
   useAutomacoes,
   useContactos,
   useExecucoes,
   useGuardarAutomacao,
   useModoDados,
+  usePermissoes,
   useTestarAutomacao,
 } from "@/lib/repo";
 
@@ -38,7 +39,10 @@ export const Route = createFileRoute("/automacoes")({
           "Construtor visual de automações da jornada do paciente: gatilhos, condições e ações integradas ao GoHighLevel.",
       },
       { property: "og:title", content: "Automações — Jornada AI" },
-      { property: "og:description", content: "Gatilhos, condições e ações da jornada do paciente." },
+      {
+        property: "og:description",
+        content: "Gatilhos, condições e ações da jornada do paciente.",
+      },
     ],
   }),
   component: Automacoes,
@@ -55,7 +59,14 @@ const gatilhos = [
   "Webhook recebido",
 ];
 
-const condicoes = ["Etapa", "Tag", "Canal", "Responsável", "Respondeu / não respondeu", "Status de agendamento"];
+const condicoes = [
+  "Etapa",
+  "Tag",
+  "Canal",
+  "Responsável",
+  "Respondeu / não respondeu",
+  "Status de agendamento",
+];
 
 const acoes = [
   "Enviar WhatsApp via GHL",
@@ -71,11 +82,11 @@ const acoes = [
   "Pedir sugestão à IA",
 ];
 
-function statusBadge(status: AutomationStatus, demo: boolean) {
+function statusBadge(status: AutomationStatus) {
   if (status === "ativa") {
-    return <Badge variant={demo ? "outline" : "default"}>{demo ? "Simulação" : "Ativa"}</Badge>;
+    return <Badge variant="outline">Simulação local</Badge>;
   }
-  if (status === "pausada") return <Badge variant="secondary">Pausada</Badge>;
+  if (status === "pausada") return <Badge variant="secondary">Rascunho pausado</Badge>;
   return <Badge variant="outline">Rascunho</Badge>;
 }
 
@@ -85,7 +96,7 @@ function Automacoes() {
   const { data: automationRuns = [], isLoading: aCarregarLogs } = useExecucoes();
   const { data: contactos = [] } = useContactos();
   const guardar = useGuardarAutomacao();
-  const alterarEstado = useAlterarEstadoAutomacao();
+  const permissoes = usePermissoes();
   const testar = useTestarAutomacao();
 
   const [detalhe, setDetalhe] = useState<Automation | null>(null);
@@ -115,7 +126,7 @@ function Automacoes() {
       } = {
         nome: draft.nome.trim(),
         gatilho: draft.gatilho,
-        status: draft.status,
+        status: "rascunho",
         passos: draft.passos,
       };
       const descricao = draft.descricao.trim();
@@ -162,27 +173,13 @@ function Automacoes() {
     }
   }
 
-  async function alternarEstado(a: Automation) {
-    if (demo) {
-      toast.error("Alterar o estado exige conta iniciada.");
-      return;
-    }
-    const novoEstado: AutomationStatus = a.status === "ativa" ? "pausada" : "ativa";
-    try {
-      await alterarEstado.mutateAsync({ id: a.id, status: novoEstado });
-      toast.success(novoEstado === "ativa" ? "Automação ativada." : "Automação pausada.");
-    } catch {
-      toast.error("Não foi possível alterar o estado.");
-    }
-  }
-
   return (
     <AppShell
       title="Automações"
-      description="Construtor visual da jornada"
+      description="Catálogo GHL e rascunhos locais"
       actions={
-        <Button onClick={abrirNovo}>
-          <Plus className="size-4" /> Nova automação
+        <Button onClick={abrirNovo} disabled={demo || !permissoes.gerirJornada}>
+          <Plus className="size-4" /> Novo rascunho
         </Button>
       }
     >
@@ -191,16 +188,23 @@ function Automacoes() {
           texto={
             demo
               ? "Em modo demonstração as automações aparecem como «Simulação». Nenhuma execução chega ao GoHighLevel."
-              : "As execuções correm em simulação até a ligação ao GoHighLevel ser validada e a escrita ser ativada."
+              : "O editor local guarda rascunhos e simulações. Ativar a escrita não publica nem executa estes rascunhos no GHL."
           }
         />
 
-        <Tabs defaultValue="lista">
+        <Tabs defaultValue={demo ? "lista" : "ghl"}>
           <TabsList>
-            <TabsTrigger value="lista">Automações</TabsTrigger>
+            {!demo && <TabsTrigger value="ghl">Workflows GHL</TabsTrigger>}
+            <TabsTrigger value="lista">Rascunhos locais</TabsTrigger>
             <TabsTrigger value="blocos">Blocos disponíveis</TabsTrigger>
-            <TabsTrigger value="logs">Log de execuções</TabsTrigger>
+            <TabsTrigger value="logs">Simulações locais</TabsTrigger>
           </TabsList>
+
+          {!demo && (
+            <TabsContent value="ghl" className="mt-4">
+              <GhlWorkflows />
+            </TabsContent>
+          )}
 
           <TabsContent value="lista" className="mt-4">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -212,15 +216,26 @@ function Automacoes() {
                       <p className="mt-0.5 text-sm text-muted-foreground">
                         Gatilho: {a.gatilho} · v{a.versao}
                       </p>
-                      {a.descricao && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.descricao}</p>}
+                      {a.descricao && (
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                          {a.descricao}
+                        </p>
+                      )}
                     </div>
-                    {statusBadge(a.status, demo)}
+                    {statusBadge(a.status)}
                   </div>
                   <ul className="mt-4 flex-1 space-y-1.5 text-sm text-foreground">
                     {a.passos.map((p) => (
-                      <li key={p.id} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
+                      <li
+                        key={p.id}
+                        className="rounded-lg border border-border bg-secondary/40 px-3 py-2"
+                      >
                         <span className="font-medium">{labelPasso(p)}</span>
-                        {resumoPasso(p) && <span className="ml-2 text-xs text-muted-foreground">· {resumoPasso(p)}</span>}
+                        {resumoPasso(p) && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            · {resumoPasso(p)}
+                          </span>
+                        )}
                       </li>
                     ))}
                     {a.passos.length === 0 && (
@@ -228,33 +243,30 @@ function Automacoes() {
                     )}
                   </ul>
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span>Última execução: {a.ultimaExecucao}</span>
+                    <span>Última simulação: {a.ultimaExecucao}</span>
                     <span>
-                      Sucesso {a.taxaSucesso}% · {a.erros} erro(s)
+                      Resultados locais: {a.taxaSucesso}% · {a.erros} erro(s)
                     </span>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => setDetalhe(a)}>
                       Ver detalhes
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => abrirEdicao(a)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => abrirEdicao(a)}
+                      disabled={demo || !permissoes.gerirJornada}
+                    >
                       <Edit className="size-3.5" /> Editar
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
                       onClick={() => void testarAutomacao(a)}
-                      disabled={testar.isPending}
+                      disabled={testar.isPending || (!demo && !permissoes.gerirJornada)}
                     >
-                      <PlayCircle className="size-3.5" /> Testar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void alternarEstado(a)}
-                      disabled={demo || alterarEstado.isPending}
-                    >
-                      {a.status === "ativa" ? "Pausar" : "Ativar"}
+                      <PlayCircle className="size-3.5" /> Simular
                     </Button>
                   </div>
                 </article>
@@ -263,7 +275,7 @@ function Automacoes() {
                 <p className="surface-card p-8 text-center text-sm text-muted-foreground lg:col-span-2">
                   {isLoading
                     ? "A carregar automações…"
-                    : "Ainda não há automações. Crie a primeira ou carregue os dados DEMO em Configurações."}
+                    : "Ainda não há rascunhos locais. Os workflows do GHL estão na primeira aba."}
                 </p>
               )}
             </div>
@@ -280,7 +292,10 @@ function Automacoes() {
                   <h2 className="text-base font-semibold">{grupo.titulo}</h2>
                   <ul className="mt-3 space-y-2 text-sm">
                     {grupo.itens.map((i) => (
-                      <li key={i} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
+                      <li
+                        key={i}
+                        className="rounded-lg border border-border bg-secondary/40 px-3 py-2"
+                      >
                         {i}
                       </li>
                     ))}
@@ -310,7 +325,11 @@ function Automacoes() {
                       <td className="px-4 py-3 text-muted-foreground">{r.quando}</td>
                       <td className="px-4 py-3">
                         <Badge variant={r.estado === "erro" ? "destructive" : "outline"}>
-                          {r.estado === "erro" ? "Erro" : r.estado === "simulado" ? "Simulação" : "Sucesso"}
+                          {r.estado === "erro"
+                            ? "Erro"
+                            : r.estado === "simulado"
+                              ? "Simulação"
+                              : "Resultado local"}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{r.detalhe}</td>
@@ -319,7 +338,9 @@ function Automacoes() {
                   {automationRuns.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
-                        {aCarregarLogs ? "A carregar execuções…" : "Ainda não há execuções registadas."}
+                        {aCarregarLogs
+                          ? "A carregar execuções…"
+                          : "Ainda não há simulações locais registadas."}
                       </td>
                     </tr>
                   )}
@@ -338,12 +359,16 @@ function Automacoes() {
               Versão {detalhe?.versao} · Gatilho: {detalhe?.gatilho}
             </DialogDescription>
           </DialogHeader>
-          {detalhe?.descricao && <p className="text-sm text-muted-foreground">{detalhe.descricao}</p>}
+          {detalhe?.descricao && (
+            <p className="text-sm text-muted-foreground">{detalhe.descricao}</p>
+          )}
           <ol className="space-y-2 text-sm">
             {detalhe?.passos.map((p, i) => (
               <li key={p.id} className="rounded-lg border border-border bg-secondary/40 px-3 py-2">
                 {i + 1}. {labelPasso(p)}
-                {resumoPasso(p) && <span className="ml-2 text-xs text-muted-foreground">· {resumoPasso(p)}</span>}
+                {resumoPasso(p) && (
+                  <span className="ml-2 text-xs text-muted-foreground">· {resumoPasso(p)}</span>
+                )}
               </li>
             ))}
           </ol>

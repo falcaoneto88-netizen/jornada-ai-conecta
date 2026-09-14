@@ -17,7 +17,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mascararTelefone, type Contact, type StageId } from "@/lib/demo-data";
 import { sincronizarOportunidadesGhl } from "@/lib/ghl-pipelines.functions";
@@ -34,7 +40,6 @@ import {
   usePermissoes,
 } from "@/lib/repo";
 
-
 export const Route = createFileRoute("/jornada")({
   head: () => ({
     meta: [
@@ -45,7 +50,10 @@ export const Route = createFileRoute("/jornada")({
           "Kanban da jornada do paciente, do novo lead à reativação, com automações associadas e mapeamento para o GoHighLevel.",
       },
       { property: "og:title", content: "Jornada do Cliente — Jornada AI" },
-      { property: "og:description", content: "Kanban da jornada do paciente com automações associadas." },
+      {
+        property: "og:description",
+        content: "Kanban da jornada do paciente com automações associadas.",
+      },
     ],
   }),
   component: Jornada,
@@ -150,7 +158,9 @@ function QuadroOportunidades() {
     );
   }
 
-  const visiveis = (oportunidades.data ?? []).filter((o) => estado === "todos" || o.estado === estado);
+  const visiveis = (oportunidades.data ?? []).filter(
+    (o) => estado === "todos" || o.estado === estado,
+  );
   const chavesEtapas = new Set((etapas.data ?? []).map((e) => e.key));
   const naoMapeadas = visiveis.filter((o) => !o.etapa || !chavesEtapas.has(o.etapa));
 
@@ -175,7 +185,12 @@ function QuadroOportunidades() {
             {naoMapeadas.length > 0 ? ` · ${naoMapeadas.length} por mapear` : ""}
           </span>
           {permissoes.gerirIntegracao && (
-            <Button variant="outline" size="sm" onClick={() => void importar()} disabled={aSincronizar}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void importar()}
+              disabled={aSincronizar}
+            >
               <RefreshCw className="size-4" /> {aSincronizar ? "A sincronizar…" : "Sincronizar"}
             </Button>
           )}
@@ -184,7 +199,9 @@ function QuadroOportunidades() {
 
       {ocorrencias.length > 0 && (
         <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
-          <h3 className="text-sm font-semibold">Ocorrências da última sincronização ({ocorrencias.length})</h3>
+          <h3 className="text-sm font-semibold">
+            Ocorrências da última sincronização ({ocorrencias.length})
+          </h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
             {ocorrencias.slice(0, 10).map((c, i) => (
               <li key={i}>{c}</li>
@@ -214,7 +231,10 @@ function QuadroOportunidades() {
               </header>
               <ul className="space-y-2">
                 {cards.map((o) => (
-                  <li key={o.id} className="rounded-xl border border-border bg-card p-3 shadow-soft">
+                  <li
+                    key={o.id}
+                    className="rounded-xl border border-border bg-card p-3 shadow-soft"
+                  >
                     <p className="text-sm font-medium text-heading">{o.contacto}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">{o.nome}</p>
                     <div className="mt-2 flex items-center justify-between gap-2">
@@ -247,7 +267,9 @@ function QuadroOportunidades() {
                   {naoMapeadas.length}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Etapa do GoHighLevel ainda sem correspondência.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Etapa do GoHighLevel ainda sem correspondência.
+              </p>
             </header>
             <ul className="space-y-2">
               {naoMapeadas.map((o) => (
@@ -267,14 +289,14 @@ function QuadroOportunidades() {
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        Esta ligação está em modo leitura: os cartões refletem o GoHighLevel e não podem ser arrastados.
+        Esta ligação está em modo leitura: os cartões refletem o GoHighLevel e não podem ser
+        arrastados.
       </p>
     </div>
   );
 }
 
 function Jornada() {
-
   const { demo } = useModoDados();
   const { data: contactos = [], isLoading } = useContactos();
   const { data: journeyStages = [] } = useEtapas();
@@ -283,7 +305,9 @@ function Jornada() {
   const guardarMapeamento = useGuardarMapeamentoEtapa();
 
   const [locais, setLocais] = useState<Record<string, StageId>>({});
-  const [mapaEdicao, setMapaEdicao] = useState<Record<string, { pipeline: string; stage: string }>>({});
+  const [mapaEdicao, setMapaEdicao] = useState<Record<string, { pipeline: string; stage: string }>>(
+    {},
+  );
   const [arrastado, setArrastado] = useState<string | null>(null);
   const [pendente, setPendente] = useState<{ contact: Contact; destino: StageId } | null>(null);
   const [detalhe, setDetalhe] = useState<Contact | null>(null);
@@ -421,7 +445,6 @@ function Jornada() {
         </TabsContent>
       </Tabs>
 
-
       <Dialog open={pendente !== null} onOpenChange={(o) => !o && setPendente(null)}>
         <DialogContent>
           <DialogHeader>
@@ -432,7 +455,9 @@ function Jornada() {
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-xl border border-border bg-secondary/40 p-4">
-            <p className="text-sm font-medium text-heading">Automações que serão disparadas</p>
+            <p className="text-sm font-medium text-heading">
+              Rascunhos locais relacionados (sem disparo automático)
+            </p>
             <ul className="mt-2 space-y-1 text-sm text-foreground">
               {pendente && automacoesDaEtapa(pendente.destino).length > 0 ? (
                 automacoesDaEtapa(pendente.destino).map((a) => <li key={a}>• {a}</li>)
@@ -536,7 +561,10 @@ function Jornada() {
                     disabled={demo}
                     value={valor.pipeline}
                     onChange={(e) =>
-                      setMapaEdicao((a) => ({ ...a, [s.id]: { ...valor, pipeline: e.target.value } }))
+                      setMapaEdicao((a) => ({
+                        ...a,
+                        [s.id]: { ...valor, pipeline: e.target.value },
+                      }))
                     }
                   />
                   <Input
@@ -556,7 +584,10 @@ function Jornada() {
             <Button variant="outline" onClick={() => setMapeamento(false)}>
               Fechar
             </Button>
-            <Button onClick={() => void guardarMapeamentos()} disabled={demo || guardarMapeamento.isPending}>
+            <Button
+              onClick={() => void guardarMapeamentos()}
+              disabled={demo || guardarMapeamento.isPending}
+            >
               {guardarMapeamento.isPending ? "A guardar…" : "Guardar"}
             </Button>
           </DialogFooter>

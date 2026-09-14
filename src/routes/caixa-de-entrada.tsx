@@ -3,6 +3,7 @@ import { Copy, Send, ShieldAlert, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { GhlInbox } from "@/components/ghl-inbox";
 import { AppShell } from "@/components/app-shell";
 import { DemoNotice } from "@/components/demo-notice";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,20 @@ export const Route = createFileRoute("/caixa-de-entrada")({
 });
 
 function CaixaEntrada() {
+  const { demo } = useModoDados();
+  return demo ? (
+    <CaixaDemo />
+  ) : (
+    <AppShell
+      title="Caixa de Entrada IA"
+      description="Conversas e respostas consultadas no GoHighLevel"
+    >
+      <GhlInbox />
+    </AppShell>
+  );
+}
+
+function CaixaDemo() {
   const { demo, escopo } = useModoDados();
   const { data: conversations = [], isLoading } = useConversas();
   const { data: contactos = [] } = useContactos();
@@ -136,7 +151,6 @@ function CaixaEntrada() {
       if ("warning" in res && res.warning) toast.warning(res.warning);
     } catch {
       toast.error("Resultado do envio não confirmado. Verifique no GoHighLevel antes de repetir.");
-
     } finally {
       setAEnviar(false);
       setConfirmar(false);
@@ -174,7 +188,9 @@ function CaixaEntrada() {
                         <p className="truncate text-sm font-medium text-heading">{pessoa?.nome}</p>
                         <span className="shrink-0 text-xs text-muted-foreground">{c.quando}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{c.ultimaMensagem}</p>
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                        {c.ultimaMensagem}
+                      </p>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <Badge variant="outline">{canalLabel[c.canal]}</Badge>
                         <Badge variant="secondary">{intencaoLabel[c.intencao]}</Badge>
@@ -197,124 +213,138 @@ function CaixaEntrada() {
               Selecione uma conversa para ver o resumo e as sugestões.
             </section>
           ) : (
-          <section className="space-y-4">
-            <div className="surface-card p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-heading">{contacto?.nome}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {canalLabel[conversa.canal]} · Responsável: {contacto?.responsavel}
+            <section className="space-y-4">
+              <div className="surface-card p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-heading">{contacto?.nome}</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {canalLabel[conversa.canal]} · Responsável: {contacto?.responsavel}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">Sentimento: {conversa.sentimento}</Badge>
+                    <Badge variant={conversa.prioridade === "alta" ? "destructive" : "secondary"}>
+                      Prioridade {conversa.prioridade}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-xl border border-border bg-secondary/40 p-4">
+                  <p className="flex items-center gap-2 text-sm font-medium text-heading">
+                    <Sparkles className="size-4 text-primary" aria-hidden /> Resumo automático
                   </p>
+                  <p className="mt-2 text-sm text-foreground">{conversa.resumo}</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">Sentimento: {conversa.sentimento}</Badge>
-                  <Badge variant={conversa.prioridade === "alta" ? "destructive" : "secondary"}>
-                    Prioridade {conversa.prioridade}
-                  </Badge>
-                </div>
-              </div>
 
-              <div className="mt-5 rounded-xl border border-border bg-secondary/40 p-4">
-                <p className="flex items-center gap-2 text-sm font-medium text-heading">
-                  <Sparkles className="size-4 text-primary" aria-hidden /> Resumo automático
-                </p>
-                <p className="mt-2 text-sm text-foreground">{conversa.resumo}</p>
-              </div>
-
-              <ul className="mt-5 space-y-3">
-                {conversa.mensagens.map((m, i) => (
-                  <li
-                    key={i}
-                    className={cn(
-                      "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
-                      m.autor === "cliente"
-                        ? "bg-secondary text-foreground"
-                        : "ml-auto bg-heading text-background",
-                    )}
-                  >
-                    <p>{m.texto}</p>
-                    <p
+                <ul className="mt-5 space-y-3">
+                  {conversa.mensagens.map((m, i) => (
+                    <li
+                      key={i}
                       className={cn(
-                        "mt-1 text-[11px]",
-                        m.autor === "cliente" ? "text-muted-foreground" : "text-background/70",
+                        "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
+                        m.autor === "cliente"
+                          ? "bg-secondary text-foreground"
+                          : "ml-auto bg-heading text-background",
                       )}
                     >
-                      {m.hora}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="surface-card p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-base font-semibold">Respostas sugeridas pela IA</h3>
-                <Button size="sm" variant="outline" onClick={() => void analisarConversa()} disabled={aAnalisar || demo}>
-                  <Sparkles className="size-3.5" /> {aAnalisar ? "A analisar…" : "Analisar com IA"}
-                </Button>
-              </div>
-              {erroIa && <p className="mt-3 text-sm text-destructive">{erroIa}</p>}
-              {analise?.revisao_humana && (
-                <p className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm">
-                  Tema sensível: esta conversa precisa de revisão por um profissional de saúde antes de responder.
-                </p>
-              )}
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                {sugestoes.map((s) => (
-                  <article key={s.tom} className="flex flex-col rounded-xl border border-border bg-secondary/30 p-4">
-                    <Badge variant="outline" className="w-fit">
-                      {s.tom}
-                    </Badge>
-                    <p className="mt-3 flex-1 text-sm text-foreground">{s.texto}</p>
-                    <div className="mt-4 flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => copiar(s.texto)}>
-                        <Copy className="size-3.5" /> Copiar
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => setRascunho(s.texto)}>
-                        Editar
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-                {sugestoes.length === 0 && (
-                  <p className="text-sm text-muted-foreground md:col-span-3">
-                    Ainda não há sugestões. Utilize «Analisar com IA» para as gerar.
-                  </p>
-                )}
+                      <p>{m.texto}</p>
+                      <p
+                        className={cn(
+                          "mt-1 text-[11px]",
+                          m.autor === "cliente" ? "text-muted-foreground" : "text-background/70",
+                        )}
+                      >
+                        {m.hora}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
               </div>
 
-              <div className="mt-5">
-                <label htmlFor="resposta" className="text-sm font-medium text-heading">
-                  Resposta a enviar
-                </label>
-                <Textarea
-                  id="resposta"
-                  value={rascunho}
-                  onChange={(e) => setRascunho(e.target.value)}
-                  rows={4}
-                  placeholder="Escreva ou escolha uma sugestão acima…"
-                  className="mt-2 bg-card"
-                />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <p className="flex items-start gap-2 text-xs text-muted-foreground">
-                    <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
-                    Assuntos clínicos sensíveis devem ser revistos por um profissional. A IA não faz diagnósticos.
-                  </p>
-                  <Button onClick={() => setConfirmar(true)} disabled={!rascunho.trim() || !podeEnviar || aEnviar}>
-                    <Send className="size-4" /> {aEnviar ? "A enviar…" : "Enviar via GHL"}
+              <div className="surface-card p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold">Respostas sugeridas pela IA</h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void analisarConversa()}
+                    disabled={aAnalisar || demo}
+                  >
+                    <Sparkles className="size-3.5" />{" "}
+                    {aAnalisar ? "A analisar…" : "Analisar com IA"}
                   </Button>
                 </div>
-              </div>
-            </div>
+                {erroIa && <p className="mt-3 text-sm text-destructive">{erroIa}</p>}
+                {analise?.revisao_humana && (
+                  <p className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm">
+                    Tema sensível: esta conversa precisa de revisão por um profissional de saúde
+                    antes de responder.
+                  </p>
+                )}
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {sugestoes.map((s) => (
+                    <article
+                      key={s.tom}
+                      className="flex flex-col rounded-xl border border-border bg-secondary/30 p-4"
+                    >
+                      <Badge variant="outline" className="w-fit">
+                        {s.tom}
+                      </Badge>
+                      <p className="mt-3 flex-1 text-sm text-foreground">{s.texto}</p>
+                      <div className="mt-4 flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => copiar(s.texto)}>
+                          <Copy className="size-3.5" /> Copiar
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => setRascunho(s.texto)}>
+                          Editar
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                  {sugestoes.length === 0 && (
+                    <p className="text-sm text-muted-foreground md:col-span-3">
+                      Ainda não há sugestões. Utilize «Analisar com IA» para as gerar.
+                    </p>
+                  )}
+                </div>
 
-            <div className="surface-card p-6">
-              <h3 className="text-base font-semibold">Registo de auditoria</h3>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Todos os envios, análises de IA e mudanças de etapa ficam registados em Configurações › Saúde do
-                sistema.
-              </p>
-            </div>
-          </section>
+                <div className="mt-5">
+                  <label htmlFor="resposta" className="text-sm font-medium text-heading">
+                    Resposta a enviar
+                  </label>
+                  <Textarea
+                    id="resposta"
+                    value={rascunho}
+                    onChange={(e) => setRascunho(e.target.value)}
+                    rows={4}
+                    placeholder="Escreva ou escolha uma sugestão acima…"
+                    className="mt-2 bg-card"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
+                      Assuntos clínicos sensíveis devem ser revistos por um profissional. A IA não
+                      faz diagnósticos.
+                    </p>
+                    <Button
+                      onClick={() => setConfirmar(true)}
+                      disabled={!rascunho.trim() || !podeEnviar || aEnviar}
+                    >
+                      <Send className="size-4" /> {aEnviar ? "A enviar…" : "Enviar via GHL"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="surface-card p-6">
+                <h3 className="text-base font-semibold">Registo de auditoria</h3>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Todos os envios, análises de IA e mudanças de etapa ficam registados em
+                  Configurações › Saúde do sistema.
+                </p>
+              </div>
+            </section>
           )}
         </div>
       </div>
@@ -328,7 +358,9 @@ function CaixaEntrada() {
               {conversa ? canalLabel[conversa.canal] : ""}.
             </DialogDescription>
           </DialogHeader>
-          <p className="whitespace-pre-wrap rounded-xl border border-border bg-secondary/40 p-4 text-sm">{rascunho}</p>
+          <p className="whitespace-pre-wrap rounded-xl border border-border bg-secondary/40 p-4 text-sm">
+            {rascunho}
+          </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmar(false)}>
               Cancelar

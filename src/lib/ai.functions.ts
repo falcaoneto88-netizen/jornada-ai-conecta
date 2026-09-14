@@ -1,3 +1,4 @@
+import { analiseSchema } from "./ai-analysis";
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -12,14 +13,7 @@ REGRAS OBRIGATÓRIAS:
 Responde SEMPRE em JSON válido, sem texto fora do JSON, com esta forma:
 {"resumo":"","intencao":"informacao|preco|agendamento|objecao|pos_procedimento|urgencia","sentimento":"positivo|neutro|negativo","prioridade":"baixa|media|alta","revisao_humana":true|false,"sugestoes":[{"tom":"objetiva","texto":""},{"tom":"acolhedora","texto":""},{"tom":"premium","texto":""}]}`;
 
-export type AnaliseIA = {
-  resumo: string;
-  intencao: string;
-  sentimento: string;
-  prioridade: string;
-  revisao_humana: boolean;
-  sugestoes: { tom: string; texto: string }[];
-};
+export type { AnaliseIA } from "./ai-analysis";
 
 export const aiSupport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -55,22 +49,38 @@ export const aiSupport = createServerFn({ method: "POST" })
       });
 
       if (res.status === 429) {
-        return { ok: false as const, code: "rate_limited" as const, message: "Limite de pedidos de IA atingido. Tente novamente em instantes." };
+        return {
+          ok: false as const,
+          code: "rate_limited" as const,
+          message: "Limite de pedidos de IA atingido. Tente novamente em instantes.",
+        };
       }
       if (res.status === 402) {
-        return { ok: false as const, code: "sem_creditos" as const, message: "Sem créditos de IA disponíveis no workspace." };
+        return {
+          ok: false as const,
+          code: "sem_creditos" as const,
+          message: "Sem créditos de IA disponíveis no workspace.",
+        };
       }
       if (!res.ok) {
-        return { ok: false as const, code: "erro_ia" as const, message: "A IA não conseguiu responder neste momento." };
+        return {
+          ok: false as const,
+          code: "erro_ia" as const,
+          message: "A IA não conseguiu responder neste momento.",
+        };
       }
 
       const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
       const bruto = json.choices?.[0]?.message?.content ?? "";
       const limpo = bruto.replace(/```json|```/g, "").trim();
-      const analise = JSON.parse(limpo) as AnaliseIA;
+      const analise = analiseSchema.parse(JSON.parse(limpo));
       return { ok: true as const, analise };
     } catch {
-      return { ok: false as const, code: "erro_ia" as const, message: "Não foi possível interpretar a resposta da IA." };
+      return {
+        ok: false as const,
+        code: "erro_ia" as const,
+        message: "Não foi possível interpretar a resposta da IA.",
+      };
     }
   });
 
@@ -107,17 +117,34 @@ export const melhorarTexto = createServerFn({ method: "POST" })
         }),
       });
       if (res.status === 429) {
-        return { ok: false as const, code: "rate_limited" as const, message: "Limite de pedidos de IA atingido." };
+        return {
+          ok: false as const,
+          code: "rate_limited" as const,
+          message: "Limite de pedidos de IA atingido.",
+        };
       }
       if (res.status === 402) {
-        return { ok: false as const, code: "sem_creditos" as const, message: "Sem créditos de IA disponíveis." };
+        return {
+          ok: false as const,
+          code: "sem_creditos" as const,
+          message: "Sem créditos de IA disponíveis.",
+        };
       }
       if (!res.ok) {
-        return { ok: false as const, code: "erro_ia" as const, message: "A IA não conseguiu responder neste momento." };
+        return {
+          ok: false as const,
+          code: "erro_ia" as const,
+          message: "A IA não conseguiu responder neste momento.",
+        };
       }
       const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
       const texto = (json.choices?.[0]?.message?.content ?? "").trim();
-      if (!texto) return { ok: false as const, code: "erro_ia" as const, message: "A IA devolveu uma resposta vazia." };
+      if (!texto)
+        return {
+          ok: false as const,
+          code: "erro_ia" as const,
+          message: "A IA devolveu uma resposta vazia.",
+        };
       return { ok: true as const, texto };
     } catch {
       return { ok: false as const, code: "erro_ia" as const, message: "Falha ao contactar a IA." };
