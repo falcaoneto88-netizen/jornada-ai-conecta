@@ -1051,6 +1051,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      configure_bioreport_integration: {
+        Args: {
+          _confirm: boolean
+          _key_id: string
+          _location_id: string
+          _organization_id: string
+          _secret: string
+        }
+        Returns: Json
+      }
       current_org_id: { Args: never; Returns: string }
       ghl_apply_contact_event: {
         Args: {
