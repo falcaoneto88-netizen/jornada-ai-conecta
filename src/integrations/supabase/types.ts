@@ -826,13 +826,13 @@ export type Database = {
           is_demo: boolean
           language: string
           lifecycle: string
-          usage_note: string
-          revision: number
-          starter_key: string | null
           name: string
           organization_id: string
+          revision: number
           stage_key: string | null
+          starter_key: string | null
           updated_at: string
+          usage_note: string
         }
         Insert: {
           body: string
@@ -842,13 +842,13 @@ export type Database = {
           is_demo?: boolean
           language?: string
           lifecycle?: string
-          usage_note?: string
-          revision?: number
-          starter_key?: string | null
           name: string
           organization_id: string
+          revision?: number
           stage_key?: string | null
+          starter_key?: string | null
           updated_at?: string
+          usage_note?: string
         }
         Update: {
           body?: string
@@ -858,13 +858,13 @@ export type Database = {
           is_demo?: boolean
           language?: string
           lifecycle?: string
-          usage_note?: string
-          revision?: number
-          starter_key?: string | null
           name?: string
           organization_id?: string
+          revision?: number
           stage_key?: string | null
+          starter_key?: string | null
           updated_at?: string
+          usage_note?: string
         }
         Relationships: [
           {
@@ -1170,10 +1170,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      save_message_template_draft: {
-        Args: { _org: string; _id: string; _expected_revision: number; _draft: Json }
-        Returns: Json
-      }
       configure_bioreport_integration: {
         Args: {
           _confirm: boolean
@@ -1304,6 +1300,15 @@ export type Database = {
           _request: string
         }
         Returns: string
+      }
+      save_message_template_draft: {
+        Args: {
+          _draft: Json
+          _expected_revision: number
+          _id: string
+          _org: string
+        }
+        Returns: Json
       }
       tem_papel: {
         Args: { _papeis: Database["public"]["Enums"]["app_role"][] }
