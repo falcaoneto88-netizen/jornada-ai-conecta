@@ -1,9 +1,10 @@
+import { AppointmentTracking } from "@/components/appointment-tracking";
 import { useOrganizacao } from "@/lib/organization";
-import { diaCivil, FUSO_DEMO } from "@/lib/clinic-time";
+import { diaCivil, chaveDia, chaveCelula, FUSO_DEMO } from "@/lib/clinic-time";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { addDays, addMonths } from "date-fns";
+import { addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -98,6 +99,23 @@ function Agenda() {
       responsavel === "todos" ? marcacoes : marcacoes.filter((m) => m.responsavel === responsavel),
     [marcacoes, responsavel],
   );
+
+  const periodoInicio =
+    vista === "dia"
+      ? dataReferencia
+      : vista === "semana"
+        ? startOfWeek(dataReferencia, { weekStartsOn: 1 })
+        : startOfWeek(startOfMonth(dataReferencia), { weekStartsOn: 1 });
+  const periodoFim =
+    vista === "dia"
+      ? dataReferencia
+      : vista === "semana"
+        ? endOfWeek(dataReferencia, { weekStartsOn: 1 })
+        : endOfWeek(endOfMonth(dataReferencia), { weekStartsOn: 1 });
+  const acompanhamentoVisivel = visiveis.filter((m) => {
+    const dia = chaveDia(m.inicioIso, fuso);
+    return dia >= chaveCelula(periodoInicio) && dia <= chaveCelula(periodoFim);
+  });
 
   function navegar(direcao: -1 | 1) {
     setDataReferencia((ref) => {
@@ -282,8 +300,12 @@ function Agenda() {
           />
         )}
 
+        {!demo && !isLoading && !isError && organizacao.data && (
+          <AppointmentTracking marcacoes={acompanhamentoVisivel} />
+        )}
+
         <p className="text-xs text-muted-foreground">
-          Leitura apenas: nada é criado, remarcado ou cancelado no GoHighLevel a partir daqui.
+          Agenda em leitura: nada é criado, remarcado ou cancelado no GoHighLevel a partir daqui.
         </p>
       </div>
 
