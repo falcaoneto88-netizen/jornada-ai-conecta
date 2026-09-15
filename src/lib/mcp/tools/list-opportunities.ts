@@ -4,13 +4,13 @@ import { z } from "zod";
 import { erro, naoAutenticado, supabaseForUser, texto } from "../supabase";
 
 const schema = z.object({
-  search: z.string().min(1).max(200).optional().describe("Texto a procurar no nome do cliente."),
   stage_key: z.string().min(1).max(100).optional().describe("Chave da etapa da jornada."),
+  status: z.string().min(1).max(50).optional().describe("Estado da oportunidade."),
   updated_after: z
     .string()
     .datetime({ offset: true })
     .optional()
-    .describe("Data/hora ISO mínima de atualização (sincronização incremental)."),
+    .describe("Data/hora ISO mínima de atualização."),
   cursor: z
     .string()
     .datetime({ offset: true })
@@ -20,39 +20,44 @@ const schema = z.object({
 });
 
 const COLUNAS =
-  "id,ghl_contact_id,full_name,email,phone,stage_key,tags,source,owner_name,next_action,next_action_at,last_interaction_at,is_demo,created_at,updated_at";
+  "id,ghl_opportunity_id,contact_id,name,pipeline_id,stage_id,stage_key,monetary_value,status,is_demo,created_at,updated_at";
 
 export default defineTool({
-  name: "list_contacts",
-  title: "Listar clientes",
+  name: "list_opportunities",
+  title: "Listar oportunidades",
   description:
-    "Lista clientes da organização com o identificador do GoHighLevel, pesquisa por nome, filtro por etapa e paginação por atualização. Devolve no máximo 50 registos.",
+    "Lista oportunidades da organização com os identificadores do GoHighLevel (oportunidade, pipeline e etapa), para casamento externo. Somente leitura; não cria nem altera oportunidades.",
   inputSchema: schema.shape,
-  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   handler: async (raw, ctx) => {
     if (!ctx.isAuthenticated() || !ctx.getToken()) return naoAutenticado();
     const input = schema.safeParse(raw);
     if (!input.success) return erro("Confira os filtros, as datas ISO e o limite entre 1 e 50.");
-    const { search, stage_key, updated_after, cursor, limit } = input.data;
+    const { stage_key, status, updated_after, cursor, limit } = input.data;
     try {
       const client = supabaseForUser(ctx);
       let query = client
-        .from("contacts")
+        .from("opportunities")
         .select(COLUNAS)
         .order("updated_at", { ascending: false })
         .limit(limit);
       if (stage_key) query = query.eq("stage_key", stage_key);
-      if (search) query = query.ilike("full_name", `%${search}%`);
+      if (status) query = query.eq("status", status);
       if (updated_after) query = query.gte("updated_at", updated_after);
       if (cursor) query = query.lt("updated_at", cursor);
       const { data, error } = await query;
-      if (error) return erro("Não foi possível consultar os clientes.");
+      if (error) return erro("Não foi possível consultar as oportunidades.");
       const registos = data ?? [];
       const next =
         registos.length === limit ? (registos[registos.length - 1]?.updated_at ?? null) : null;
-      return texto({ contacts: registos, next_cursor: next });
+      return texto({ opportunities: registos, next_cursor: next });
     } catch {
-      return erro("Não foi possível consultar os clientes.");
+      return erro("Não foi possível consultar as oportunidades.");
     }
   },
 });
