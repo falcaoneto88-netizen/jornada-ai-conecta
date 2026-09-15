@@ -2,6 +2,7 @@ import { auth, defineMcp } from "@lovable.dev/mcp-js";
 
 import listAutomationsTool from "./tools/list-automations";
 import listContactsTool from "./tools/list-contacts";
+import listOpportunitiesTool from "./tools/list-opportunities";
 import listStagesTool from "./tools/list-stages";
 import listTemplatesTool from "./tools/list-templates";
 import moveContactStageTool from "./tools/move-contact-stage";
@@ -23,6 +24,7 @@ export default defineMcp({
   tools: [
     listStagesTool,
     listContactsTool,
+    listOpportunitiesTool,
     moveContactStageTool,
     listTemplatesTool,
     listAutomationsTool,
