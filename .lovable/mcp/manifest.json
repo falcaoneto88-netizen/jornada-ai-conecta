@@ -35,7 +35,7 @@
       {
         "name": "list_contacts",
         "title": "Listar clientes",
-        "description": "Lista clientes da organização, com pesquisa por nome e filtro por etapa da jornada. Devolve no máximo 50 registos.",
+        "description": "Lista clientes da organização com o identificador do GoHighLevel, pesquisa por nome, filtro por etapa e paginação por atualização. Devolve no máximo 50 registos.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -47,17 +47,83 @@
           "properties": {
             "search": {
               "description": "Texto a procurar no nome do cliente.",
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
             },
             "stage_key": {
-              "description": "Chave da etapa da jornada para filtrar.",
-              "type": "string"
+              "description": "Chave da etapa da jornada.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "updated_after": {
+              "description": "Data/hora ISO mínima de atualização (sincronização incremental).",
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "cursor": {
+              "description": "Cursor devolvido na consulta anterior (paginação decrescente por atualização).",
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
             "limit": {
-              "description": "Número máximo de registos (1 a 50, por omissão 20).",
+              "default": 20,
+              "description": "Número de registos (1 a 50).",
               "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_opportunities",
+        "title": "Listar oportunidades",
+        "description": "Lista oportunidades da organização com os identificadores do GoHighLevel (oportunidade, pipeline e etapa), para casamento externo. Somente leitura; não cria nem altera oportunidades.",
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "stage_key": {
+              "description": "Chave da etapa da jornada.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "status": {
+              "description": "Estado da oportunidade.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            },
+            "updated_after": {
+              "description": "Data/hora ISO mínima de atualização.",
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "cursor": {
+              "description": "Cursor devolvido na consulta anterior (paginação decrescente por atualização).",
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "limit": {
+              "default": 20,
+              "description": "Número de registos (1 a 50).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
             }
           }
         },
