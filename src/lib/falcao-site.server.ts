@@ -28,7 +28,7 @@ export const BLOQUEIO_ACOLHIMENTO =
   "Acolhimento desligado: o canal só envia depois de o administrador o ativar, com escrita no GoHighLevel ativa. Aceitação da API não é entrega — só há entrega com recibo do provedor.";
 
 export const NOTA_AUTOMATICO =
-  "Com o recebimento ligado, cada pedido novo é processado logo a seguir ao registo do próprio pedido (um pedido de cada vez, sem repetições): se a escrita no GoHighLevel estiver ligada, cria contacto e oportunidade; se o acolhimento também estiver ligado, envia a mensagem uma única vez. Pedidos antigos só avançam pelos botões manuais.";
+  "Com o recebimento ligado, cada pedido novo é processado logo a seguir ao registo do próprio pedido (cada pedido separadamente, sem repetições; pedidos diferentes podem avançar ao mesmo tempo): se a escrita no GoHighLevel estiver ligada, cria contacto e oportunidade; se o acolhimento também estiver ligado, envia a mensagem uma única vez. Pedidos antigos só avançam pelos botões manuais.";
 
 export type ContagemLeads = { total: number | null; emRevisao: number | null; erro: boolean };
 

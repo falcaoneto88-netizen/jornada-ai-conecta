@@ -146,7 +146,8 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             <p className="text-sm font-medium">1. Recebimento de pedidos do site</p>
             <p className="text-sm text-muted-foreground">
               Guarda o pedido consentido nesta conta. Com o recebimento ligado, cada pedido novo é
-              processado logo a seguir ao registo, conforme os dois interruptores abaixo.
+              processado separadamente, logo a seguir ao registo, conforme os dois interruptores abaixo.
+              Pedidos diferentes podem avançar ao mesmo tempo.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button disabled={pending || !data.segredoPresente} onClick={() => void guardar(true)}>
