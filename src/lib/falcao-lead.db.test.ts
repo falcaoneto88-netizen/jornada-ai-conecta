@@ -465,3 +465,98 @@ describe("acolhimento pelo canal existente", () => {
     ).toBe("0");
   });
 });
+
+describe("identidade consentida e exclusão mútua por pessoa", () => {
+  const TEL = "351900000777";
+  const P1 = "aaaaaaaa-8881-4888-8888-aaaaaaaaaaaa";
+  const P2 = "aaaaaaaa-8882-4888-8888-aaaaaaaaaaaa";
+
+  it("guarda a identidade do formulário e impede alterá-la", () => {
+    const a = ingerir(P1, HASH_1, TEL, null);
+    expect(a.ok, a.erro).toBe(true);
+    const b = ingerir(P2, HASH_2, TEL, null);
+    expect(b.ok, b.erro).toBe(true);
+    expect(
+      valor(db.admin(`select count(*) from public.site_lead_identities where phone_normalized='${TEL}';`)),
+    ).toBe("2");
+    const alterar = db.admin(
+      `update public.site_lead_identities set phone_normalized='351900000999' where phone_normalized='${TEL}';`,
+    );
+    expect(alterar.ok).toBe(false);
+  });
+
+  it("duas submissões da mesma pessoa não são executadas ao mesmo tempo", () => {
+    const ids = db.admin(
+      `select id::text from public.site_lead_submissions where request_id in ('${P1}','${P2}') order by created_at;`,
+    ).linhas.map((l) => l[0]!);
+    expect(ids.length).toBe(2);
+    const primeira = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${ids[0]!}','experiencia-falcao')::text;`,
+    );
+    expect(primeira.ok, primeira.erro).toBe(true);
+    expect(valor(primeira)).toContain('"blocked": false');
+    const segunda = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${ids[1]!}','experiencia-falcao')::text;`,
+    );
+    expect(segunda.ok, segunda.erro).toBe(true);
+    expect(valor(segunda)).toContain("execucao_em_curso_para_a_mesma_pessoa");
+    expect(
+      valor(db.admin(`select remote_state from public.site_lead_submissions where id='${ids[1]!}';`)),
+    ).toBe("pendente");
+
+    // Confirmação exige dados reais da oportunidade lida no GoHighLevel.
+    const semDados = db.comoServico(
+      `select public.finish_site_lead_remote_v2('${ids[0]!}','confirmado','x','ghlC7','ghlO7',null,null,null,null);`,
+    );
+    expect(semDados.ok).toBe(false);
+    const fim = db.comoServico(
+      `select public.finish_site_lead_remote_v2('${ids[0]!}','confirmado','x','ghlC7','ghlO7','Lead','${PIPELINE}','etapa-real','abandoned')::text;`,
+    );
+    expect(fim.ok, fim.erro).toBe(true);
+    expect(valor(fim)).toContain('"persisted": true');
+    // Espelho fiel: nada de 'open' nem etapa Novo Lead inventados.
+    expect(
+      valor(
+        db.admin(
+          `select status || '|' || stage_id from public.opportunities where ghl_opportunity_id='ghlO7';`,
+        ),
+      ),
+    ).toBe("abandoned|etapa-real");
+    // Libertada a exclusão mútua, a segunda submissão já pode reservar.
+    const terceira = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${ids[1]!}','experiencia-falcao')::text;`,
+    );
+    expect(terceira.ok, terceira.erro).toBe(true);
+    expect(valor(terceira)).toContain('"blocked": false');
+  });
+
+  it("divergência com a identidade consentida vai para revisão sem mesclar", () => {
+    const pedido = "aaaaaaaa-9999-4999-8999-aaaaaaaaaaaa";
+    expect(ingerir(pedido, HASH_1, "351900000888", null).ok).toBe(true);
+    const id = valor(
+      db.admin(`select id::text from public.site_lead_submissions where request_id='${pedido}';`),
+    )!;
+    expect(
+      db.admin(
+        `update public.contacts set phone_normalized='351900000000', phone='+351900000000'
+           where id = (select contact_id from public.site_lead_submissions where id='${id}');`,
+      ).ok,
+    ).toBe(true);
+    const r = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${id}','experiencia-falcao')::text;`,
+    );
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain("divergencia_com_identidade_consentida");
+    expect(
+      valor(db.admin(`select status from public.site_lead_submissions where id='${id}';`)),
+    ).toBe("em_revisao");
+  });
+
+  it("origem diferente da esperada nunca reserva", () => {
+    const id = valor(
+      db.admin(`select id::text from public.site_lead_submissions where request_id='${P2}';`),
+    )!;
+    const r = db.comoServico(`select public.claim_site_lead_remote_v2('${id}','outra-origem');`);
+    expect(r.ok).toBe(false);
+  });
+});
