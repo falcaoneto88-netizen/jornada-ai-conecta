@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { BLOQUEIO_ACOLHIMENTO, configurarIntegracaoSite, lerEstadoIntegracaoSite } from "./falcao-site.server";
+import {
+  BLOQUEIO_ACOLHIMENTO,
+  configurarIntegracaoSite,
+  lerEstadoIntegracaoSite,
+} from "./falcao-site.server";
 
 type Resposta = { data: unknown; error: unknown };
 type Contagem = { count: number | null; error: unknown };
@@ -43,7 +47,9 @@ function cliente(opcoes: {
         select: () => ({
           eq: () => ({
             maybeSingle: async () => ({
-              data: opcoes.user ? { organization_id: "f07ab3be-7419-4779-a901-ef71c5fc27f0" } : null,
+              data: opcoes.user
+                ? { organization_id: "f07ab3be-7419-4779-a901-ef71c5fc27f0" }
+                : null,
               error: null,
             }),
           }),
@@ -71,7 +77,8 @@ function cliente(opcoes: {
 }
 
 const destinoOk = async () => ({ ok: true }) as const;
-const destinoMau = async () => ({ ok: false, message: "O funil fixo não existe nesta conta do GoHighLevel." }) as const;
+const destinoMau = async () =>
+  ({ ok: false, message: "O funil fixo não existe nesta conta do GoHighLevel." }) as const;
 
 describe("configuração da integração Experiência Falcão", () => {
   it("recusa quem não é administrador", async () => {

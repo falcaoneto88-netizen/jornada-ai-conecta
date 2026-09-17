@@ -24,7 +24,9 @@ export function segredoFalcao(): string | null {
 }
 
 export async function hmacHex(segredo: string, corpo: Uint8Array): Promise<string> {
-  return createHmac("sha256", Buffer.from(segredo, "utf8")).update(Buffer.from(corpo)).digest("hex");
+  return createHmac("sha256", Buffer.from(segredo, "utf8"))
+    .update(Buffer.from(corpo))
+    .digest("hex");
 }
 
 export function compararHex(recebida: string, esperada: string): boolean {

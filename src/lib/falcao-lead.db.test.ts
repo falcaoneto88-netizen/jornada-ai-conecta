@@ -52,7 +52,9 @@ beforeAll(async () => {
     [UID_B, "fb@exemplo.test"],
     [UID_V, "fv@exemplo.test"],
   ] as const) {
-    expect(db.admin(`insert into auth.users (id, email) values ('${uid}','${email}');`).ok).toBe(true);
+    expect(db.admin(`insert into auth.users (id, email) values ('${uid}','${email}');`).ok).toBe(
+      true,
+    );
   }
   orgA = valor(db.admin(`select organization_id from public.profiles where id = '${UID_A}';`))!;
   orgB = valor(db.admin(`select organization_id from public.profiles where id = '${UID_B}';`))!;
@@ -168,13 +170,20 @@ describe("ingresso do lead", () => {
       insert into public.contacts (organization_id, full_name, phone_normalized) values ('${orgA}','Pessoa Um','351900000222');
       insert into public.contacts (organization_id, full_name, email) values ('${orgA}','Pessoa Dois','dois@exemplo.test');
     `);
-    const antes = valor(db.admin(`select count(*) from public.contacts where organization_id='${orgA}';`));
-    const r = ingerir("aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa", HASH_1, "351900000222", "dois@exemplo.test");
+    const antes = valor(
+      db.admin(`select count(*) from public.contacts where organization_id='${orgA}';`),
+    );
+    const r = ingerir(
+      "aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa",
+      HASH_1,
+      "351900000222",
+      "dois@exemplo.test",
+    );
     expect(r.ok, r.erro).toBe(true);
     expect(valor(r)).toContain('"status": "em_revisao"');
-    expect(valor(db.admin(`select count(*) from public.contacts where organization_id='${orgA}';`))).toBe(
-      antes,
-    );
+    expect(
+      valor(db.admin(`select count(*) from public.contacts where organization_id='${orgA}';`)),
+    ).toBe(antes);
   });
 
   it("pedidos simultâneos idênticos devolvem ambos o mesmo recibo e um só contacto", async () => {
@@ -188,9 +197,13 @@ describe("ingresso do lead", () => {
     );
     expect(recibos[0]).toBeTruthy();
     expect(recibos[0]).toBe(recibos[1]);
-    expect([valor(a), valor(b)].filter((t) => (t ?? "").includes('"duplicate": true')).length).toBe(1);
+    expect([valor(a), valor(b)].filter((t) => (t ?? "").includes('"duplicate": true')).length).toBe(
+      1,
+    );
     expect(
-      valor(db.admin(`select count(*) from public.site_lead_submissions where request_id='${pedido}';`)),
+      valor(
+        db.admin(`select count(*) from public.site_lead_submissions where request_id='${pedido}';`),
+      ),
     ).toBe("1");
     expect(
       valor(
@@ -226,13 +239,17 @@ describe("ingresso do lead", () => {
 
   it("o mesmo pedido com dados diferentes é recusado sem alterar o recibo", () => {
     const antes = valor(
-      db.admin(`select payload_hash from public.site_lead_submissions where request_id='${PEDIDO_1}';`),
+      db.admin(
+        `select payload_hash from public.site_lead_submissions where request_id='${PEDIDO_1}';`,
+      ),
     );
     const r = ingerir(PEDIDO_1, "3".repeat(64), "351900000111", null);
     expect(r.ok).toBe(false);
     expect(
       valor(
-        db.admin(`select payload_hash from public.site_lead_submissions where request_id='${PEDIDO_1}';`),
+        db.admin(
+          `select payload_hash from public.site_lead_submissions where request_id='${PEDIDO_1}';`,
+        ),
       ),
     ).toBe(antes);
   });
@@ -256,10 +273,12 @@ describe("ingresso do lead", () => {
 
 describe("isolamento das novas tabelas", () => {
   it("a outra organização não vê a integração nem os recibos", () => {
-    expect(valor(db.comoUtilizador(UID_B, "select count(*) from public.site_integrations;"))).toBe("0");
-    expect(valor(db.comoUtilizador(UID_B, "select count(*) from public.site_lead_submissions;"))).toBe(
+    expect(valor(db.comoUtilizador(UID_B, "select count(*) from public.site_integrations;"))).toBe(
       "0",
     );
+    expect(
+      valor(db.comoUtilizador(UID_B, "select count(*) from public.site_lead_submissions;")),
+    ).toBe("0");
   });
 
   it("a própria organização lê, mas não escreve, os recibos", () => {
@@ -303,8 +322,9 @@ describe("escrita remota reservada e auditada", () => {
 
   it("reserva uma única vez e confirma os identificadores devolvidos", () => {
     expect(
-      db.admin(`update public.ghl_connections set write_enabled=true where organization_id='${orgA}';`)
-        .ok,
+      db.admin(
+        `update public.ghl_connections set write_enabled=true where organization_id='${orgA}';`,
+      ).ok,
     ).toBe(true);
     const id = recibo();
     const reserva = db.comoServico(`select public.claim_site_lead_remote('${id}')::text;`);

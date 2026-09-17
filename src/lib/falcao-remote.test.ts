@@ -51,10 +51,10 @@ const contacto = (p: Partial<ContactoRemoto> & { id: string }): ContactoRemoto =
 
 describe("correspondência exata de identidade", () => {
   it("ignora aproximações devolvidas pela procura", () => {
-    const r = corresponderExato(
-      [contacto({ id: "a", phoneNormalized: "351999999999" })],
-      { telefone: "351900000000", email: null },
-    );
+    const r = corresponderExato([contacto({ id: "a", phoneNormalized: "351999999999" })], {
+      telefone: "351900000000",
+      email: null,
+    });
     expect(r.tipo).toBe("nenhum");
   });
 
@@ -74,7 +74,11 @@ describe("processamento remoto de um recibo", () => {
   it("cria contacto e oportunidade no funil fixo", async () => {
     const { deps: d, concluir } = deps();
     const r = await processarSubmissaoRemota(pedido, d);
-    expect(r).toMatchObject({ estado: "confirmado", ghlContactId: "c-novo", ghlOpportunityId: "o-nova" });
+    expect(r).toMatchObject({
+      estado: "confirmado",
+      ghlContactId: "c-novo",
+      ghlOpportunityId: "o-nova",
+    });
     expect(concluir).toHaveBeenCalledWith(
       expect.objectContaining({ estado: "confirmado", ghlOpportunityId: "o-nova" }),
     );

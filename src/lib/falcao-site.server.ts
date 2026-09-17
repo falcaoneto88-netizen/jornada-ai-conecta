@@ -51,7 +51,11 @@ async function organizacao(client: Cliente): Promise<string | null> {
   const { data } = await client.auth.getUser();
   const uid = data.user?.id;
   if (!uid) return null;
-  const perfil = await client.from("profiles").select("organization_id").eq("id", uid).maybeSingle();
+  const perfil = await client
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", uid)
+    .maybeSingle();
   const org = perfil.data?.["organization_id"];
   return typeof org === "string" ? org : null;
 }
@@ -83,9 +87,7 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
 
   const leads = await contarLeads(client);
   const escrita = (integracao?.["remote_write_state"] ?? "pendente") as
-    | "pendente"
-    | "habilitado"
-    | "bloqueado";
+    "pendente" | "habilitado" | "bloqueado";
 
   const pendencias = [
     ...(segredoPresente

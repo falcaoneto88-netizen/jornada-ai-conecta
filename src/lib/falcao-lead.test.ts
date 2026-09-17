@@ -57,12 +57,12 @@ const assinar = (corpo: Uint8Array) =>
 
 const recibo = (over: Record<string, unknown> = {}) =>
   ({
-  receipt_id: "r-1",
-  request_id: "11111111-2222-4333-8444-555555555555",
-  status: "registado",
-  local_state: "contacto_criado",
-  remote_state: "pendente",
-  welcome_state: "pendente",
+    receipt_id: "r-1",
+    request_id: "11111111-2222-4333-8444-555555555555",
+    status: "registado",
+    local_state: "contacto_criado",
+    remote_state: "pendente",
+    welcome_state: "pendente",
     duplicate: false,
     ...over,
   }) as unknown as ReciboLead;

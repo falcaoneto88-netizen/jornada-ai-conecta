@@ -6,10 +6,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { processarLeadsFalcao } from "@/lib/falcao-remote.functions";
-import {
-  configurarIntegracaoFalcao,
-  estadoIntegracaoFalcao,
-} from "@/lib/falcao-site.functions";
+import { configurarIntegracaoFalcao, estadoIntegracaoFalcao } from "@/lib/falcao-site.functions";
 
 export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoIntegracaoFalcao);
