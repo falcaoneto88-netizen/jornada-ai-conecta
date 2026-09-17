@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BLOQUEIO_ACOLHIMENTO,
   configurarIntegracaoSite,
+  definirFlagIntegracaoSite,
   lerEstadoIntegracaoSite,
 } from "./falcao-site.server";
 
@@ -159,5 +160,65 @@ describe("configuração da integração Experiência Falcão", () => {
     );
     expect(estado.leads).toEqual({ total: null, emRevisao: null, erro: true });
     expect(estado.pendencias.join(" ")).toContain("contagens");
+  });
+});
+
+describe("controlos separados de escrita remota e acolhimento", () => {
+  it("recusa quem não é administrador", async () => {
+    const c = cliente({ papel: false, user: "u1" });
+    const r = await definirFlagIntegracaoSite(c, {
+      confirm: true,
+      scope: "remote_write",
+      enabled: true,
+    });
+    expect(r).toEqual({ ok: false, message: "Acesso restrito a administradores." });
+  });
+
+  it("não habilita sem destino confirmado e não chama a RPC", async () => {
+    const c = cliente({ papel: true, user: "u1" });
+    const r = await definirFlagIntegracaoSite(
+      c,
+      { confirm: true, scope: "remote_write", enabled: true },
+      { validarDestino: destinoMau },
+    );
+    expect(r.ok).toBe(false);
+    expect((c as unknown as { rpc: ReturnType<typeof vi.fn> }).rpc).not.toHaveBeenCalledWith(
+      "set_site_integration_flags_v2",
+      expect.anything(),
+    );
+  });
+
+  it("desligar não depende das credenciais externas", async () => {
+    const c = cliente({
+      papel: true,
+      user: "u1",
+      rpcConfig: {
+        data: { remote_write_state: "pendente", welcome_channel_state: "pendente" },
+        error: null,
+      },
+    });
+    const validar = vi.fn(destinoMau);
+    const r = await definirFlagIntegracaoSite(
+      c,
+      { confirm: true, scope: "remote_write", enabled: false },
+      { validarDestino: validar },
+    );
+    expect(validar).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain("Nenhum pedido em curso");
+  });
+
+  it("um erro da RPC nunca é apresentado como sucesso", async () => {
+    const c = cliente({
+      papel: true,
+      user: "u1",
+      rpcConfig: { data: null, error: { code: "42501" } },
+    });
+    const r = await definirFlagIntegracaoSite(
+      c,
+      { confirm: true, scope: "welcome_channel", enabled: true },
+      { validarDestino: destinoOk },
+    );
+    expect(r.ok).toBe(false);
   });
 });

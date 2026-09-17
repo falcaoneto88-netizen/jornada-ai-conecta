@@ -50,6 +50,7 @@ beforeAll(async () => {
     "drizzle/migrations/0002_site_lead_acolhimento_sms_outbox.sql",
     "drizzle/migrations/0003_site_lead_identidade_consentida_locks_e_quota_hmac.sql",
     "drizzle/migrations/0004_site_lead_durable_execution_ledger.sql",
+    "drizzle/migrations/0005_site_lead_flags_v2.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -809,5 +810,64 @@ describe("execução automática de um recibo (base real)", () => {
     expect(r2.motivo).toBe("remoto_nao_confirmado");
     expect(sim2.criarContacto).not.toHaveBeenCalled();
     expect(sim2.enviar).not.toHaveBeenCalled();
+  });
+});
+
+describe("controlos separados de escrita remota e acolhimento", () => {
+  const flags = () =>
+    valor(
+      db.admin(
+        `select remote_write_state || '/' || welcome_channel_state from public.site_integrations where organization_id='${orgA}';`,
+      ),
+    );
+  const ligar = (uid: string, scope: string, estado: string) =>
+    db.comoUtilizador(uid, `select public.set_site_integration_flags_v2('${scope}','${estado}',true);`);
+
+  it("recusa quem não é administrador e recusa outra organização", () => {
+    expect(ligar(UID_V, "remote_write", "ligado").ok).toBe(false);
+    expect(ligar(UID_B, "remote_write", "ligado").ok).toBe(false);
+  });
+
+  it("não habilita a escrita com a escrita global desativada", () => {
+    db.admin(
+      `update public.ghl_connections set write_enabled=false, status='conectada' where organization_id='${orgA}';
+       update public.site_integrations set remote_write_state='pendente', welcome_channel_state='pendente' where organization_id='${orgA}';`,
+    );
+    expect(ligar(UID_A, "remote_write", "ligado").ok).toBe(false);
+    expect(flags()).toBe("pendente/pendente");
+  });
+
+  it("habilita a escrita e só depois permite o acolhimento", () => {
+    db.admin(
+      `update public.ghl_connections set write_enabled=true, status='conectada' where organization_id='${orgA}';`,
+    );
+    expect(ligar(UID_A, "welcome_channel", "ligado").ok).toBe(false);
+    expect(ligar(UID_A, "remote_write", "ligado").ok, "escrita").toBe(true);
+    expect(ligar(UID_A, "welcome_channel", "ligado").ok, "acolhimento").toBe(true);
+    expect(flags()).toBe("habilitado/configurado");
+  });
+
+  it("desligar a escrita desliga também o acolhimento, sem mexer no ledger", () => {
+    const antes = valor(db.admin(`select count(*)::text from public.site_lead_execution_ledger;`));
+    db.admin(
+      `update public.ghl_connections set write_enabled=false, status='desconectada' where organization_id='${orgA}';`,
+    );
+    const r = ligar(UID_A, "remote_write", "desligado");
+    expect(r.ok, r.erro).toBe(true);
+    expect(flags()).toBe("pendente/pendente");
+    expect(valor(db.admin(`select count(*)::text from public.site_lead_execution_ledger;`))).toBe(
+      antes,
+    );
+  });
+
+  it("recusa âmbito ou estado desconhecido e falta de confirmação", () => {
+    expect(ligar(UID_A, "tudo", "ligado").ok).toBe(false);
+    expect(ligar(UID_A, "remote_write", "talvez").ok).toBe(false);
+    expect(
+      db.comoUtilizador(
+        UID_A,
+        `select public.set_site_integration_flags_v2('remote_write','ligado',false);`,
+      ).ok,
+    ).toBe(false);
   });
 });
