@@ -418,8 +418,12 @@ describe("acolhimento pelo canal existente", () => {
       valor(db.admin(`select welcome_state from public.site_lead_submissions where id='${id}';`)),
     ).toBe("enviado");
     expect(
-      valor(db.admin(`select welcome_delivered_at from public.site_lead_submissions where id='${id}';`)),
-    ).toBe("");
+      valor(
+        db.admin(
+          `select coalesce(welcome_delivered_at::text,'nulo') from public.site_lead_submissions where id='${id}';`,
+        ),
+      ),
+    ).toBe("nulo");
   });
 
   it("entrega só com recibo real do provedor para a mesma mensagem", () => {
@@ -441,7 +445,9 @@ describe("acolhimento pelo canal existente", () => {
     expect(
       Number(
         valor(
-          db.admin(`select count(*) from public.audit_logs where action='site_lead.welcome_intent';`),
+          db.admin(
+            `select count(*) from public.audit_logs where action='site_lead.welcome_intent';`,
+          ),
         ),
       ),
     ).toBeGreaterThan(0);

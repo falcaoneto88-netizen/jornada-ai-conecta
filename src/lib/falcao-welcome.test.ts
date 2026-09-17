@@ -60,7 +60,10 @@ describe("envio do acolhimento", () => {
 
   it("não envia quando o contacto tem DND", async () => {
     const { deps: d, enviar } = deps({
-      estadoContacto: async () => ({ ok: true, data: { id: "ghlC1", dnd: true, canaisBloqueados: [] } }),
+      estadoContacto: async () => ({
+        ok: true,
+        data: { id: "ghlC1", dnd: true, canaisBloqueados: [] },
+      }),
     });
     const r = await processarAcolhimento(pedido, d);
     expect(enviar).not.toHaveBeenCalled();

@@ -111,7 +111,9 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
           </div>
 
           <div>
-            <p className="text-sm font-medium">Mensagem de acolhimento (envio manual, desligado por omissão)</p>
+            <p className="text-sm font-medium">
+              Mensagem de acolhimento (envio manual, desligado por omissão)
+            </p>
             <p className="mt-1 rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
               {data.acolhimento}
             </p>
