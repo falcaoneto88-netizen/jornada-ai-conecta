@@ -884,7 +884,8 @@ describe("controlos separados de escrita remota e acolhimento", () => {
     ]) {
       const r = db.comoUtilizador(UID_A, `select ${sql};`);
       expect(r.ok, sql).toBe(false);
-      expect(r.erro ?? "", sql).toContain("22023");
+      // 22023 (invalid_parameter_value) com a mensagem do guard.
+      expect(r.erro ?? "", sql).toContain("Pedido inválido ou não confirmado.");
     }
     expect(flags()).toBe("habilitado/pendente");
     expect(auditoria()).toBe(antesAudit);
