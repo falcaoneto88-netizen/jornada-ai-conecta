@@ -49,7 +49,15 @@ export const Route = createFileRoute("/api/public/falcao-lead")({
             compararAssinatura: compararHex,
           },
         );
+        if (status === 201 && typeof (body as { receiptId?: unknown }).receiptId === "string") {
+          // Recibo novo e persistido: tenta processar só este recibo. Tudo
+          // continua fechado — se a integração, a escrita ou o canal estiverem
+          // desligados, não acontece nada. A resposta nunca depende disto.
+          const { executarReciboFalcao } = await import("@/lib/falcao-auto.server");
+          await executarReciboFalcao((body as { receiptId: string }).receiptId);
+        }
         return Response.json(body, { status, headers: semCache });
+
       },
       GET: async () =>
         Response.json(

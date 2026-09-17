@@ -4,9 +4,10 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { iniciarDbReal, type DbReal } from "../../test/db";
+import { executarReciboFalcao, type AdminAuto } from "./falcao-auto.server";
 
 let db: DbReal;
 
@@ -642,5 +643,171 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
     )!;
     const r = db.comoServico(`select public.claim_site_lead_remote_v2('${id}','outra-origem');`);
     expect(r.ok).toBe(false);
+  });
+});
+
+/**
+ * Ponta a ponta: o ingresso assinado e persistido dispara o processamento
+ * DESTE recibo (dependências GHL simuladas, base real isolada). Nada sai da
+ * máquina e nenhum contacto real é usado.
+ */
+describe("execução automática de um recibo (base real)", () => {
+  const LOC_OK = LOCATION;
+
+  function adminSobreDb(): AdminAuto {
+    const lit = (v: unknown) => (v === null ? "null" : `'${String(v).replace(/'/g, "''")}'`);
+    return {
+      from: (tabela: string) => ({
+        select: (colunas: string) => {
+          const onde: string[] = [];
+          const consulta = {
+            eq: (campo: string, v: unknown) => {
+              onde.push(`${campo} = ${lit(v)}`);
+              return consulta;
+            },
+            limit: (n: number) => {
+              const sql = `select coalesce(json_agg(x)::text,'[]') from (select ${colunas} from public.${tabela}${
+                onde.length ? ` where ${onde.join(" and ")}` : ""
+              } limit ${String(n)}) x;`;
+              const r = db.admin(sql);
+              return Promise.resolve(
+                r.ok
+                  ? { data: JSON.parse(valor(r) ?? "[]") as unknown, error: null }
+                  : { data: null, error: { message: r.erro } },
+              );
+            },
+          };
+          return consulta;
+        },
+      }),
+      rpc: (fn: string, args: Record<string, unknown>) => {
+        const nomeados = Object.entries(args)
+          .map(([k, v]) => `${k} => ${lit(v)}`)
+          .join(", ");
+        const r = db.comoServico(`select coalesce(public.${fn}(${nomeados})::text,'null');`);
+        return Promise.resolve(
+          r.ok
+            ? { data: JSON.parse(valor(r) ?? "null") as unknown, error: null }
+            : { data: null, error: { message: r.erro } },
+        );
+      },
+    } as unknown as AdminAuto;
+  }
+
+  const contactoGhl = (telefone: string, id = "ghlAuto1") => ({
+    id,
+    locationId: LOC_OK,
+    phone: `+${telefone}`,
+    email: null,
+    dnd: false,
+    canaisBloqueados: [] as string[],
+  });
+
+  function simulado(telefone: string) {
+    const criarContacto = vi.fn(async () => ({ ok: true as const, data: { id: "ghlAuto1" } }));
+    const enviar = vi.fn(async () => ({
+      ok: true as const,
+      data: { messageId: "mAuto1", status: "queued" },
+    }));
+    const criarRemoto = ((_cfg: unknown, concluir: unknown) => ({
+      concluir,
+      procurarExato: async () => ({ ok: true as const, data: null }),
+      lerContacto: async () => ({ ok: true as const, data: contactoGhl(telefone) }),
+      criarContacto,
+      oportunidades: async () => ({ ok: true as const, data: [] }),
+      criarOportunidade: async () => ({
+        ok: true as const,
+        data: {
+          id: "ghlOppAuto1",
+          name: "Lead",
+          pipelineId: PIPELINE,
+          stageId: STAGE,
+          status: "open",
+          contactId: "ghlAuto1",
+        },
+      }),
+    })) as never;
+    const criarAcolhimento = ((_cfg: unknown, concluir: unknown) => ({
+      concluir,
+      estadoContacto: async () => ({ ok: true as const, data: contactoGhl(telefone) }),
+      enviar,
+    })) as never;
+    return { criarRemoto, criarAcolhimento, criarContacto, enviar };
+  }
+
+  function ingerirNovo(pedido: string, hash: string, telefone: string) {
+    expect(ingerir(pedido, hash, telefone, null).ok).toBe(true);
+    return valor(
+      db.admin(`select id::text from public.site_lead_submissions where request_id='${pedido}';`),
+    )!;
+  }
+
+  it("com os interruptores desligados não executa nada", async () => {
+    expect(
+      db.admin(
+        `update public.site_integrations set remote_write_state='pendente' where organization_id='${orgA}';`,
+      ).ok,
+    ).toBe(true);
+    const id = ingerirNovo("aaaaaaaa-7001-4777-8777-aaaaaaaaaaaa", "a".repeat(64), "351900000901");
+    const sim = simulado("351900000901");
+    const r = await executarReciboFalcao(id, {
+      admin: adminSobreDb(),
+      token: "token-de-teste",
+      criarRemoto: sim.criarRemoto,
+      criarAcolhimento: sim.criarAcolhimento,
+    });
+    expect(r).toMatchObject({ executado: false, motivo: "integracao_desligada" });
+    expect(sim.criarContacto).not.toHaveBeenCalled();
+    expect(sim.enviar).not.toHaveBeenCalled();
+    expect(
+      valor(db.admin(`select remote_state from public.site_lead_submissions where id='${id}';`)),
+    ).toBe("pendente");
+  });
+
+  it("com tudo habilitado processa só este recibo e acolhe uma vez", async () => {
+    expect(
+      db.admin(
+        `update public.site_integrations set enabled=true, remote_write_state='habilitado',
+           welcome_channel_state='configurado' where organization_id='${orgA}';
+         update public.ghl_connections set location_id='${LOC_OK}', status='conectada', write_enabled=true
+           where organization_id='${orgA}';`,
+      ).ok,
+    ).toBe(true);
+    const tel = "351900000902";
+    const id = ingerirNovo("aaaaaaaa-7002-4777-8777-aaaaaaaaaaaa", "b".repeat(64), tel);
+    const sim = simulado(tel);
+    const r = await executarReciboFalcao(id, {
+      admin: adminSobreDb(),
+      token: "token-de-teste",
+      criarRemoto: sim.criarRemoto,
+      criarAcolhimento: sim.criarAcolhimento,
+    });
+    expect(r.remoto).toMatchObject({ estado: "confirmado" });
+    expect(r.acolhimento).toMatchObject({ estado: "enviado", entregue: false });
+    expect(sim.criarContacto).toHaveBeenCalledTimes(1);
+    expect(sim.enviar).toHaveBeenCalledTimes(1);
+    expect(
+      valor(db.admin(`select remote_state from public.site_lead_submissions where id='${id}';`)),
+    ).toBe("confirmado");
+    expect(
+      valor(
+        db.admin(
+          `select count(*)::text from public.site_lead_execution_ledger where first_submission_id='${id}';`,
+        ),
+      ),
+    ).toBe("2");
+
+    // Segundo recibo da MESMA pessoa: nenhuma chamada externa adicional.
+    const id2 = ingerirNovo("aaaaaaaa-7003-4777-8777-aaaaaaaaaaaa", "c".repeat(64), tel);
+    const sim2 = simulado(tel);
+    const r2 = await executarReciboFalcao(id2, {
+      admin: adminSobreDb(),
+      token: "token-de-teste",
+      criarRemoto: sim2.criarRemoto,
+      criarAcolhimento: sim2.criarAcolhimento,
+    });
+    expect(r2.motivo).toBe("remoto_nao_confirmado");
+    expect(sim2.criarContacto).not.toHaveBeenCalled();
+    expect(sim2.enviar).not.toHaveBeenCalled();
   });
 });
