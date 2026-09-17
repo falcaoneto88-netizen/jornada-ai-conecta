@@ -36,12 +36,18 @@ export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
   const location = texto(c["locationId"]);
   if (!id || !location || typeof c["dnd"] !== "boolean") return null;
   const settings = c["dndSettings"];
-  const canais =
-    settings && typeof settings === "object"
-      ? Object.entries(settings as Record<string, { status?: unknown }>)
-          .filter(([, v]) => String(v?.status ?? "").toLowerCase() === "active")
-          .map(([canal]) => canal)
-      : [];
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
+  const entradas = Object.entries(settings as Record<string, unknown>);
+  if (
+    entradas.some(([, valor]) => {
+      if (!valor || typeof valor !== "object" || Array.isArray(valor)) return true;
+      const status = (valor as Record<string, unknown>)["status"];
+      return status !== "active" && status !== "inactive";
+    })
+  ) return null;
+  const canais = entradas
+    .filter(([, valor]) => (valor as Record<string, unknown>)["status"] === "active")
+    .map(([canal]) => canal);
   return {
     id,
     locationId: location,
@@ -85,10 +91,11 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
       if (!corpo || typeof corpo !== "object") {
         return { ok: false, code: "malformed_response", message: "Resposta inesperada." };
       }
-      if (!("contact" in corpo) || corpo["contact"] == null) {
-        // Ausência explícita de duplicado na resposta completa da API.
-        return { ok: true, data: null };
-      }
+       if (!("contact" in corpo) || corpo["contact"] == null) {
+         // A documentação desta versão não define a forma de "sem duplicado".
+         // Até existir prova contratual, nenhuma forma vazia autoriza criação.
+         return { ok: false, code: "no_match_contract_unverified", message: "Ausência de duplicado não comprovada." };
+       }
       const contacto = contactoDaApi(corpo["contact"]);
       return contacto
         ? { ok: true, data: contacto }
@@ -133,9 +140,12 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
       if (!lista) {
         return { ok: false, code: "malformed_response", message: "Resposta sem lista." };
       }
-      const meta = res.data?.meta ?? {};
-      const total = typeof meta["total"] === "number" ? meta["total"] : lista.length;
-      if (total > lista.length || texto(meta["nextPageUrl"])) {
+      const meta = res.data?.meta;
+      if (!meta || typeof meta !== "object" || Array.isArray(meta) || typeof meta["total"] !== "number") {
+        return { ok: false, code: "malformed_response", message: "Paginação não comprovada." };
+      }
+      const total = meta["total"];
+      if (total !== lista.length || texto(meta["nextPageUrl"]) || texto(meta["nextPage"])) {
         // Paginação incompleta: não é possível concluir que não existe oportunidade.
         return { ok: false, code: "malformed_response", message: "Listagem truncada." };
       }
@@ -297,7 +307,12 @@ export async function processarLeadsRemoto(
       continue;
     }
     const pedido = reserva.data as PedidoRemoto & { blocked?: boolean };
-    if (pedido.blocked === true || pedido.submission_id !== linha.id) {
+    if (
+      pedido.blocked === true || pedido.submission_id !== linha.id ||
+      pedido.organization_id !== acesso.acesso.orgId ||
+      pedido.integration_id !== linhaIntegracao.id ||
+      pedido.location_id !== acesso.acesso.locationId
+    ) {
       ignorados += 1;
       continue;
     }
