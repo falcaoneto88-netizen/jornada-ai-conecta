@@ -6,6 +6,8 @@
  * pedido e nunca é libertada; não há repetição automática; aceitação da API não
  * é prova de visualização no Gestor de Eventos.
  */
+import { createHash } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -286,9 +288,7 @@ export async function testarMetaCapi(
   };
 }
 
-/** SHA-256 hexadecimal (Node/Workers), usado só no identificador fictício. */
+/** SHA-256 hexadecimal, usado só no identificador fictício do teste. */
 function hashSincrono(valor: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   return createHash("sha256").update(valor, "utf8").digest("hex");
 }
