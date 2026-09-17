@@ -1058,6 +1058,138 @@ export type Database = {
           },
         ]
       }
+      site_integrations: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          ghl_location_id: string | null
+          ghl_pipeline_id: string | null
+          ghl_stage_id: string | null
+          id: string
+          local_stage_key: string
+          organization_id: string
+          remote_write_state: string
+          slug: string
+          source: string
+          updated_at: string
+          welcome_channel_state: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          ghl_location_id?: string | null
+          ghl_pipeline_id?: string | null
+          ghl_stage_id?: string | null
+          id?: string
+          local_stage_key?: string
+          organization_id: string
+          remote_write_state?: string
+          slug: string
+          source: string
+          updated_at?: string
+          welcome_channel_state?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          ghl_location_id?: string | null
+          ghl_pipeline_id?: string | null
+          ghl_stage_id?: string | null
+          id?: string
+          local_stage_key?: string
+          organization_id?: string
+          remote_write_state?: string
+          slug?: string
+          source?: string
+          updated_at?: string
+          welcome_channel_state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_integrations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_lead_submissions: {
+        Row: {
+          consent_at: string
+          consent_version: string
+          contact_id: string | null
+          created_at: string
+          id: string
+          integration_id: string
+          local_state: string
+          organization_id: string
+          payload_hash: string
+          remote_state: string
+          request_id: string
+          review_reason: string | null
+          status: string
+          updated_at: string
+          welcome_state: string
+        }
+        Insert: {
+          consent_at: string
+          consent_version: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          integration_id: string
+          local_state: string
+          organization_id: string
+          payload_hash: string
+          remote_state?: string
+          request_id: string
+          review_reason?: string | null
+          status: string
+          updated_at?: string
+          welcome_state?: string
+        }
+        Update: {
+          consent_at?: string
+          consent_version?: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          integration_id?: string
+          local_state?: string
+          organization_id?: string
+          payload_hash?: string
+          remote_state?: string
+          request_id?: string
+          review_reason?: string | null
+          status?: string
+          updated_at?: string
+          welcome_state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_lead_submissions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_submissions_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "site_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_submissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1180,6 +1312,20 @@ export type Database = {
         }
         Returns: Json
       }
+      configure_site_integration: {
+        Args: {
+          _confirm: boolean
+          _enabled: boolean
+          _location_id: string
+          _organization_id: string
+          _pipeline_id: string
+          _slug: string
+          _source: string
+          _stage_id: string
+          _stage_key: string
+        }
+        Returns: Json
+      }
       current_org_id: { Args: never; Returns: string }
       ghl_apply_contact_event: {
         Args: {
@@ -1285,6 +1431,20 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      ingest_site_lead: {
+        Args: {
+          _consent_at: string
+          _consent_version: string
+          _email: string
+          _full_name: string
+          _payload_hash: string
+          _phone: string
+          _phone_normalized: string
+          _request_id: string
+          _source: string
+        }
+        Returns: Json
       }
       pedido_de_cliente: { Args: never; Returns: boolean }
       receive_bioreport_event: {

@@ -1,0 +1,215 @@
+/**
+ * Testes contra Postgres real (migrações verdadeiras) do ingresso de leads do
+ * site "Experiência Falcão". Nenhum dado real é usado e nada sai da máquina.
+ */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { iniciarDbReal, type DbReal } from "../../test/db";
+
+let db: DbReal;
+
+const UID_A = "1a111111-1111-4111-8111-111111111111"; // administrador org A
+const UID_B = "1b222222-2222-4222-8222-222222222222"; // administrador org B
+const UID_V = "1c333333-3333-4333-8333-333333333333"; // visualizador org A
+
+let orgA = "";
+let orgB = "";
+
+const HASH_1 = "1".repeat(64);
+const HASH_2 = "2".repeat(64);
+const PEDIDO_1 = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+const PEDIDO_2 = "aaaaaaaa-2222-4222-8222-aaaaaaaaaaaa";
+
+function valor(r: { linhas: string[][] }): string | null {
+  return r.linhas.at(-1)?.[0] ?? null;
+}
+
+function ingerir(pedido: string, hash: string, telefone: string, email: string | null) {
+  return db.comoServico(
+    `select public.ingest_site_lead('experiencia-falcao','${pedido}','${hash}','Pessoa Teste',
+      '+${telefone}','${telefone}',${email ? `'${email}'` : "null"},'2026-09-17.contact.v1', now());`,
+  );
+}
+
+beforeAll(async () => {
+  db = await iniciarDbReal();
+  const migracao = readFileSync(
+    join(process.cwd(), "drizzle/migrations/0000_site_integration_experiencia_falcao.sql"),
+    "utf8",
+  );
+  const aplicada = db.admin(migracao);
+  expect(aplicada.ok, aplicada.erro).toBe(true);
+
+  for (const [uid, email] of [
+    [UID_A, "fa@exemplo.test"],
+    [UID_B, "fb@exemplo.test"],
+    [UID_V, "fv@exemplo.test"],
+  ] as const) {
+    expect(db.admin(`insert into auth.users (id, email) values ('${uid}','${email}');`).ok).toBe(true);
+  }
+  orgA = valor(db.admin(`select organization_id from public.profiles where id = '${UID_A}';`))!;
+  orgB = valor(db.admin(`select organization_id from public.profiles where id = '${UID_B}';`))!;
+
+  const preparacao = db.admin(`
+      update public.profiles set organization_id = '${orgA}' where id = '${UID_V}';
+      delete from public.user_roles where user_id = '${UID_V}';
+      insert into public.user_roles (user_id, organization_id, role) values ('${UID_V}','${orgA}','visualizador');
+      insert into public.ghl_location_bindings (location_id, organization_id) values ('loc-falcao','${orgA}');
+      insert into public.journey_stages (organization_id, key, name, position, color)
+        values ('${orgA}','novo_lead','Novo Lead', 1, '#000000')
+        on conflict do nothing;
+    `);
+  expect(preparacao.ok, preparacao.erro).toBe(true);
+}, 180_000);
+
+afterAll(() => db?.stop());
+
+describe("configuração administrativa", () => {
+  it("recusa quem não é administrador", () => {
+    const r = db.comoUtilizador(
+      UID_V,
+      `select public.configure_site_integration('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','loc-falcao','pipe-1','stage-1',true,true);`,
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("recusa destino que não pertence à organização", () => {
+    const r = db.comoUtilizador(
+      UID_B,
+      `select public.configure_site_integration('${orgB}','experiencia-falcao','experiencia-falcao','novo_lead','loc-falcao','pipe-1','stage-1',true,true);`,
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("o administrador liga a integração após verificar o destino", () => {
+    const r = db.comoUtilizador(
+      UID_A,
+      `select public.configure_site_integration('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','loc-falcao','pipe-1','stage-1',true,true)::text;`,
+    );
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain('"configured": true');
+  });
+});
+
+describe("ingresso do lead", () => {
+  it("o público e os utilizadores autenticados não podem executar o ingresso", () => {
+    const autenticado = db.comoUtilizador(
+      UID_A,
+      `select public.ingest_site_lead('experiencia-falcao','${PEDIDO_1}','${HASH_1}','X','+351900000001','351900000001',null,'2026-09-17.contact.v1', now());`,
+    );
+    expect(autenticado.ok).toBe(false);
+  });
+
+  it("cria o contacto na etapa novo_lead e devolve estados distintos", () => {
+    const r = ingerir(PEDIDO_1, HASH_1, "351900000111", null);
+    expect(r.ok, r.erro).toBe(true);
+    const texto = valor(r) ?? "";
+    expect(texto).toContain('"local_state": "contacto_criado"');
+    expect(texto).toContain('"remote_state": "pendente"');
+    expect(texto).toContain('"welcome_state": "pendente"');
+    expect(
+      valor(
+        db.admin(
+          `select stage_key from public.contacts where organization_id='${orgA}' and phone_normalized='351900000111';`,
+        ),
+      ),
+    ).toBe("novo_lead");
+  });
+
+  it("o reenvio idêntico devolve o mesmo recibo sem duplicar contactos", () => {
+    const r = ingerir(PEDIDO_1, HASH_1, "351900000111", null);
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain('"duplicate": true');
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.contacts where organization_id='${orgA}' and phone_normalized='351900000111';`,
+        ),
+      ),
+    ).toBe("1");
+  });
+
+  it("o mesmo pedido com outros dados é recusado", () => {
+    const r = ingerir(PEDIDO_1, HASH_2, "351900000111", null);
+    expect(r.ok).toBe(false);
+    expect(r.erro).toContain("outros dados");
+  });
+
+  it("não rebaixa a etapa de um contacto já existente", () => {
+    const promocao = db.admin(`
+      insert into public.journey_stages (organization_id, key, name, position, color)
+        values ('${orgA}','agendado','Agendado', 9, '#111111') on conflict do nothing;
+      update public.contacts set stage_key='agendado'
+        where organization_id='${orgA}' and phone_normalized='351900000111';
+    `);
+    expect(promocao.ok, promocao.erro).toBe(true);
+    const r = ingerir(PEDIDO_2, HASH_2, "351900000111", null);
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain('"local_state": "contacto_existente"');
+    expect(
+      valor(
+        db.admin(
+          `select stage_key from public.contacts where organization_id='${orgA}' and phone_normalized='351900000111';`,
+        ),
+      ),
+    ).toBe("agendado");
+  });
+
+  it("envia para revisão quando telefone e e-mail apontam para pessoas diferentes", () => {
+    db.admin(`
+      insert into public.contacts (organization_id, full_name, phone_normalized) values ('${orgA}','Pessoa Um','351900000222');
+      insert into public.contacts (organization_id, full_name, email) values ('${orgA}','Pessoa Dois','dois@exemplo.test');
+    `);
+    const antes = valor(db.admin(`select count(*) from public.contacts where organization_id='${orgA}';`));
+    const r = ingerir("aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa", HASH_1, "351900000222", "dois@exemplo.test");
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain('"status": "em_revisao"');
+    expect(valor(db.admin(`select count(*) from public.contacts where organization_id='${orgA}';`))).toBe(
+      antes,
+    );
+  });
+
+  it("pedidos simultâneos idênticos só produzem um recibo", async () => {
+    const pedido = "aaaaaaaa-4444-4444-8444-aaaaaaaaaaaa";
+    await Promise.all([
+      db.adminAsync(
+        `set role service_role; select public.ingest_site_lead('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now());`,
+      ),
+      db.adminAsync(
+        `set role service_role; select public.ingest_site_lead('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now());`,
+      ),
+    ]);
+    expect(
+      valor(db.admin(`select count(*) from public.site_lead_submissions where request_id='${pedido}';`)),
+    ).toBe("1");
+  });
+
+  it("não regista dados pessoais na auditoria", () => {
+    const r = db.admin(
+      `select count(*) from public.audit_logs where action='site_lead.received' and metadata::text ilike '%Pessoa%';`,
+    );
+    expect(valor(r)).toBe("0");
+  });
+});
+
+describe("isolamento das novas tabelas", () => {
+  it("a outra organização não vê a integração nem os recibos", () => {
+    expect(valor(db.comoUtilizador(UID_B, "select count(*) from public.site_integrations;"))).toBe("0");
+    expect(valor(db.comoUtilizador(UID_B, "select count(*) from public.site_lead_submissions;"))).toBe(
+      "0",
+    );
+  });
+
+  it("a própria organização lê, mas não escreve, os recibos", () => {
+    expect(
+      Number(valor(db.comoUtilizador(UID_A, "select count(*) from public.site_lead_submissions;"))),
+    ).toBeGreaterThan(0);
+    const escrita = db.comoUtilizador(
+      UID_A,
+      `update public.site_lead_submissions set remote_state='enviado';`,
+    );
+    expect(escrita.ok).toBe(false);
+  });
+});
