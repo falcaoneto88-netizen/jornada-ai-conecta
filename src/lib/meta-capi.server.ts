@@ -166,13 +166,15 @@ async function finalizarReal(entrada: {
   diagnostic: string;
 }): Promise<boolean> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("meta_capi_test_finish", {
+  // Os tipos gerados não exprimem parâmetros anuláveis; o SQL aceita NULL.
+  const argumentos = {
     _attempt: entrada.attemptId,
     _status: entrada.status,
     _events_received: entrada.eventsReceived,
     _fbtrace: entrada.fbtraceId,
     _diagnostic: entrada.diagnostic,
-  });
+  } as unknown as { _attempt: string; _status: string; _events_received: number; _fbtrace: string; _diagnostic: string };
+  const { data, error } = await supabaseAdmin.rpc("meta_capi_test_finish", argumentos);
   return !error && (data as { persisted?: boolean } | null)?.persisted === true;
 }
 
