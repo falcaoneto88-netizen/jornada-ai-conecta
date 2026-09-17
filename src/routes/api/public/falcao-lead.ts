@@ -34,12 +34,19 @@ export const Route = createFileRoute("/api/public/falcao-lead")({
           );
         }
 
+        const segredo = segredoFalcao();
+        if (!segredo) {
+          return Response.json(
+            { ok: false, erro: "integracao_nao_configurada" },
+            { status: 503, headers: semCache },
+          );
+        }
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { status, body } = await processarLeadFalcao(
           { corpo: corpo.bytes, assinatura: request.headers.get("x-falcao-signature") },
           {
-            segredo: segredoFalcao(),
-            store: criarLeadStore(supabaseAdmin as never),
+            segredo,
+            store: criarLeadStore(supabaseAdmin as never, segredo),
             hmac: hmacHex,
             compararAssinatura: compararHex,
           },
