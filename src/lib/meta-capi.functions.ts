@@ -7,7 +7,7 @@ export const estadoMetaCapiFalcao = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { lerEstadoMetaCapi } = await import("./meta-capi.server");
-    return lerEstadoMetaCapi(context.supabase);
+    return lerEstadoMetaCapi({ supabase: context.supabase, userId: context.userId });
   });
 
 export const testarMetaCapiFalcao = createServerFn({ method: "POST" })
@@ -22,5 +22,8 @@ export const testarMetaCapiFalcao = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { testarMetaCapi } = await import("./meta-capi.server");
-    return testarMetaCapi(context.supabase, { confirm: true, testEventCode: data.testEventCode });
+    return testarMetaCapi(
+      { supabase: context.supabase, userId: context.userId },
+      { confirm: true, testEventCode: data.testEventCode },
+    );
   });
