@@ -1114,6 +1114,100 @@ export type Database = {
           },
         ]
       }
+      site_lead_execution_locks: {
+        Row: {
+          created_at: string
+          identity_key: string
+          organization_id: string
+          scope: string
+          submission_id: string
+        }
+        Insert: {
+          created_at?: string
+          identity_key: string
+          organization_id: string
+          scope: string
+          submission_id: string
+        }
+        Update: {
+          created_at?: string
+          identity_key?: string
+          organization_id?: string
+          scope?: string
+          submission_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_lead_execution_locks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_execution_locks_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "site_lead_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_lead_identities: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string
+          integration_id: string
+          organization_id: string
+          phone: string | null
+          phone_normalized: string | null
+          submission_id: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name: string
+          integration_id: string
+          organization_id: string
+          phone?: string | null
+          phone_normalized?: string | null
+          submission_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          integration_id?: string
+          organization_id?: string
+          phone?: string | null
+          phone_normalized?: string | null
+          submission_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_lead_identities_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "site_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_identities_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_identities_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: true
+            referencedRelation: "site_lead_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_lead_rate: {
         Row: {
           bucket: string
@@ -1362,7 +1456,15 @@ export type Database = {
     }
     Functions: {
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
+      claim_site_lead_remote_v2: {
+        Args: { _source: string; _submission: string }
+        Returns: Json
+      }
       claim_site_lead_welcome: { Args: { _submission: string }; Returns: Json }
+      claim_site_lead_welcome_v2: {
+        Args: { _source: string; _submission: string }
+        Returns: Json
+      }
       configure_bioreport_integration: {
         Args: {
           _confirm: boolean
@@ -1398,7 +1500,30 @@ export type Database = {
         }
         Returns: Json
       }
+      finish_site_lead_remote_v2: {
+        Args: {
+          _ghl_contact: string
+          _ghl_opportunity: string
+          _opp_name: string
+          _opp_pipeline: string
+          _opp_stage: string
+          _opp_status: string
+          _reason: string
+          _state: string
+          _submission: string
+        }
+        Returns: Json
+      }
       finish_site_lead_welcome: {
+        Args: {
+          _message_id: string
+          _reason: string
+          _state: string
+          _submission: string
+        }
+        Returns: Json
+      }
+      finish_site_lead_welcome_v2: {
         Args: {
           _message_id: string
           _reason: string
@@ -1521,6 +1646,22 @@ export type Database = {
           _payload_hash: string
           _phone: string
           _phone_normalized: string
+          _request_id: string
+          _source: string
+        }
+        Returns: Json
+      }
+      ingest_site_lead_v2: {
+        Args: {
+          _consent_at: string
+          _consent_version: string
+          _email: string
+          _full_name: string
+          _payload_hash: string
+          _phone: string
+          _phone_normalized: string
+          _quota_email: string
+          _quota_phone: string
           _request_id: string
           _source: string
         }

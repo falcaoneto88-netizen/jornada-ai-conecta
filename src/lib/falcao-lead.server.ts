@@ -11,6 +11,8 @@ export const FALCAO_LOCATION = "ok2UHC2QMZsd8UHsAgEa";
 export const FALCAO_PIPELINE = "2QGyurvcmwhNhRgq0jCq";
 export const FALCAO_STAGE_GHL = "c23ea507-33f5-41b6-933b-fd532ccbb773";
 export const FALCAO_SLUG = "experiencia-falcao";
+/** Origem esperada da integração: filtra filas e reservas. */
+export const FALCAO_SOURCE_INTEGRACAO = "experiencia-falcao";
 export const FALCAO_STAGE_LOCAL = "novo_lead";
 export const FALCAO_SITE_URL = "https://experiencia-falcao-teste.falcaoneto88.chatgpt.site";
 
@@ -43,10 +45,21 @@ type ClienteRpc = {
   ) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
 };
 
-export function criarLeadStore(admin: ClienteRpc): LeadStore {
+/**
+ * Quota: valor irreversível derivado com HMAC do segredo dedicado, com domínio
+ * e versão próprios (nunca o mesmo valor usado para assinar). Sem PII crua e
+ * sem relação com o identificador público da integração.
+ */
+export function baldeQuota(segredo: string, campo: "telefone" | "email", valor: string): string {
+  return createHmac("sha256", Buffer.from(segredo, "utf8"))
+    .update(`falcao-quota:v1:${campo}:${valor.trim().toLowerCase()}`)
+    .digest("hex");
+}
+
+export function criarLeadStore(admin: ClienteRpc, segredo: string): LeadStore {
   return {
     async ingest(input): Promise<ResultadoIngresso> {
-      const { data, error } = await admin.rpc("ingest_site_lead", {
+      const { data, error } = await admin.rpc("ingest_site_lead_v2", {
         _source: input.source,
         _request_id: input.requestId,
         _payload_hash: input.payloadHash,
@@ -56,6 +69,8 @@ export function criarLeadStore(admin: ClienteRpc): LeadStore {
         _email: input.email,
         _consent_version: input.consentVersion,
         _consent_at: input.consentAt,
+        _quota_phone: baldeQuota(segredo, "telefone", input.phoneNormalized),
+        _quota_email: input.email ? baldeQuota(segredo, "email", input.email) : null,
       });
       if (error) {
         if (error.code === "23505") return { outcome: "conflito" };

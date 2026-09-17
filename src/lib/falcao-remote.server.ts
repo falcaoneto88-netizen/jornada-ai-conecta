@@ -1,9 +1,14 @@
 /**
  * Ligação real ao GoHighLevel para os leads do site, limitada às submissões
  * desta integração. Usa o token privado já existente e a versão 2021-07-28.
+ *
+ * Identidade: apenas o duplicate check documentado
+ * (GET contacts/search/duplicate com locationId + number OU email, em
+ * chamadas separadas). Não há qualquer listagem ampla de contactos. Respostas
+ * vazias, malformadas ou com erro nunca concluem "não existe": bloqueiam.
  */
 import { resolverAcesso } from "./ghl.functions";
-import { FALCAO_SLUG } from "./falcao-lead.server";
+import { FALCAO_SLUG, FALCAO_SOURCE_INTEGRACAO } from "./falcao-lead.server";
 import {
   processarSubmissaoRemota,
   type ContactoRemoto,
@@ -19,27 +24,46 @@ type Ctx = Parameters<typeof resolverAcesso>[0];
 
 const LIMITE_LOTE = 10;
 
-function contactoDaApi(bruto: unknown): ContactoRemoto | null {
+function texto(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+/** Contacto estrito: sem id, location ou DND explícitos a resposta é malformada. */
+export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
   if (!bruto || typeof bruto !== "object") return null;
   const c = bruto as Record<string, unknown>;
-  if (typeof c["id"] !== "string") return null;
+  const id = texto(c["id"]);
+  const location = texto(c["locationId"]);
+  if (!id || !location || typeof c["dnd"] !== "boolean") return null;
+  const settings = c["dndSettings"];
+  const canais =
+    settings && typeof settings === "object"
+      ? Object.entries(settings as Record<string, { status?: unknown }>)
+          .filter(([, v]) => String(v?.status ?? "").toLowerCase() === "active")
+          .map(([canal]) => canal)
+      : [];
   return {
-    id: c["id"],
-    phoneNormalized: typeof c["phone"] === "string" ? c["phone"] : null,
-    email: typeof c["email"] === "string" ? c["email"] : null,
-    dnd: c["dnd"] === true,
+    id,
+    locationId: location,
+    phone: texto(c["phone"]),
+    email: texto(c["email"]),
+    dnd: c["dnd"],
+    canaisBloqueados: canais,
   };
 }
 
-function oportunidadeDaApi(bruto: unknown): OportunidadeRemota | null {
+export function oportunidadeDaApi(bruto: unknown): OportunidadeRemota | null {
   if (!bruto || typeof bruto !== "object") return null;
   const o = bruto as Record<string, unknown>;
-  if (typeof o["id"] !== "string") return null;
-  const funil = o["pipelineId"] ?? o["pipeline_id"];
+  const id = texto(o["id"]);
+  if (!id) return null;
   return {
-    id: o["id"],
-    pipelineId: typeof funil === "string" ? funil : null,
-    status: typeof o["status"] === "string" ? o["status"] : null,
+    id,
+    name: texto(o["name"]),
+    pipelineId: texto(o["pipelineId"] ?? o["pipeline_id"]),
+    stageId: texto(o["pipelineStageId"] ?? o["stageId"] ?? o["pipeline_stage_id"]),
+    status: texto(o["status"]),
+    contactId: texto(o["contactId"] ?? o["contact_id"]),
   };
 }
 
@@ -49,17 +73,40 @@ function falha<T>(res: { code: string; message: string }): ResultadoRemotoApi<T>
 
 export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsRemoto {
   return {
-    async procurar({ locationId, termo }) {
-      // Procura exata só é confirmada em memória; a API 2021-07-28 devolve aproximações.
-      const res = await ghlFetch<{ contacts?: unknown[] }>(cfg, "contacts/", {
-        query: { locationId, query: termo, limit: "20" },
+    async procurarExato({ locationId, campo, valor }) {
+      const res = await ghlFetch<Record<string, unknown>>(cfg, "contacts/search/duplicate", {
+        query: {
+          locationId,
+          ...(campo === "telefone" ? { number: valor } : { email: valor }),
+        },
       });
       if (!res.ok) return falha(res);
-      const lista = Array.isArray(res.data?.contacts) ? res.data.contacts : [];
-      return { ok: true, data: lista.map(contactoDaApi).filter((c): c is ContactoRemoto => !!c) };
+      const corpo = res.data;
+      if (!corpo || typeof corpo !== "object") {
+        return { ok: false, code: "malformed_response", message: "Resposta inesperada." };
+      }
+      if (!("contact" in corpo) || corpo["contact"] == null) {
+        // Ausência explícita de duplicado na resposta completa da API.
+        return { ok: true, data: null };
+      }
+      const contacto = contactoDaApi(corpo["contact"]);
+      return contacto
+        ? { ok: true, data: contacto }
+        : { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
+    },
+    async lerContacto({ ghlContactId }) {
+      const res = await ghlFetch<{ contact?: unknown }>(
+        cfg,
+        `contacts/${encodeURIComponent(ghlContactId)}`,
+      );
+      if (!res.ok) return falha(res);
+      const contacto = contactoDaApi(res.data?.contact);
+      return contacto
+        ? { ok: true, data: contacto }
+        : { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
     },
     async criarContacto(pedido: PedidoRemoto) {
-      const res = await ghlFetch<{ contact?: unknown }>(cfg, "contacts/", {
+      const res = await ghlFetch<{ contact?: { id?: unknown } }>(cfg, "contacts/", {
         method: "POST",
         body: {
           locationId: pedido.location_id,
@@ -70,24 +117,36 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
         },
       });
       if (!res.ok) return falha(res);
-      const contacto = contactoDaApi(res.data?.contact);
-      return contacto
-        ? { ok: true, data: contacto }
+      const id = texto(res.data?.contact?.id);
+      return id
+        ? { ok: true, data: { id } }
         : { ok: false, code: "outcome_unknown", message: "Resposta sem contacto." };
     },
     async oportunidades({ locationId, ghlContactId }) {
-      const res = await ghlFetch<{ opportunities?: unknown[] }>(cfg, "opportunities/search", {
-        query: { location_id: locationId, contact_id: ghlContactId, limit: "20" },
-      });
+      const res = await ghlFetch<{ opportunities?: unknown[]; meta?: Record<string, unknown> }>(
+        cfg,
+        "opportunities/search",
+        { query: { location_id: locationId, contact_id: ghlContactId, limit: "100" } },
+      );
       if (!res.ok) return falha(res);
-      const lista = Array.isArray(res.data?.opportunities) ? res.data.opportunities : [];
-      return {
-        ok: true,
-        data: lista.map(oportunidadeDaApi).filter((o): o is OportunidadeRemota => !!o),
-      };
+      const lista = Array.isArray(res.data?.opportunities) ? res.data.opportunities : null;
+      if (!lista) {
+        return { ok: false, code: "malformed_response", message: "Resposta sem lista." };
+      }
+      const meta = res.data?.meta ?? {};
+      const total = typeof meta["total"] === "number" ? meta["total"] : lista.length;
+      if (total > lista.length || texto(meta["nextPageUrl"])) {
+        // Paginação incompleta: não é possível concluir que não existe oportunidade.
+        return { ok: false, code: "malformed_response", message: "Listagem truncada." };
+      }
+      const mapeadas = lista.map(oportunidadeDaApi);
+      if (mapeadas.some((o) => o === null)) {
+        return { ok: false, code: "malformed_response", message: "Oportunidade sem campos." };
+      }
+      return { ok: true, data: mapeadas as OportunidadeRemota[] };
     },
     async criarOportunidade({ locationId, pipelineId, stageId, ghlContactId, nome }) {
-      const res = await ghlFetch<{ opportunity?: { id?: string } }>(cfg, "opportunities/", {
+      const res = await ghlFetch<{ opportunity?: unknown }>(cfg, "opportunities/", {
         method: "POST",
         body: {
           locationId,
@@ -99,39 +158,60 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
         },
       });
       if (!res.ok) return falha(res);
-      const id = res.data?.opportunity?.id;
-      return typeof id === "string"
-        ? { ok: true, data: { id } }
+      const oportunidade = oportunidadeDaApi(res.data?.opportunity);
+      return oportunidade
+        ? { ok: true, data: oportunidade }
         : { ok: false, code: "outcome_unknown", message: "Resposta sem oportunidade." };
     },
     concluir: rpc,
   };
 }
 
-type Admin = {
-  from: (t: string) => {
-    select: (c: string) => {
-      eq: (
-        k: string,
-        v: unknown,
-      ) => {
-        eq: (
-          k: string,
-          v: unknown,
-        ) => { limit: (n: number) => PromiseLike<{ data: unknown; error: unknown }> };
-      };
-    };
-  };
+type Consulta = {
+  eq: (k: string, v: unknown) => Consulta;
+  limit: (n: number) => PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+export type AdminRemoto = {
+  from: (t: string) => { select: (c: string) => Consulta };
   rpc: (
     fn: string,
     args: Record<string, unknown>,
   ) => PromiseLike<{ data: unknown; error: { message?: string } | null }>;
 };
 
+const ID_REMOTO = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** Só é sucesso quando a base confirma o estado e os identificadores esperados. */
+export function reciboRemotoValido(
+  data: unknown,
+  esperado: {
+    submissionId: string;
+    estado: "confirmado" | "bloqueado";
+    ghlContactId: string | null;
+    ghlOpportunityId: string | null;
+  },
+): boolean {
+  if (!data || typeof data !== "object") return false;
+  const r = data as Record<string, unknown>;
+  if (r["submission_id"] !== esperado.submissionId) return false;
+  if (r["remote_state"] !== esperado.estado) return false;
+  if (r["persisted"] !== true) return false;
+  if (esperado.estado === "confirmado") {
+    const contacto = r["ghl_contact_id"];
+    const oportunidade = r["ghl_opportunity_id"];
+    if (typeof contacto !== "string" || !ID_REMOTO.test(contacto)) return false;
+    if (typeof oportunidade !== "string" || !ID_REMOTO.test(oportunidade)) return false;
+    if (esperado.ghlContactId && contacto !== esperado.ghlContactId) return false;
+    if (esperado.ghlOpportunityId && oportunidade !== esperado.ghlOpportunityId) return false;
+  }
+  return true;
+}
+
 /** Executa um lote pequeno. Recibos incertos ficam bloqueados para reconciliação. */
 export async function processarLeadsRemoto(
   ctx: Ctx,
-  deps?: { admin?: Admin; criarDeps?: typeof criarDepsGhl },
+  deps?: { admin?: AdminRemoto; criarDeps?: typeof criarDepsGhl },
 ): Promise<{ ok: boolean; message: string; desfechos: DesfechoRemoto[] }> {
   const acesso = await resolverAcesso(ctx, ["administrador"]);
   if (!acesso.ok) return { ok: false, message: acesso.message, desfechos: [] };
@@ -149,12 +229,26 @@ export async function processarLeadsRemoto(
 
   const admin =
     deps?.admin ??
-    ((await import("@/integrations/supabase/client.server")).supabaseAdmin as unknown as Admin);
+    ((await import("@/integrations/supabase/client.server"))
+      .supabaseAdmin as unknown as AdminRemoto);
+
+  // A fila é restrita à integração desta origem e a esta organização.
+  const integracao = await admin
+    .from("site_integrations")
+    .select("id")
+    .eq("organization_id", acesso.acesso.orgId)
+    .eq("source", FALCAO_SOURCE_INTEGRACAO)
+    .limit(1);
+  const linhaIntegracao = (integracao.data as { id: string }[] | null)?.[0];
+  if (integracao.error || !linhaIntegracao) {
+    return { ok: false, message: "Integração do site não configurada.", desfechos: [] };
+  }
 
   const { data: pendentes, error } = await admin
     .from("site_lead_submissions")
     .select("id")
     .eq("organization_id", acesso.acesso.orgId)
+    .eq("integration_id", linhaIntegracao.id)
     .eq("remote_state", "pendente")
     .limit(LIMITE_LOTE);
   if (error) {
@@ -169,26 +263,52 @@ export async function processarLeadsRemoto(
   };
   const criar = deps?.criarDeps ?? criarDepsGhl;
   const depsGhl = criar(cfg, async (p) => {
-    await admin.rpc("finish_site_lead_remote", {
+    const { data, error: erroRpc } = await admin.rpc("finish_site_lead_remote_v2", {
       _submission: p.submissionId,
       _state: p.estado,
       _reason: p.motivo,
       _ghl_contact: p.ghlContactId,
-      _ghl_opportunity: p.ghlOpportunityId,
+      _ghl_opportunity: p.oportunidade?.id ?? null,
+      _opp_name: p.oportunidade?.name ?? null,
+      _opp_pipeline: p.oportunidade?.pipelineId ?? null,
+      _opp_stage: p.oportunidade?.stageId ?? null,
+      _opp_status: p.oportunidade?.status ?? null,
     });
+    if (erroRpc) return { ok: false };
+    return {
+      ok: reciboRemotoValido(data, {
+        submissionId: p.submissionId,
+        estado: p.estado,
+        ghlContactId: p.ghlContactId,
+        ghlOpportunityId: p.oportunidade?.id ?? null,
+      }),
+    };
   });
 
   const desfechos: DesfechoRemoto[] = [];
+  let ignorados = 0;
   for (const linha of (pendentes as { id: string }[] | null) ?? []) {
-    const reserva = await admin.rpc("claim_site_lead_remote", { _submission: linha.id });
-    if (reserva.error || !reserva.data || typeof reserva.data !== "object") continue;
-    desfechos.push(await processarSubmissaoRemota(reserva.data as PedidoRemoto, depsGhl));
+    const reserva = await admin.rpc("claim_site_lead_remote_v2", {
+      _submission: linha.id,
+      _source: FALCAO_SOURCE_INTEGRACAO,
+    });
+    if (reserva.error || !reserva.data || typeof reserva.data !== "object") {
+      ignorados += 1;
+      continue;
+    }
+    const pedido = reserva.data as PedidoRemoto & { blocked?: boolean };
+    if (pedido.blocked === true || pedido.submission_id !== linha.id) {
+      ignorados += 1;
+      continue;
+    }
+    desfechos.push(await processarSubmissaoRemota(pedido, depsGhl));
   }
 
   const confirmados = desfechos.filter((d) => d.estado === "confirmado").length;
+  const porReconciliar = desfechos.filter((d) => d.estado === "pendente_reconciliacao").length;
   return {
     ok: true,
-    message: `Processados ${String(desfechos.length)} recibos: ${String(confirmados)} confirmados, ${String(desfechos.length - confirmados)} bloqueados para revisão.`,
+    message: `Processados ${String(desfechos.length)} recibos: ${String(confirmados)} confirmados, ${String(desfechos.length - confirmados - porReconciliar)} bloqueados para revisão, ${String(porReconciliar)} por reconciliar, ${String(ignorados)} não reservados.`,
     desfechos,
   };
 }
