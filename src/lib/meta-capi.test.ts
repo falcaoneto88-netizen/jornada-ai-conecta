@@ -360,7 +360,7 @@ describe("execução do teste", () => {
       status: e.status,
       events_received: e.eventsReceived,
     }));
-    const d = deps({ enviar, finalizar: finalizar as unknown as DepsTesteMeta["finalizar"] });
+    const d = deps({ enviar, finalizar: finalizar as unknown as NonNullable<DepsTesteMeta["finalizar"]> });
     const { ctx } = contexto();
     const r = await testarMetaCapi(ctx, { confirm: true, testEventCode: CODIGO }, d);
     expect(enviar).toHaveBeenCalledTimes(1);
@@ -381,7 +381,7 @@ describe("execução do teste", () => {
   });
 
   it("recibo ausente, incoerente ou exceção na gravação dão incerto sem mandar repetir", async () => {
-    const recibos: DepsTesteMeta["finalizar"][] = [
+    const recibos: NonNullable<DepsTesteMeta["finalizar"]>[] = [
       async () => null,
       async () => ({ persisted: false, attempt_id: ATTEMPT, status: "api_accepted", events_received: 1 }),
       async () => ({ persisted: true, attempt_id: "outro", status: "api_accepted", events_received: 1 }),
