@@ -78,11 +78,11 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             </div>
             <div>
               <dt className="text-muted-foreground">Pedidos recebidos</dt>
-              <dd className="font-medium">{data.leads.total}</dd>
+              <dd className="font-medium">{data.leads.total ?? "Indisponível"}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Em revisão</dt>
-              <dd className="font-medium">{data.leads.emRevisao}</dd>
+              <dd className="font-medium">{data.leads.emRevisao ?? "Indisponível"}</dd>
             </div>
           </dl>
 
