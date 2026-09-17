@@ -17,6 +17,10 @@ const UID_V = "1c333333-3333-4333-8333-333333333333"; // visualizador org A
 let orgA = "";
 let orgB = "";
 
+const LOCATION = "ok2UHC2QMZsd8UHsAgEa";
+const PIPELINE = "2QGyurvcmwhNhRgq0jCq";
+const STAGE = "c23ea507-33f5-41b6-933b-fd532ccbb773";
+
 const HASH_1 = "1".repeat(64);
 const HASH_2 = "2".repeat(64);
 const PEDIDO_1 = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
@@ -35,12 +39,13 @@ function ingerir(pedido: string, hash: string, telefone: string, email: string |
 
 beforeAll(async () => {
   db = await iniciarDbReal();
-  const migracao = readFileSync(
-    join(process.cwd(), "drizzle/migrations/0000_site_integration_experiencia_falcao.sql"),
-    "utf8",
-  );
-  const aplicada = db.admin(migracao);
-  expect(aplicada.ok, aplicada.erro).toBe(true);
+  for (const ficheiro of [
+    "drizzle/migrations/0000_site_integration_experiencia_falcao.sql",
+    "drizzle/migrations/0001_site_lead_serializacao_quota_e_escrita_remota.sql",
+  ]) {
+    const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
+    expect(aplicada.ok, aplicada.erro).toBe(true);
+  }
 
   for (const [uid, email] of [
     [UID_A, "fa@exemplo.test"],
@@ -56,7 +61,7 @@ beforeAll(async () => {
       update public.profiles set organization_id = '${orgA}' where id = '${UID_V}';
       delete from public.user_roles where user_id = '${UID_V}';
       insert into public.user_roles (user_id, organization_id, role) values ('${UID_V}','${orgA}','visualizador');
-      insert into public.ghl_location_bindings (location_id, organization_id) values ('loc-falcao','${orgA}');
+      insert into public.ghl_location_bindings (location_id, organization_id) values ('${LOCATION}','${orgA}');
       insert into public.journey_stages (organization_id, key, name, position, color)
         values ('${orgA}','novo_lead','Novo Lead', 1, '#000000')
         on conflict do nothing;
@@ -70,7 +75,7 @@ describe("configuração administrativa", () => {
   it("recusa quem não é administrador", () => {
     const r = db.comoUtilizador(
       UID_V,
-      `select public.configure_site_integration('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','loc-falcao','pipe-1','stage-1',true,true);`,
+      `select public.configure_site_integration('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true,true);`,
     );
     expect(r.ok).toBe(false);
   });
@@ -78,7 +83,7 @@ describe("configuração administrativa", () => {
   it("recusa destino que não pertence à organização", () => {
     const r = db.comoUtilizador(
       UID_B,
-      `select public.configure_site_integration('${orgB}','experiencia-falcao','experiencia-falcao','novo_lead','loc-falcao','pipe-1','stage-1',true,true);`,
+      `select public.configure_site_integration('${orgB}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true,true);`,
     );
     expect(r.ok).toBe(false);
   });
@@ -86,7 +91,7 @@ describe("configuração administrativa", () => {
   it("o administrador liga a integração após verificar o destino", () => {
     const r = db.comoUtilizador(
       UID_A,
-      `select public.configure_site_integration('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','loc-falcao','pipe-1','stage-1',true,true)::text;`,
+      `select public.configure_site_integration('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true,true)::text;`,
     );
     expect(r.ok, r.erro).toBe(true);
     expect(valor(r)).toContain('"configured": true');
