@@ -10,6 +10,7 @@ import {
   processarLeadFalcao,
   validarRecibo,
   type LeadStore,
+  type ReciboLead,
   type ResultadoIngresso,
 } from "./falcao-lead.core";
 import { compararHex, criarLeadStore, hmacHex } from "./falcao-lead.server";
@@ -54,16 +55,17 @@ const bytes = (corpo: unknown) => new TextEncoder().encode(JSON.stringify(corpo)
 const assinar = (corpo: Uint8Array) =>
   createHmac("sha256", Buffer.from(SEGREDO, "utf8")).update(Buffer.from(corpo)).digest("hex");
 
-const recibo = (over: Partial<ResultadoIngresso & Record<string, unknown>> = {}) => ({
+const recibo = (over: Record<string, unknown> = {}) =>
+  ({
   receipt_id: "r-1",
   request_id: "11111111-2222-4333-8444-555555555555",
   status: "registado",
   local_state: "contacto_criado",
   remote_state: "pendente",
   welcome_state: "pendente",
-  duplicate: false,
-  ...over,
-});
+    duplicate: false,
+    ...over,
+  }) as unknown as ReciboLead;
 
 function store(resultado: ResultadoIngresso): LeadStore & { ingest: ReturnType<typeof vi.fn> } {
   return { ingest: vi.fn(async () => resultado) } as never;
