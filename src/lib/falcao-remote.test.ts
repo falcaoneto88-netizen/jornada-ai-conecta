@@ -134,6 +134,22 @@ describe("adaptador HTTP fail-closed", () => {
     expect(r).toMatchObject({ ok: false, code: "malformed_response" });
     fetchMock.mockRestore();
   });
+
+  it("recusa página cheia mesmo quando total declara apenas o limite", async () => {
+    const oportunidades = Array.from({ length: 100 }, (_, i) => ({
+      id: `o${String(i)}`,
+      name: "Lead",
+      pipelineId: "pipe",
+      pipelineStageId: "stage",
+      status: "open",
+      contactId: "c1",
+    }));
+    const fetchMock = resposta({ opportunities: oportunidades, meta: { total: 100 } });
+    const depsGhl = criarDepsGhl(cfg, async () => ({ ok: true }));
+    const r = await depsGhl.oportunidades({ locationId: "loc", ghlContactId: "c1" });
+    expect(r).toMatchObject({ ok: false, code: "malformed_response" });
+    fetchMock.mockRestore();
+  });
 });
 
 describe("processamento remoto de um recibo", () => {

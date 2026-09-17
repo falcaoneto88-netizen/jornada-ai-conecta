@@ -145,7 +145,12 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
         return { ok: false, code: "malformed_response", message: "Paginação não comprovada." };
       }
       const total = meta["total"];
-      if (total !== lista.length || texto(meta["nextPageUrl"]) || texto(meta["nextPage"])) {
+      if (
+        total !== lista.length ||
+        lista.length >= 100 ||
+        texto(meta["nextPageUrl"]) ||
+        texto(meta["nextPage"])
+      ) {
         // Paginação incompleta: não é possível concluir que não existe oportunidade.
         return { ok: false, code: "malformed_response", message: "Listagem truncada." };
       }
