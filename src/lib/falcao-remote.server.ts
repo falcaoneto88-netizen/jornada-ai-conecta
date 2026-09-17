@@ -2,14 +2,21 @@
  * Ligação real ao GoHighLevel para os leads do site, limitada às submissões
  * desta integração. Usa o token privado já existente e a versão 2021-07-28.
  *
- * Identidade: apenas o duplicate check documentado
- * (GET contacts/search/duplicate com locationId + number OU email, em
- * chamadas separadas). Não há qualquer listagem ampla de contactos. Respostas
- * vazias, malformadas ou com erro nunca concluem "não existe": bloqueiam.
+ * Identidade: apenas a pesquisa exata documentada (POST contacts/search com
+ * locationId, page, pageLimit e um único filtro {field, operator:'eq', value},
+ * por telefone e por e-mail em chamadas separadas). Nunca se usa `query` nem
+ * qualquer listagem ampla. Respostas vazias, truncadas ou malformadas nunca
+ * concluem "não existe": bloqueiam.
+ *
+ * Limitação documentada pelo fornecedor: a pesquisa tem consistência eventual
+ * (alterações podem demorar segundos a aparecer). Por isso a dedução de
+ * duplicados apoia-se também no ledger durável por identidade, que impede
+ * execuções concorrentes, reenvios e retomas de resultado incerto.
  */
 import { resolverAcesso } from "./ghl.functions";
 import { FALCAO_SLUG, FALCAO_SOURCE_INTEGRACAO } from "./falcao-lead.server";
 import {
+  digitos,
   processarSubmissaoRemota,
   type ContactoRemoto,
   type DepsRemoto,
@@ -23,10 +30,25 @@ import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } fro
 type Ctx = Parameters<typeof resolverAcesso>[0];
 
 const LIMITE_LOTE = 10;
+/** Limite documentado do valor de um filtro `eq`. */
+export const LIMITE_EQ = 75;
+/** Página pequena: só serve para detetar resultados múltiplos. */
+export const PAGE_LIMIT = 5;
 
 function texto(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
 }
+
+/** O resultado tem de bater exatamente no campo pedido. */
+function bate(c: ContactoRemoto, campo: "telefone" | "email", valor: string): boolean {
+  if (campo === "telefone") {
+    const alvo = digitos(valor);
+    return alvo !== null && digitos(c.phone) === alvo;
+  }
+  return (c.email ?? "").trim().toLowerCase() === valor.trim().toLowerCase();
+}
+
+
 
 /** Contacto estrito: sem id, location ou DND explícitos a resposta é malformada. */
 export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
@@ -80,27 +102,59 @@ function falha<T>(res: { code: string; message: string }): ResultadoRemotoApi<T>
 export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsRemoto {
   return {
     async procurarExato({ locationId, campo, valor }) {
-      const res = await ghlFetch<Record<string, unknown>>(cfg, "contacts/search/duplicate", {
-        query: {
+      // Contrato oficial "Contacts Search": POST contacts/search com locationId,
+      // page, pageLimit e um único filtro eq. `query` nunca é usado.
+      if (valor.length > LIMITE_EQ) {
+        return {
+          ok: false,
+          code: "valor_acima_do_limite_eq",
+          message: "Valor acima do limite da pesquisa exata; nunca truncado.",
+        };
+      }
+      const campoApi = campo === "telefone" ? "phone" : "email";
+      const res = await ghlFetch<Record<string, unknown>>(cfg, "contacts/search", {
+        method: "POST",
+        body: {
           locationId,
-          ...(campo === "telefone" ? { number: valor } : { email: valor }),
+          page: 1,
+          pageLimit: PAGE_LIMIT,
+          filters: [{ field: campoApi, operator: "eq", value: valor }],
         },
       });
       if (!res.ok) return falha(res);
       const corpo = res.data;
-      if (!corpo || typeof corpo !== "object") {
+      if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) {
         return { ok: false, code: "malformed_response", message: "Resposta inesperada." };
       }
-       if (!("contact" in corpo) || corpo["contact"] == null) {
-         // A documentação desta versão não define a forma de "sem duplicado".
-         // Até existir prova contratual, nenhuma forma vazia autoriza criação.
-         return { ok: false, code: "no_match_contract_unverified", message: "Ausência de duplicado não comprovada." };
-       }
-      const contacto = contactoDaApi(corpo["contact"]);
-      return contacto
-        ? { ok: true, data: contacto }
-        : { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
+      const lista = corpo["contacts"];
+      const total = corpo["total"];
+      if (!Array.isArray(lista) || typeof total !== "number" || !Number.isInteger(total) || total < 0) {
+        return { ok: false, code: "malformed_response", message: "Resposta sem contacts/total." };
+      }
+      if (total !== lista.length || lista.length >= PAGE_LIMIT) {
+        // Página incompleta: nunca concluir que existe ou não existe.
+        return { ok: false, code: "malformed_response", message: "Pesquisa truncada." };
+      }
+      if (total === 0) return { ok: true, data: null };
+      const contactos = lista.map(contactoDaApi);
+      if (contactos.some((c) => c === null)) {
+        return { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
+      }
+      const validos = contactos as ContactoRemoto[];
+      if (validos.some((c) => c.locationId !== locationId || !bate(c, campo, valor))) {
+        return {
+          ok: false,
+          code: "resultado_nao_corresponde",
+          message: "Resultado fora do pedido exato.",
+        };
+      }
+      const unicos = new Set(validos.map((c) => c.id));
+      if (unicos.size !== 1) {
+        return { ok: false, code: "multiplos_resultados", message: "Mais do que um contacto." };
+      }
+      return { ok: true, data: validos[0] as ContactoRemoto };
     },
+
     async lerContacto({ ghlContactId }) {
       const res = await ghlFetch<{ contact?: unknown }>(
         cfg,
@@ -223,6 +277,70 @@ export function reciboRemotoValido(
   return true;
 }
 
+/** Destino já validado (organização, integração e location do binding). */
+export type AcessoExecucao = { orgId: string; locationId: string; integrationId: string };
+
+/** Constrói as dependências reais com persistência confirmada pela base. */
+export function depsRemotoDe(
+  admin: AdminRemoto,
+  cfg: GhlConfig,
+  criar: typeof criarDepsGhl = criarDepsGhl,
+): DepsRemoto {
+  return criar(cfg, async (p) => {
+    const { data, error: erroRpc } = await admin.rpc("finish_site_lead_remote_v2", {
+      _submission: p.submissionId,
+      _state: p.estado,
+      _reason: p.motivo,
+      _ghl_contact: p.ghlContactId,
+      _ghl_opportunity: p.oportunidade?.id ?? null,
+      _opp_name: p.oportunidade?.name ?? null,
+      _opp_pipeline: p.oportunidade?.pipelineId ?? null,
+      _opp_stage: p.oportunidade?.stageId ?? null,
+      _opp_status: p.oportunidade?.status ?? null,
+    });
+    if (erroRpc) return { ok: false };
+    return {
+      ok: reciboRemotoValido(data, {
+        submissionId: p.submissionId,
+        estado: p.estado,
+        ghlContactId: p.ghlContactId,
+        ghlOpportunityId: p.oportunidade?.id ?? null,
+      }),
+    };
+  });
+}
+
+export function configGhl(token: string, locationId: string): GhlConfig {
+  return { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
+}
+
+/**
+ * Executa exatamente um recibo. `null` significa "não reservado": a reserva
+ * falhou, foi bloqueada pela base ou não corresponde ao destino esperado.
+ */
+export async function executarReciboRemoto(
+  admin: AdminRemoto,
+  acesso: AcessoExecucao,
+  submissionId: string,
+  depsGhl: DepsRemoto,
+): Promise<DesfechoRemoto | null> {
+  const reserva = await admin.rpc("claim_site_lead_remote_v2", {
+    _submission: submissionId,
+    _source: FALCAO_SOURCE_INTEGRACAO,
+  });
+  if (reserva.error || !reserva.data || typeof reserva.data !== "object") return null;
+  const pedido = reserva.data as PedidoRemoto & { blocked?: boolean };
+  if (
+    pedido.blocked === true || pedido.submission_id !== submissionId ||
+    pedido.organization_id !== acesso.orgId ||
+    pedido.integration_id !== acesso.integrationId ||
+    pedido.location_id !== acesso.locationId
+  ) {
+    return null;
+  }
+  return processarSubmissaoRemota(pedido, depsGhl);
+}
+
 /** Executa um lote pequeno. Recibos incertos ficam bloqueados para reconciliação. */
 export async function processarLeadsRemoto(
   ctx: Ctx,
@@ -270,59 +388,25 @@ export async function processarLeadsRemoto(
     return { ok: false, message: "Não foi possível ler os recibos pendentes.", desfechos: [] };
   }
 
-  const cfg: GhlConfig = {
-    baseUrl: GHL_ORIGIN,
-    version: GHL_VERSION,
-    token,
+  const alvo: AcessoExecucao = {
+    orgId: acesso.acesso.orgId,
     locationId: acesso.acesso.locationId,
+    integrationId: linhaIntegracao.id,
   };
-  const criar = deps?.criarDeps ?? criarDepsGhl;
-  const depsGhl = criar(cfg, async (p) => {
-    const { data, error: erroRpc } = await admin.rpc("finish_site_lead_remote_v2", {
-      _submission: p.submissionId,
-      _state: p.estado,
-      _reason: p.motivo,
-      _ghl_contact: p.ghlContactId,
-      _ghl_opportunity: p.oportunidade?.id ?? null,
-      _opp_name: p.oportunidade?.name ?? null,
-      _opp_pipeline: p.oportunidade?.pipelineId ?? null,
-      _opp_stage: p.oportunidade?.stageId ?? null,
-      _opp_status: p.oportunidade?.status ?? null,
-    });
-    if (erroRpc) return { ok: false };
-    return {
-      ok: reciboRemotoValido(data, {
-        submissionId: p.submissionId,
-        estado: p.estado,
-        ghlContactId: p.ghlContactId,
-        ghlOpportunityId: p.oportunidade?.id ?? null,
-      }),
-    };
-  });
+  const depsGhl = depsRemotoDe(
+    admin,
+    configGhl(token, acesso.acesso.locationId),
+    deps?.criarDeps ?? criarDepsGhl,
+  );
 
   const desfechos: DesfechoRemoto[] = [];
   let ignorados = 0;
   for (const linha of (pendentes as { id: string }[] | null) ?? []) {
-    const reserva = await admin.rpc("claim_site_lead_remote_v2", {
-      _submission: linha.id,
-      _source: FALCAO_SOURCE_INTEGRACAO,
-    });
-    if (reserva.error || !reserva.data || typeof reserva.data !== "object") {
-      ignorados += 1;
-      continue;
-    }
-    const pedido = reserva.data as PedidoRemoto & { blocked?: boolean };
-    if (
-      pedido.blocked === true || pedido.submission_id !== linha.id ||
-      pedido.organization_id !== acesso.acesso.orgId ||
-      pedido.integration_id !== linhaIntegracao.id ||
-      pedido.location_id !== acesso.acesso.locationId
-    ) {
-      ignorados += 1;
-      continue;
-    }
-    desfechos.push(await processarSubmissaoRemota(pedido, depsGhl));
+    const desfecho = await executarReciboRemoto(admin, alvo, linha.id, depsGhl);
+    if (desfecho) desfechos.push(desfecho);
+    else ignorados += 1;
   }
+
 
   const confirmados = desfechos.filter((d) => d.estado === "confirmado").length;
   const porReconciliar = desfechos.filter((d) => d.estado === "pendente_reconciliacao").length;

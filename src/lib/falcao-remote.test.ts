@@ -111,13 +111,80 @@ describe("adaptador HTTP fail-closed", () => {
   const cfg = { baseUrl: "https://services.leadconnectorhq.com", version: "2021-07-28", token: "teste", locationId: "loc" };
   const resposta = (body: unknown) => vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }));
 
-  it.each([{}, [], { contact: null }])("não autoriza criar quando no-match não tem contrato comprovado: %j", async (body) => {
-    const fetchMock = resposta(body);
-    const depsGhl = criarDepsGhl(cfg, async () => ({ ok: true }));
-    const r = await depsGhl.procurarExato({ locationId: "loc", campo: "telefone", valor: "+351900000000" });
-    expect(r).toMatchObject({ ok: false });
+  const procurar = (campo: "telefone" | "email" = "telefone", valor = "+351900000000") =>
+    criarDepsGhl(cfg, async () => ({ ok: true })).procurarExato({ locationId: "loc", campo, valor });
+
+  const achado = {
+    id: "c1",
+    locationId: "loc",
+    phone: "+351900000000",
+    email: "a@b.pt",
+    dnd: false,
+    dndSettings: {},
+  };
+
+  it("envia o pedido literal documentado (POST contacts/search com filtro eq)", async () => {
+    const fetchMock = resposta({ contacts: [achado], total: 1 });
+    const r = await procurar();
+    expect(r).toMatchObject({ ok: true, data: { id: "c1" } });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://services.leadconnectorhq.com/contacts/search");
+    expect(init.method).toBe("POST");
+    const corpo = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(corpo).toMatchObject({
+      locationId: "loc",
+      page: 1,
+      filters: [{ field: "phone", operator: "eq", value: "+351900000000" }],
+    });
+    expect(typeof corpo["pageLimit"]).toBe("number");
+    expect(corpo["query"]).toBeUndefined();
     fetchMock.mockRestore();
   });
+
+  it.each([{}, [], { contacts: [] }, { total: 0 }, { contacts: {}, total: 0 }, { contacts: [], total: -1 }])(
+    "bloqueia resposta malformada: %j",
+    async (body) => {
+      const fetchMock = resposta(body);
+      expect(await procurar()).toMatchObject({ ok: false, code: "malformed_response" });
+      fetchMock.mockRestore();
+    },
+  );
+
+  it("só aceita ausência com total 0 e lista vazia", async () => {
+    const fetchMock = resposta({ contacts: [], total: 0 });
+    expect(await procurar()).toEqual({ ok: true, data: null });
+    fetchMock.mockRestore();
+  });
+
+  it("bloqueia total incoerente com a lista devolvida", async () => {
+    const fetchMock = resposta({ contacts: [achado], total: 7 });
+    expect(await procurar()).toMatchObject({ ok: false, code: "malformed_response" });
+    fetchMock.mockRestore();
+  });
+
+  it("bloqueia múltiplos resultados para o mesmo pedido exato", async () => {
+    const fetchMock = resposta({ contacts: [achado, { ...achado, id: "c2" }], total: 2 });
+    expect(await procurar()).toMatchObject({ ok: false, code: "multiplos_resultados" });
+    fetchMock.mockRestore();
+  });
+
+  it("bloqueia resultado cujo telefone ou location não corresponde", async () => {
+    const fetchMock = resposta({ contacts: [{ ...achado, phone: "+351999999999" }], total: 1 });
+    expect(await procurar()).toMatchObject({ ok: false, code: "resultado_nao_corresponde" });
+    fetchMock.mockRestore();
+    const outra = resposta({ contacts: [{ ...achado, locationId: "outra" }], total: 1 });
+    expect(await procurar()).toMatchObject({ ok: false, code: "resultado_nao_corresponde" });
+    outra.mockRestore();
+  });
+
+  it("recusa e-mail acima do limite de 75 caracteres sem truncar nem chamar a API", async () => {
+    const fetchMock = resposta({ contacts: [], total: 0 });
+    const longo = `${"a".repeat(70)}@exemplo.pt`;
+    expect(await procurar("email", longo)).toMatchObject({ ok: false, code: "valor_acima_do_limite_eq" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockRestore();
+  });
+
 
   it("recusa contacto com DND incompleto na resposta real do adaptador", async () => {
     const fetchMock = resposta({ contact: { id: "c1", locationId: "loc", phone: "+351900000000", dnd: false } });

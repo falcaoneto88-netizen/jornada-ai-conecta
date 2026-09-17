@@ -122,6 +122,54 @@ export function reciboAcolhimentoValido(
   return true;
 }
 
+/** Destino já validado (organização, integração e location do binding). */
+export type AcessoAcolhimento = { orgId: string; locationId: string; integrationId: string };
+
+export function depsAcolhimentoDe(
+  admin: AdminAcolhimento,
+  cfg: GhlConfig,
+  criar: typeof criarDepsAcolhimento = criarDepsAcolhimento,
+): DepsAcolhimento {
+  return criar(cfg, async (p) => {
+    const { data, error: erroRpc } = await admin.rpc("finish_site_lead_welcome_v2", {
+      _submission: p.submissionId,
+      _state: p.estado,
+      _reason: p.motivo,
+      _message_id: p.messageId,
+    });
+    if (erroRpc) return { ok: false };
+    return { ok: reciboAcolhimentoValido(data, p) };
+  });
+}
+
+/** Uma única tentativa para um recibo. `null` = não reservado. */
+export async function executarReciboAcolhimento(
+  admin: AdminAcolhimento,
+  acesso: AcessoAcolhimento,
+  submissionId: string,
+  depsGhl: DepsAcolhimento,
+): Promise<DesfechoAcolhimento | null> {
+  const reserva = await admin.rpc("claim_site_lead_welcome_v2", {
+    _submission: submissionId,
+    _source: FALCAO_SOURCE_INTEGRACAO,
+  });
+  if (reserva.error || !reserva.data || typeof reserva.data !== "object") return null;
+  const pedido = reserva.data as PedidoAcolhimento & { blocked?: boolean };
+  if (
+    pedido.blocked === true || pedido.submission_id !== submissionId ||
+    pedido.organization_id !== acesso.orgId ||
+    pedido.integration_id !== acesso.integrationId ||
+    pedido.location_id !== acesso.locationId
+  ) {
+    return null;
+  }
+  return processarAcolhimento(pedido, depsGhl);
+}
+
+export function configAcolhimento(token: string, locationId: string): GhlConfig {
+  return { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
+}
+
 /** Lote pequeno; cada recibo tem no máximo uma tentativa, sem repetições. */
 export async function enviarAcolhimentosFalcao(
   ctx: Ctx,
@@ -169,48 +217,25 @@ export async function enviarAcolhimentosFalcao(
     return { ok: false, message: "Não foi possível ler os recibos pendentes.", desfechos: [] };
   }
 
-  const cfg: GhlConfig = {
-    baseUrl: GHL_ORIGIN,
-    version: GHL_VERSION,
-    token,
+  const alvo: AcessoAcolhimento = {
+    orgId: acesso.acesso.orgId,
     locationId: acesso.acesso.locationId,
+    integrationId: linhaIntegracao.id,
   };
-  const depsGhl = (deps?.criarDeps ?? criarDepsAcolhimento)(cfg, async (p) => {
-    const { data, error: erroRpc } = await admin.rpc("finish_site_lead_welcome_v2", {
-      _submission: p.submissionId,
-      _state: p.estado,
-      _reason: p.motivo,
-      _message_id: p.messageId,
-    });
-    if (erroRpc) return { ok: false };
-    return { ok: reciboAcolhimentoValido(data, p) };
-  });
+  const depsGhl = depsAcolhimentoDe(
+    admin,
+    configAcolhimento(token, acesso.acesso.locationId),
+    deps?.criarDeps ?? criarDepsAcolhimento,
+  );
 
   const desfechos: DesfechoAcolhimento[] = [];
   let ignorados = 0;
   for (const linha of (pendentes as { id: string }[] | null) ?? []) {
-    const reserva = await admin.rpc("claim_site_lead_welcome_v2", {
-      _submission: linha.id,
-      _source: FALCAO_SOURCE_INTEGRACAO,
-    });
-    if (reserva.error || !reserva.data || typeof reserva.data !== "object") {
-      ignorados += 1;
-      continue;
-    }
-    const pedido = reserva.data as PedidoAcolhimento & { blocked?: boolean };
-    if (
-      pedido.blocked === true || pedido.submission_id !== linha.id ||
-      pedido.organization_id !== acesso.acesso.orgId ||
-      pedido.integration_id !== linhaIntegracao.id ||
-      pedido.location_id !== acesso.acesso.locationId
-    ) {
-      ignorados += 1;
-      continue;
-    }
-    desfechos.push(
-      await processarAcolhimento(pedido, depsGhl),
-    );
+    const desfecho = await executarReciboAcolhimento(admin, alvo, linha.id, depsGhl);
+    if (desfecho) desfechos.push(desfecho);
+    else ignorados += 1;
   }
+
 
   const aceites = desfechos.filter((d) => d.estado === "enviado").length;
   const porReconciliar = desfechos.filter((d) => d.estado === "pendente_reconciliacao").length;
