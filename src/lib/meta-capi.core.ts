@@ -101,16 +101,47 @@ export function construirEventoTeste(entrada: {
   };
 }
 
-/** Remove qualquer coisa parecida com credencial e limita o tamanho. */
-export function sanitizarDiagnostico(valor: unknown): string {
-  const bruto = typeof valor === "string" ? valor : valor == null ? "" : JSON.stringify(valor);
-  return bruto
-    .replace(/access_token=[^&\s"']*/gi, "access_token=[oculto]")
-    .replace(/\b(EAA|EAB)[A-Za-z0-9]{10,}\b/g, "[oculto]")
-    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[oculto]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 200);
+/**
+ * Diagnóstico estruturado: nunca guardamos texto bruto da rede nem da Meta,
+ * só campos técnicos conhecidos. Assim nenhum valor sensível pode escapar por
+ * uma mensagem de erro.
+ */
+export const DIAGNOSTICO_REDE = "falha_de_rede_ou_tempo_limite";
+export const DIAGNOSTICO_REDIRECIONAMENTO = "redirecionamento_recusado";
+export const DIAGNOSTICO_SEM_CONTAGEM = "resposta_sem_events_received";
+export const DIAGNOSTICO_ERRO_EM_2XX = "erro_no_corpo_de_resposta_2xx";
+
+function campo(nome: string, valor: unknown): string | null {
+  if (typeof valor === "number" && Number.isFinite(valor)) return `${nome}=${valor}`;
+  if (typeof valor === "boolean") return `${nome}=${valor ? "sim" : "nao"}`;
+  return null;
+}
+
+/** Só HTTP, error.code, error_subcode e is_transient. Sem mensagem, sem corpo. */
+export function diagnosticoEstruturado(entrada: {
+  httpStatus: number;
+  erro: Record<string, unknown> | null;
+  motivo?: string;
+}): string {
+  const partes = [`http=${entrada.httpStatus}`];
+  if (entrada.motivo) partes.push(`motivo=${entrada.motivo}`);
+  if (entrada.erro) {
+    for (const [nome, chave] of [
+      ["code", "code"],
+      ["subcode", "error_subcode"],
+      ["transient", "is_transient"],
+    ] as const) {
+      const p = campo(nome, entrada.erro[chave]);
+      if (p) partes.push(p);
+    }
+  }
+  return partes.join(" ").slice(0, 200);
+}
+
+/** Redacção exata do token, para o caso de algum texto ter de ser guardado. */
+export function redigirToken(texto: string, token: string | null): string {
+  if (!token || token === "") return texto;
+  return texto.split(token).join("[oculto]");
 }
 
 export type LeituraRespostaMeta = {
