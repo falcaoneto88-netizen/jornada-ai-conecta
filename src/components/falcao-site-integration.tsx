@@ -47,6 +47,22 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
     }
   }
 
+  async function flag(scope: "remote_write" | "welcome_channel", enabled: boolean) {
+    setPending(true);
+    try {
+      const r = await definirFlag({ data: { confirm: true, scope, enabled } });
+      if (r.ok) toast.success(r.message);
+      else toast.error(r.message);
+      await queryClient.invalidateQueries({ queryKey: ["integracao-experiencia-falcao"] });
+    } catch {
+      toast.error("Não foi possível falar com o servidor. Tente novamente.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const podeHabilitarEscrita = data?.escritaGlobalAtiva === true && data.configurada;
+
   return (
     <section className="surface-card space-y-4 p-6" aria-labelledby="falcao-site-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -55,8 +71,9 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             Experiência Falcão (site)
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Recebe pedidos de contacto consentidos do site e cria o lead na etapa Novo Lead. Não
-            envia mensagens nem escreve no GoHighLevel.
+            Recebe pedidos de contacto consentidos do site e cria o lead na etapa Novo Lead. A
+            escrita no GoHighLevel e o acolhimento têm interruptores próprios, desligados por
+            omissão.
           </p>
         </div>
         <Badge variant={data?.ativa ? "default" : "outline"}>
@@ -92,6 +109,16 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
               <dd className="font-medium">{data.canalAcolhimento}</dd>
             </div>
             <div>
+              <dt className="text-muted-foreground">Escrita da conta no GoHighLevel</dt>
+              <dd className="font-medium">
+                {data.escritaGlobalAtiva === null
+                  ? "Indisponível"
+                  : data.escritaGlobalAtiva
+                    ? "Ativa"
+                    : "Desativada"}
+              </dd>
+            </div>
+            <div>
               <dt className="text-muted-foreground">Pedidos recebidos</dt>
               <dd className="font-medium">{data.leads.total ?? "Indisponível"}</dd>
             </div>
@@ -110,47 +137,104 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             </ul>
           </div>
 
-          <div>
-            <p className="text-sm font-medium">
-              Mensagem de acolhimento (envio manual, desligado por omissão)
+          <div className="space-y-2 rounded-md border p-4">
+            <p className="text-sm font-medium">1. Recebimento de pedidos do site</p>
+            <p className="text-sm text-muted-foreground">
+              Guarda o pedido consentido nesta conta. Com o recebimento ligado, cada pedido novo é
+              processado logo a seguir ao registo, conforme os dois interruptores abaixo.
             </p>
-            <p className="mt-1 rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-              {data.acolhimento}
-            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={pending || !data.segredoPresente} onClick={() => void guardar(true)}>
+                {pending ? "A guardar…" : "Ligar recebimento"}
+              </Button>
+              <Button variant="outline" disabled={pending} onClick={() => void guardar(false)}>
+                Desligar recebimento
+              </Button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={pending || !data.segredoPresente} onClick={() => void guardar(true)}>
-              {pending ? "A guardar…" : "Ligar recebimento"}
-            </Button>
-            <Button variant="outline" disabled={pending} onClick={() => void guardar(false)}>
-              Desligar
-            </Button>
-            {data.escritaGhl === "habilitado" && (
+          <div className="space-y-2 rounded-md border p-4">
+            <p className="text-sm font-medium">2. Escrita no GoHighLevel (contacto e oportunidade)</p>
+            <p className="text-sm text-muted-foreground">
+              Ao ligar, os pedidos novos passam a criar contacto e oportunidade no funil fixo desta
+              conta, uma única vez por pessoa. Só é possível ligar com o destino confirmado e a
+              escrita da conta ativa. Desligar não repõe nem repete nada do que já ficou em curso.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={pending || !podeHabilitarEscrita || data.escritaGhl === "habilitado"}
+                onClick={() => void flag("remote_write", true)}
+              >
+                Ligar escrita
+              </Button>
               <Button
                 variant="outline"
                 disabled={pending}
-                onClick={() => {
-                  executar(() => processar({ data: undefined }));
-                }}
+                onClick={() => void flag("remote_write", false)}
               >
-                Processar leads no GoHighLevel
+                Desligar escrita
               </Button>
-            )}
-            {data.canalAcolhimento === "configurado" && (
+              {data.escritaGhl === "habilitado" && (
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    executar(() => processar({ data: undefined }));
+                  }}
+                >
+                  Processar pedidos anteriores
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-4">
+            <p className="text-sm font-medium">3. Acolhimento por mensagem</p>
+            <p className="text-sm text-muted-foreground">
+              Canal: mensagem do tipo SMS na conta do GoHighLevel, encaminhada pelo provedor
+              predefinido desta location (ZaptosWPP V2 — WhatsApp like SMS). Sem credencial nova. Ao
+              ligar, os pedidos novos com contacto confirmado recebem a mensagem uma única vez.
+              Depende da escrita no GoHighLevel estar ligada. A aceitação pela API não é entrega: só
+              há entrega com recibo do provedor.
+            </p>
+            <p className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
+              {data.acolhimento}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={
+                  pending ||
+                  !podeHabilitarEscrita ||
+                  data.escritaGhl !== "habilitado" ||
+                  data.canalAcolhimento === "configurado"
+                }
+                onClick={() => void flag("welcome_channel", true)}
+              >
+                Ligar acolhimento
+              </Button>
               <Button
                 variant="outline"
                 disabled={pending}
-                onClick={() => {
-                  executar(() => acolher({ data: undefined }));
-                }}
+                onClick={() => void flag("welcome_channel", false)}
               >
-                Enviar acolhimento pendente
+                Desligar acolhimento
               </Button>
-            )}
+              {data.canalAcolhimento === "configurado" && (
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    executar(() => acolher({ data: undefined }));
+                  }}
+                >
+                  Acolher pedidos anteriores
+                </Button>
+              )}
+            </div>
           </div>
         </>
       )}
     </section>
   );
 }
+
