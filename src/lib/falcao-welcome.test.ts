@@ -11,11 +11,12 @@ import {
   type EstadoContactoRemoto,
   type PedidoAcolhimento,
 } from "./falcao-welcome.core";
-import { reciboAcolhimentoValido } from "./falcao-welcome.server";
+import { criarDepsAcolhimento, reciboAcolhimentoValido } from "./falcao-welcome.server";
 
 const pedido: PedidoAcolhimento = {
   submission_id: "11111111-1111-4111-8111-111111111111",
   organization_id: "22222222-2222-4222-8222-222222222222",
+  integration_id: "44444444-4444-4444-8444-444444444444",
   location_id: "loc",
   ghl_contact_id: "ghlC1",
   first_name: "Ana",
@@ -94,7 +95,16 @@ describe("envio do acolhimento", () => {
     });
     const r = await processarAcolhimento(pedido, d);
     expect(enviar).not.toHaveBeenCalled();
-    expect(r.motivo).toBe("identidade_nao_exata");
+    expect(r.motivo).toBe("telefone_divergente");
+  });
+
+  it("e-mail igual nunca substitui telefone ausente", async () => {
+    const { deps: d, enviar } = deps({
+      estadoContacto: async () => ({ ok: true, data: estado({ phone: null, email: "a@exemplo.test" }) }),
+    });
+    const r = await processarAcolhimento({ ...pedido, email: "a@exemplo.test" }, d);
+    expect(enviar).not.toHaveBeenCalled();
+    expect(r.motivo).toBe("telefone_nao_confirmado");
   });
 
   it("não envia para contacto de outra location", async () => {
@@ -140,6 +150,22 @@ describe("envio do acolhimento", () => {
     const r = await processarAcolhimento(pedido, d);
     expect(r.estado).toBe("pendente_reconciliacao");
     expect(r.entregue).toBe(false);
+  });
+});
+
+describe("adaptador SMS do acolhimento", () => {
+  const cfg = { baseUrl: "https://services.leadconnectorhq.com", version: "2021-07-28", token: "teste", locationId: "loc" };
+
+  it("bloqueia DND ausente ou desconhecido e preserva type SMS", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ contact: { id: "ghlC1", locationId: "loc", phone: "+351900000000", dnd: false } }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ messageId: "m1", status: "accepted" }), { status: 200, headers: { "content-type": "application/json" } }));
+    const adaptador = criarDepsAcolhimento(cfg, async () => ({ ok: true }));
+    expect(await adaptador.estadoContacto("ghlC1")).toMatchObject({ ok: false, code: "malformed_response" });
+    await adaptador.enviar({ ghlContactId: "ghlC1", mensagem: "Olá" });
+    const init = fetchMock.mock.calls[1]?.[1];
+    expect(JSON.parse(String(init?.body))).toMatchObject({ type: "SMS", contactId: "ghlC1" });
+    fetchMock.mockRestore();
   });
 });
 

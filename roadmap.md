@@ -60,3 +60,11 @@
 - [x] Estados separados: enviado (aceite pela API) e entregue (só com recibo do provedor)
 - [x] Interruptores explícitos do administrador; tudo desligado por omissão
 - [ ] Teste controlado do encaminhamento pelo provedor (sem prova técnica na API)
+
+### Revisão bloqueante — ledger durável (2026-09-17, migração 0004)
+- [x] Respostas de procura sem contrato explícito bloqueiam novas criações
+- [x] Telefone consentido, ID, location e DND são obrigatoriamente revalidados
+- [x] Ledger durável impede segunda execução remota ou acolhimento para a mesma pessoa
+- [x] IDs externos incertos ficam apenas no recibo de reconciliação
+- [x] `type: SMS` preservado para o provedor ZaptosWPP predefinido
+- [ ] Integração, escrita remota e acolhimento continuam desligados até revisão
