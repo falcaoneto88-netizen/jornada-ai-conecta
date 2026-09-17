@@ -92,7 +92,13 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
 
   const leads = await contarLeads(client);
   const escrita = (integracao?.["remote_write_state"] ?? "pendente") as
-    "pendente" | "habilitado" | "bloqueado";
+    | "pendente"
+    | "habilitado"
+    | "bloqueado";
+  const canal = (integracao?.["welcome_channel_state"] ?? "pendente") as
+    | "pendente"
+    | "configurado"
+    | "bloqueado";
 
   const pendencias = [
     ...(segredoPresente
