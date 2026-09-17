@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { processarLeadsFalcao } from "@/lib/falcao-remote.functions";
 import {
   configurarIntegracaoFalcao,
   estadoIntegracaoFalcao,
@@ -13,6 +14,7 @@ import {
 export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoIntegracaoFalcao);
   const configurar = useServerFn(configurarIntegracaoFalcao);
+  const processar = useServerFn(processarLeadsFalcao);
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
@@ -109,6 +111,26 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             <Button variant="outline" disabled={pending} onClick={() => void guardar(false)}>
               Desligar
             </Button>
+            {data.escritaGhl === "habilitado" && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  setPending(true);
+                  void processar({ data: undefined })
+                    .then((r) => (r.ok ? toast.success(r.message) : toast.error(r.message)))
+                    .catch(() => toast.error("Não foi possível processar agora."))
+                    .finally(() => {
+                      setPending(false);
+                      void queryClient.invalidateQueries({
+                        queryKey: ["integracao-experiencia-falcao"],
+                      });
+                    });
+                }}
+              >
+                Processar leads no GoHighLevel
+              </Button>
+            )}
           </div>
         </>
       )}
