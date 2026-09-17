@@ -43,6 +43,13 @@
       "when": 1789679708190,
       "tag": "0005_site_lead_flags_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789679970718,
+      "tag": "0006_site_lead_flags_v2_null_guard",
+      "breakpoints": true
     }
   ]
 }
