@@ -72,6 +72,8 @@ beforeAll(async () => {
       insert into public.user_roles (user_id, organization_id, role) values ('${UID_V}','${orgA}','visualizador');
       insert into public.ghl_location_bindings (location_id, organization_id) values ('${LOCATION}','${orgA}')
         on conflict (location_id) do update set organization_id = excluded.organization_id;
+      update public.ghl_connections set location_id='${LOCATION}', status='conectada', write_enabled=false
+        where organization_id='${orgA}';
       insert into public.journey_stages (organization_id, key, name, position, color)
         values ('${orgA}','novo_lead','Novo Lead', 1, '#000000')
         on conflict do nothing;
@@ -328,7 +330,7 @@ describe("escrita remota reservada e auditada", () => {
       `select public.claim_site_lead_remote_v2('${recibo()}','experiencia-falcao');`,
     );
     expect(r.ok).toBe(false);
-    expect(r.erro).toContain("Escrita no GoHighLevel desativada");
+    expect(r.erro).toContain("escrita desativada");
   });
 
   it("reserva uma única vez e confirma os identificadores devolvidos", () => {
