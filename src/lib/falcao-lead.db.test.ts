@@ -272,3 +272,80 @@ describe("isolamento das novas tabelas", () => {
     expect(escrita.ok).toBe(false);
   });
 });
+
+describe("escrita remota reservada e auditada", () => {
+  const recibo = () =>
+    valor(
+      db.admin(
+        `select id::text from public.site_lead_submissions where request_id='${PEDIDO_1}' and organization_id='${orgA}';`,
+      ),
+    )!;
+
+  it("não reserva enquanto a escrita remota não estiver habilitada", () => {
+    const r = db.comoServico(`select public.claim_site_lead_remote('${recibo()}');`);
+    expect(r.ok).toBe(false);
+    expect(r.erro).toContain("Escrita remota não habilitada");
+  });
+
+  it("não reserva sem write_enabled na ligação ao GoHighLevel", () => {
+    expect(
+      db.admin(
+        `update public.site_integrations set remote_write_state='habilitado' where organization_id='${orgA}';
+         insert into public.ghl_connections (organization_id, write_enabled) values ('${orgA}', false)
+           on conflict do nothing;`,
+      ).ok,
+    ).toBe(true);
+    const r = db.comoServico(`select public.claim_site_lead_remote('${recibo()}');`);
+    expect(r.ok).toBe(false);
+    expect(r.erro).toContain("Escrita no GoHighLevel desativada");
+  });
+
+  it("reserva uma única vez e confirma os identificadores devolvidos", () => {
+    expect(
+      db.admin(`update public.ghl_connections set write_enabled=true where organization_id='${orgA}';`)
+        .ok,
+    ).toBe(true);
+    const id = recibo();
+    const reserva = db.comoServico(`select public.claim_site_lead_remote('${id}')::text;`);
+    expect(reserva.ok, reserva.erro).toBe(true);
+    expect(valor(reserva)).toContain(PIPELINE);
+
+    const segunda = db.comoServico(`select public.claim_site_lead_remote('${id}');`);
+    expect(segunda.ok).toBe(false);
+
+    const fim = db.comoServico(
+      `select public.finish_site_lead_remote('${id}','confirmado','contacto_e_oportunidade_confirmados','ghlC1','ghlO1')::text;`,
+    );
+    expect(fim.ok, fim.erro).toBe(true);
+    expect(valor(fim)).toContain('"remote_state": "confirmado"');
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.opportunities where organization_id='${orgA}' and ghl_opportunity_id='ghlO1';`,
+        ),
+      ),
+    ).toBe("1");
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.contacts where organization_id='${orgA}' and ghl_contact_id='ghlC1';`,
+        ),
+      ),
+    ).toBe("1");
+
+    const repetido = db.comoServico(
+      `select public.finish_site_lead_remote('${id}','confirmado','x','ghlC1','ghlO1');`,
+    );
+    expect(repetido.ok).toBe(false);
+  });
+
+  it("a auditoria da escrita remota não contém dados pessoais", () => {
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.audit_logs where action like 'site_lead.remote_%' and metadata::text ilike '%Pessoa%';`,
+        ),
+      ),
+    ).toBe("0");
+  });
+});
