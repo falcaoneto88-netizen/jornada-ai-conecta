@@ -1114,6 +1114,67 @@ export type Database = {
           },
         ]
       }
+      site_lead_execution_ledger: {
+        Row: {
+          channel: string
+          created_at: string
+          external_id: string | null
+          first_submission_id: string
+          identity_key: string
+          integration_id: string
+          organization_id: string
+          scope: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          external_id?: string | null
+          first_submission_id: string
+          identity_key: string
+          integration_id: string
+          organization_id: string
+          scope: string
+          state: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          external_id?: string | null
+          first_submission_id?: string
+          identity_key?: string
+          integration_id?: string
+          organization_id?: string
+          scope?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_lead_execution_ledger_first_submission_id_fkey"
+            columns: ["first_submission_id"]
+            isOneToOne: false
+            referencedRelation: "site_lead_submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_execution_ledger_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "site_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_execution_ledger_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_lead_execution_locks: {
         Row: {
           created_at: string
@@ -1251,6 +1312,8 @@ export type Database = {
           organization_id: string
           payload_hash: string
           remote_attempted_at: string | null
+          remote_observed_contact_id: string | null
+          remote_observed_opportunity_id: string | null
           remote_reason: string | null
           remote_state: string
           request_id: string
@@ -1278,6 +1341,8 @@ export type Database = {
           organization_id: string
           payload_hash: string
           remote_attempted_at?: string | null
+          remote_observed_contact_id?: string | null
+          remote_observed_opportunity_id?: string | null
           remote_reason?: string | null
           remote_state?: string
           request_id: string
@@ -1305,6 +1370,8 @@ export type Database = {
           organization_id?: string
           payload_hash?: string
           remote_attempted_at?: string | null
+          remote_observed_contact_id?: string | null
+          remote_observed_opportunity_id?: string | null
           remote_reason?: string | null
           remote_state?: string
           request_id?: string
