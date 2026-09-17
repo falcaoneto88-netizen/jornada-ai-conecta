@@ -1775,6 +1775,10 @@ export type Database = {
         }
         Returns: Json
       }
+      set_site_integration_flags_v2: {
+        Args: { _confirm: boolean; _scope: string; _state: string }
+        Returns: Json
+      }
       tem_papel: {
         Args: { _papeis: Database["public"]["Enums"]["app_role"][] }
         Returns: boolean
