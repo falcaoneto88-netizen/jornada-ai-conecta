@@ -51,6 +51,7 @@ beforeAll(async () => {
     "drizzle/migrations/0003_site_lead_identidade_consentida_locks_e_quota_hmac.sql",
     "drizzle/migrations/0004_site_lead_durable_execution_ledger.sql",
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
+    "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -857,6 +858,40 @@ describe("controlos separados de escrita remota e acolhimento", () => {
     expect(flags()).toBe("pendente/pendente");
     expect(valor(db.admin(`select count(*)::text from public.site_lead_execution_ledger;`))).toBe(
       antes,
+    );
+  });
+
+  it("recusa qualquer parâmetro nulo sem tocar em flags, auditoria ou ledger", () => {
+    db.admin(
+      `update public.ghl_connections set write_enabled=true, status='conectada' where organization_id='${orgA}';
+       update public.site_integrations set remote_write_state='habilitado', welcome_channel_state='pendente' where organization_id='${orgA}';`,
+    );
+    const auditoria = () =>
+      valor(
+        db.admin(
+          `select count(*)::text from public.audit_logs where action='site_integration.flags_v2';`,
+        ),
+      );
+    const ledger = () =>
+      valor(db.admin(`select count(*)::text from public.site_lead_execution_ledger;`));
+    const antesAudit = auditoria();
+    const antesLedger = ledger();
+    for (const sql of [
+      "public.set_site_integration_flags_v2(null,'ligado',true)",
+      "public.set_site_integration_flags_v2('welcome_channel',null,true)",
+      "public.set_site_integration_flags_v2('remote_write','ligado',null)",
+      "public.set_site_integration_flags_v2(null,null,null)",
+    ]) {
+      const r = db.comoUtilizador(UID_A, `select ${sql};`);
+      expect(r.ok, sql).toBe(false);
+      expect(r.erro ?? "", sql).toContain("22023");
+    }
+    expect(flags()).toBe("habilitado/pendente");
+    expect(auditoria()).toBe(antesAudit);
+    expect(ledger()).toBe(antesLedger);
+    db.admin(
+      `update public.site_integrations set remote_write_state='pendente', welcome_channel_state='pendente' where organization_id='${orgA}';
+       update public.ghl_connections set write_enabled=false, status='desconectada' where organization_id='${orgA}';`,
     );
   });
 
