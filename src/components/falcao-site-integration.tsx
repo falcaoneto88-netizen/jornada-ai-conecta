@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { FalcaoMetaCapi } from "@/components/falcao-meta-capi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { enviarAcolhimentoFalcao, processarLeadsFalcao } from "@/lib/falcao-remote.functions";
@@ -238,6 +239,7 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
               )}
             </div>
           </div>
+          <FalcaoMetaCapi allowed={allowed} />
         </>
       )}
     </section>

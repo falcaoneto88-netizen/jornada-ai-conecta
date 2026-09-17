@@ -933,6 +933,69 @@ export type Database = {
           },
         ]
       }
+      meta_capi_test_attempts: {
+        Row: {
+          created_at: string
+          dataset_id: string
+          diagnostic: string | null
+          event_id: string
+          events_received: number | null
+          fbtrace_id: string | null
+          id: string
+          integration_id: string
+          organization_id: string
+          request_id: string
+          status: string
+          test_event_code: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dataset_id: string
+          diagnostic?: string | null
+          event_id: string
+          events_received?: number | null
+          fbtrace_id?: string | null
+          id?: string
+          integration_id: string
+          organization_id: string
+          request_id: string
+          status: string
+          test_event_code: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dataset_id?: string
+          diagnostic?: string | null
+          event_id?: string
+          events_received?: number | null
+          fbtrace_id?: string | null
+          id?: string
+          integration_id?: string
+          organization_id?: string
+          request_id?: string
+          status?: string
+          test_event_code?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_capi_test_attempts_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "site_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_capi_test_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opportunities: {
         Row: {
           contact_id: string | null
@@ -1731,6 +1794,26 @@ export type Database = {
           _quota_phone: string
           _request_id: string
           _source: string
+        }
+        Returns: Json
+      }
+      meta_capi_test_finish: {
+        Args: {
+          _attempt: string
+          _diagnostic: string
+          _events_received: number
+          _fbtrace: string
+          _status: string
+        }
+        Returns: Json
+      }
+      meta_capi_test_reserve: {
+        Args: {
+          _confirm: boolean
+          _dataset: string
+          _event_id: string
+          _request: string
+          _test_code: string
         }
         Returns: Json
       }
