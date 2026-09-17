@@ -22,6 +22,13 @@
       "when": 1789677215707,
       "tag": "0002_site_lead_acolhimento_sms_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789677544226,
+      "tag": "0003_site_lead_identidade_consentida_locks_e_quota_hmac",
+      "breakpoints": true
     }
   ]
 }
