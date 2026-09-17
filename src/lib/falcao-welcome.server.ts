@@ -9,6 +9,7 @@ import {
   type PedidoAcolhimento,
   type ResultadoApi,
 } from "./falcao-welcome.core";
+import { FALCAO_SOURCE_INTEGRACAO } from "./falcao-lead.server";
 import { resolverAcesso } from "./ghl.functions";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } from "./ghl.server";
 
@@ -19,6 +20,9 @@ const LIMITE_LOTE = 5;
 type ContactoApi = {
   contact?: {
     id?: string;
+    locationId?: string;
+    phone?: string;
+    email?: string;
     dnd?: boolean;
     dndSettings?: Record<string, { status?: string }>;
   };
@@ -37,11 +41,24 @@ export function criarDepsAcolhimento(
       const res = await ghlFetch<ContactoApi>(cfg, `contacts/${encodeURIComponent(ghlContactId)}`);
       if (!res.ok) return falha(res);
       const c = res.data.contact;
-      if (!c?.id) return { ok: false, code: "not_found", message: "Contacto não encontrado." };
+      // Campo em falta nunca significa "permitido": a resposta é malformada.
+      if (!c?.id || !c.locationId || typeof c.dnd !== "boolean") {
+        return { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
+      }
       const bloqueados = Object.entries(c.dndSettings ?? {})
         .filter(([, v]) => (v?.status ?? "").toLowerCase() === "active")
         .map(([canal]) => canal);
-      return { ok: true, data: { id: c.id, dnd: c.dnd === true, canaisBloqueados: bloqueados } };
+      return {
+        ok: true,
+        data: {
+          id: c.id,
+          locationId: c.locationId,
+          phone: typeof c.phone === "string" ? c.phone : null,
+          email: typeof c.email === "string" ? c.email : null,
+          dnd: c.dnd,
+          canaisBloqueados: bloqueados,
+        },
+      };
     },
     async enviar({ ghlContactId, mensagem }) {
       const res = await ghlFetch<{ messageId?: string; msg?: string; status?: string }>(
@@ -66,35 +83,38 @@ export function criarDepsAcolhimento(
   };
 }
 
-type Admin = {
-  from: (t: string) => {
-    select: (c: string) => {
-      eq: (
-        k: string,
-        v: unknown,
-      ) => {
-        eq: (
-          k: string,
-          v: unknown,
-        ) => {
-          eq: (
-            k: string,
-            v: unknown,
-          ) => { limit: (n: number) => PromiseLike<{ data: unknown; error: unknown }> };
-        };
-      };
-    };
-  };
+type Consulta = {
+  eq: (k: string, v: unknown) => Consulta;
+  limit: (n: number) => PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+export type AdminAcolhimento = {
+  from: (t: string) => { select: (c: string) => Consulta };
   rpc: (
     fn: string,
     args: Record<string, unknown>,
   ) => PromiseLike<{ data: unknown; error: { message?: string } | null }>;
 };
 
+/** Só é sucesso quando a base confirma o estado e o identificador da mensagem. */
+export function reciboAcolhimentoValido(
+  data: unknown,
+  esperado: { submissionId: string; estado: "enviado" | "bloqueado"; messageId: string | null },
+): boolean {
+  if (!data || typeof data !== "object") return false;
+  const r = data as Record<string, unknown>;
+  if (r["submission_id"] !== esperado.submissionId) return false;
+  if (r["welcome_state"] !== esperado.estado) return false;
+  if (r["persisted"] !== true) return false;
+  if (r["delivered"] !== false) return false;
+  if (esperado.estado === "enviado" && r["welcome_message_id"] !== esperado.messageId) return false;
+  return true;
+}
+
 /** Lote pequeno; cada recibo tem no máximo uma tentativa, sem repetições. */
 export async function enviarAcolhimentosFalcao(
   ctx: Ctx,
-  deps?: { admin?: Admin; criarDeps?: typeof criarDepsAcolhimento },
+  deps?: { admin?: AdminAcolhimento; criarDeps?: typeof criarDepsAcolhimento },
 ): Promise<{ ok: boolean; message: string; desfechos: DesfechoAcolhimento[] }> {
   const acesso = await resolverAcesso(ctx, ["administrador"]);
   if (!acesso.ok) return { ok: false, message: acesso.message, desfechos: [] };
@@ -112,12 +132,25 @@ export async function enviarAcolhimentosFalcao(
 
   const admin =
     deps?.admin ??
-    ((await import("@/integrations/supabase/client.server")).supabaseAdmin as unknown as Admin);
+    ((await import("@/integrations/supabase/client.server"))
+      .supabaseAdmin as unknown as AdminAcolhimento);
+
+  const integracao = await admin
+    .from("site_integrations")
+    .select("id")
+    .eq("organization_id", acesso.acesso.orgId)
+    .eq("source", FALCAO_SOURCE_INTEGRACAO)
+    .limit(1);
+  const linhaIntegracao = (integracao.data as { id: string }[] | null)?.[0];
+  if (integracao.error || !linhaIntegracao) {
+    return { ok: false, message: "Integração do site não configurada.", desfechos: [] };
+  }
 
   const { data: pendentes, error } = await admin
     .from("site_lead_submissions")
     .select("id")
     .eq("organization_id", acesso.acesso.orgId)
+    .eq("integration_id", linhaIntegracao.id)
     .eq("remote_state", "confirmado")
     .eq("welcome_state", "pendente")
     .limit(LIMITE_LOTE);
@@ -132,25 +165,42 @@ export async function enviarAcolhimentosFalcao(
     locationId: acesso.acesso.locationId,
   };
   const depsGhl = (deps?.criarDeps ?? criarDepsAcolhimento)(cfg, async (p) => {
-    await admin.rpc("finish_site_lead_welcome", {
+    const { data, error: erroRpc } = await admin.rpc("finish_site_lead_welcome_v2", {
       _submission: p.submissionId,
       _state: p.estado,
       _reason: p.motivo,
       _message_id: p.messageId,
     });
+    if (erroRpc) return { ok: false };
+    return { ok: reciboAcolhimentoValido(data, p) };
   });
 
   const desfechos: DesfechoAcolhimento[] = [];
+  let ignorados = 0;
   for (const linha of (pendentes as { id: string }[] | null) ?? []) {
-    const reserva = await admin.rpc("claim_site_lead_welcome", { _submission: linha.id });
-    if (reserva.error || !reserva.data || typeof reserva.data !== "object") continue;
-    desfechos.push(await processarAcolhimento(reserva.data as PedidoAcolhimento, depsGhl));
+    const reserva = await admin.rpc("claim_site_lead_welcome_v2", {
+      _submission: linha.id,
+      _source: FALCAO_SOURCE_INTEGRACAO,
+    });
+    if (reserva.error || !reserva.data || typeof reserva.data !== "object") {
+      ignorados += 1;
+      continue;
+    }
+    const pedido = reserva.data as PedidoAcolhimento & { blocked?: boolean };
+    if (pedido.blocked === true || pedido.submission_id !== linha.id) {
+      ignorados += 1;
+      continue;
+    }
+    desfechos.push(
+      await processarAcolhimento({ ...pedido, location_id: acesso.acesso.locationId }, depsGhl),
+    );
   }
 
   const aceites = desfechos.filter((d) => d.estado === "enviado").length;
+  const porReconciliar = desfechos.filter((d) => d.estado === "pendente_reconciliacao").length;
   return {
     ok: true,
-    message: `Tentativas: ${String(desfechos.length)}. Aceites pela API: ${String(aceites)} (aceitação não é entrega). Bloqueadas: ${String(desfechos.length - aceites)}.`,
+    message: `Tentativas: ${String(desfechos.length)}. Aceites pela API: ${String(aceites)} (aceitação não é entrega). Bloqueadas: ${String(desfechos.length - aceites - porReconciliar)}. Por reconciliar: ${String(porReconciliar)}. Não reservadas: ${String(ignorados)}.`,
     desfechos,
   };
 }
