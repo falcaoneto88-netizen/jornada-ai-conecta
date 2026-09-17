@@ -111,7 +111,7 @@ describe("ingresso do lead", () => {
   it("o público e os utilizadores autenticados não podem executar o ingresso", () => {
     const autenticado = db.comoUtilizador(
       UID_A,
-      `select public.ingest_site_lead_v2('experiencia-falcao','${PEDIDO_1}','${HASH_1}','X','+351900000001','351900000001',null,'2026-09-17.contact.v1', now(), ${balde('351900000001')}, null);`,
+      `select public.ingest_site_lead_v2('experiencia-falcao','${PEDIDO_1}','${HASH_1}','X','+351900000001','351900000001',null,'2026-09-17.contact.v1', now(), ${balde("351900000001")}, null);`,
     );
     expect(autenticado.ok).toBe(false);
   });
@@ -194,7 +194,7 @@ describe("ingresso do lead", () => {
 
   it("pedidos simultâneos idênticos devolvem ambos o mesmo recibo e um só contacto", async () => {
     const pedido = "aaaaaaaa-4444-4444-8444-aaaaaaaaaaaa";
-    const sql = `set role service_role; select public.ingest_site_lead_v2('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now(), ${balde('351900000333')}, null)::text;`;
+    const sql = `set role service_role; select public.ingest_site_lead_v2('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now(), ${balde("351900000333")}, null)::text;`;
     const [a, b] = await Promise.all([db.adminAsync(sql), db.adminAsync(sql)]);
     expect(a.ok, a.erro).toBe(true);
     expect(b.ok, b.erro).toBe(true);
@@ -224,7 +224,7 @@ describe("ingresso do lead", () => {
     const um = "aaaaaaaa-5555-4555-8555-aaaaaaaaaaaa";
     const dois = "aaaaaaaa-6666-4666-8666-aaaaaaaaaaaa";
     const sql = (pedido: string, hash: string) =>
-      `set role service_role; select public.ingest_site_lead_v2('experiencia-falcao','${pedido}','${hash}','Pessoa','+351900000444','351900000444',null,'2026-09-17.contact.v1', now(), ${balde('351900000444')}, null)::text;`;
+      `set role service_role; select public.ingest_site_lead_v2('experiencia-falcao','${pedido}','${hash}','Pessoa','+351900000444','351900000444',null,'2026-09-17.contact.v1', now(), ${balde("351900000444")}, null)::text;`;
     const [a, b] = await Promise.all([
       db.adminAsync(sql(um, HASH_1)),
       db.adminAsync(sql(dois, HASH_2)),
@@ -308,7 +308,9 @@ describe("escrita remota reservada e auditada", () => {
     )!;
 
   it("não reserva enquanto a escrita remota não estiver habilitada", () => {
-    const r = db.comoServico(`select public.claim_site_lead_remote_v2('${recibo()}','experiencia-falcao');`);
+    const r = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${recibo()}','experiencia-falcao');`,
+    );
     expect(r.ok).toBe(false);
     expect(r.erro).toContain("Escrita remota não habilitada");
   });
@@ -321,7 +323,9 @@ describe("escrita remota reservada e auditada", () => {
            on conflict do nothing;`,
       ).ok,
     ).toBe(true);
-    const r = db.comoServico(`select public.claim_site_lead_remote_v2('${recibo()}','experiencia-falcao');`);
+    const r = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${recibo()}','experiencia-falcao');`,
+    );
     expect(r.ok).toBe(false);
     expect(r.erro).toContain("Escrita no GoHighLevel desativada");
   });
@@ -333,11 +337,15 @@ describe("escrita remota reservada e auditada", () => {
       ).ok,
     ).toBe(true);
     const id = recibo();
-    const reserva = db.comoServico(`select public.claim_site_lead_remote_v2('${id}','experiencia-falcao')::text;`);
+    const reserva = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${id}','experiencia-falcao')::text;`,
+    );
     expect(reserva.ok, reserva.erro).toBe(true);
     expect(valor(reserva)).toContain(PIPELINE);
 
-    const segunda = db.comoServico(`select public.claim_site_lead_remote_v2('${id}','experiencia-falcao');`);
+    const segunda = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${id}','experiencia-falcao');`,
+    );
     expect(segunda.ok).toBe(false);
 
     const fim = db.comoServico(
@@ -386,7 +394,9 @@ describe("acolhimento pelo canal existente", () => {
     )!;
 
   it("não reserva enquanto o canal não estiver ativado pelo administrador", () => {
-    const r = db.comoServico(`select public.claim_site_lead_welcome_v2('${recibo()}','experiencia-falcao');`);
+    const r = db.comoServico(
+      `select public.claim_site_lead_welcome_v2('${recibo()}','experiencia-falcao');`,
+    );
     expect(r.ok).toBe(false);
     expect(r.erro).toContain("Canal de acolhimento não configurado");
   });
@@ -407,11 +417,15 @@ describe("acolhimento pelo canal existente", () => {
 
   it("uma única tentativa: envio aceite não é entrega e não se repete", () => {
     const id = recibo();
-    const reserva = db.comoServico(`select public.claim_site_lead_welcome_v2('${id}','experiencia-falcao')::text;`);
+    const reserva = db.comoServico(
+      `select public.claim_site_lead_welcome_v2('${id}','experiencia-falcao')::text;`,
+    );
     expect(reserva.ok, reserva.erro).toBe(true);
     expect(valor(reserva)).toContain('"consent_version": "2026-09-17.contact.v1"');
 
-    const segunda = db.comoServico(`select public.claim_site_lead_welcome_v2('${id}','experiencia-falcao');`);
+    const segunda = db.comoServico(
+      `select public.claim_site_lead_welcome_v2('${id}','experiencia-falcao');`,
+    );
     expect(segunda.ok).toBe(false);
 
     const fim = db.comoServico(
@@ -477,7 +491,11 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
     const b = ingerir(P2, HASH_2, TEL, null);
     expect(b.ok, b.erro).toBe(true);
     expect(
-      valor(db.admin(`select count(*) from public.site_lead_identities where phone_normalized='${TEL}';`)),
+      valor(
+        db.admin(
+          `select count(*) from public.site_lead_identities where phone_normalized='${TEL}';`,
+        ),
+      ),
     ).toBe("2");
     const alterar = db.admin(
       `update public.site_lead_identities set phone_normalized='351900000999' where phone_normalized='${TEL}';`,
@@ -486,9 +504,11 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
   });
 
   it("duas submissões da mesma pessoa não são executadas ao mesmo tempo", () => {
-    const ids = db.admin(
-      `select id::text from public.site_lead_submissions where request_id in ('${P1}','${P2}') order by created_at;`,
-    ).linhas.map((l) => l[0]!);
+    const ids = db
+      .admin(
+        `select id::text from public.site_lead_submissions where request_id in ('${P1}','${P2}') order by created_at;`,
+      )
+      .linhas.map((l) => l[0]!);
     expect(ids.length).toBe(2);
     const primeira = db.comoServico(
       `select public.claim_site_lead_remote_v2('${ids[0]!}','experiencia-falcao')::text;`,
@@ -501,7 +521,9 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
     expect(segunda.ok, segunda.erro).toBe(true);
     expect(valor(segunda)).toContain("execucao_em_curso_para_a_mesma_pessoa");
     expect(
-      valor(db.admin(`select remote_state from public.site_lead_submissions where id='${ids[1]!}';`)),
+      valor(
+        db.admin(`select remote_state from public.site_lead_submissions where id='${ids[1]!}';`),
+      ),
     ).toBe("pendente");
 
     // Confirmação exige dados reais da oportunidade lida no GoHighLevel.

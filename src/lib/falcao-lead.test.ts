@@ -226,17 +226,23 @@ describe("validação estrita do recibo e dos campos", () => {
   });
 
   it("um recibo inválido do banco nunca vira sucesso", async () => {
-    const store = criarLeadStore({
-      rpc: async () => ({ data: reciboValido({ local_state: "?" }), error: null }),
-    } as never, "b".repeat(64));
+    const store = criarLeadStore(
+      {
+        rpc: async () => ({ data: reciboValido({ local_state: "?" }), error: null }),
+      } as never,
+      "b".repeat(64),
+    );
     const r = await store.ingest(entradaStore());
     expect(r.outcome).toBe("erro");
   });
 
   it("o limite temporário responde 429 e não declara sucesso", async () => {
-    const store = criarLeadStore({
-      rpc: async () => ({ data: null, error: { code: "53400", message: "limite" } }),
-    } as never, "b".repeat(64));
+    const store = criarLeadStore(
+      {
+        rpc: async () => ({ data: null, error: { code: "53400", message: "limite" } }),
+      } as never,
+      "b".repeat(64),
+    );
     expect((await store.ingest(entradaStore())).outcome).toBe("limite");
     const corpo = bytes(leadValido());
     const resposta = await processarLeadFalcao(

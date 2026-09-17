@@ -7,12 +7,7 @@ import {
   lerCorpoLimitado,
   processarLeadFalcao,
 } from "@/lib/falcao-lead.core";
-import {
-  compararHex,
-  criarLeadStore,
-  hmacHex,
-  segredoFalcao,
-} from "@/lib/falcao-lead.server";
+import { compararHex, criarLeadStore, hmacHex, segredoFalcao } from "@/lib/falcao-lead.server";
 
 const semCache = { "Cache-Control": "no-store" } as const;
 
@@ -29,7 +24,10 @@ export const Route = createFileRoute("/api/public/falcao-lead")({
         const corpo = await lerCorpoLimitado(request, FALCAO_LIMITE_BYTES);
         if (!corpo.ok) {
           return Response.json(
-            { ok: false, erro: corpo.status === 413 ? "pedido_demasiado_grande" : "pedido_invalido" },
+            {
+              ok: false,
+              erro: corpo.status === 413 ? "pedido_demasiado_grande" : "pedido_invalido",
+            },
             { status: corpo.status, headers: semCache },
           );
         }
@@ -60,7 +58,16 @@ export const Route = createFileRoute("/api/public/falcao-lead")({
             servico: "falcao-lead",
             metodo: "POST",
             autenticacao: "cabeçalho x-falcao-signature (HMAC-SHA256 do corpo exato)",
-            campos: ["source", "requestId", "timestamp", "adult", "name", "phone", "email?", "consent"],
+            campos: [
+              "source",
+              "requestId",
+              "timestamp",
+              "adult",
+              "name",
+              "phone",
+              "email?",
+              "consent",
+            ],
             source: FALCAO_SOURCE,
             consentVersion: FALCAO_CONSENT_VERSION,
             limiteBytes: FALCAO_LIMITE_BYTES,

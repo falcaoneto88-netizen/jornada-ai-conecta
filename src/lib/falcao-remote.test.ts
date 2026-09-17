@@ -83,9 +83,11 @@ describe("validação exata do contacto remoto", () => {
     expect(validarContacto(contacto({ id: "a", dnd: true }), pedido)).toMatchObject({
       motivo: "contacto_com_dnd",
     });
-    expect(validarContacto(contacto({ id: "a", canaisBloqueados: ["SMS"] }), pedido)).toMatchObject({
-      motivo: "canal_bloqueado",
-    });
+    expect(validarContacto(contacto({ id: "a", canaisBloqueados: ["SMS"] }), pedido)).toMatchObject(
+      {
+        motivo: "canal_bloqueado",
+      },
+    );
   });
 });
 
