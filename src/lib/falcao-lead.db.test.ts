@@ -522,7 +522,7 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
       `select public.claim_site_lead_remote_v2('${ids[1]!}','experiencia-falcao')::text;`,
     );
     expect(segunda.ok, segunda.erro).toBe(true);
-    expect(valor(segunda)).toContain("execucao_em_curso_para_a_mesma_pessoa");
+    expect(valor(segunda)).toContain("execucao_remota_ja_registada_para_a_mesma_pessoa");
     expect(
       valor(
         db.admin(`select remote_state from public.site_lead_submissions where id='${ids[1]!}';`),
@@ -582,6 +582,36 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
     expect(falha.ok).toBe(false);
     expect(valor(db.admin(`select remote_state from public.site_lead_submissions where id='${id}';`))).toBe("a_processar");
     expect(valor(db.admin(`select state from public.site_lead_execution_ledger where first_submission_id='${id}' and scope='remote';`))).toBe("reserved");
+  });
+
+  it("acolhimento aceite bloqueia para sempre o segundo requestId da mesma pessoa", () => {
+    const segundo = valor(db.admin(`select id::text from public.site_lead_submissions where request_id='${PEDIDO_2}';`))!;
+    const preparado = db.admin(`
+      update public.site_lead_submissions s set remote_state='confirmado', ghl_contact_id='ghlC1'
+        where s.id='${segundo}';
+    `);
+    expect(preparado.ok, preparado.erro).toBe(true);
+    const r = db.comoServico(`select public.claim_site_lead_welcome_v2('${segundo}','experiencia-falcao')::text;`);
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain("acolhimento_ja_registado_para_a_mesma_pessoa");
+  });
+
+  it("acolhimento incerto mantém tombstone e bloqueia requestId posterior", () => {
+    const tel = "351900000781";
+    const p1 = "aaaaaaaa-8894-4888-8888-aaaaaaaaaaaa";
+    const p2 = "aaaaaaaa-8895-4888-8888-aaaaaaaaaaaa";
+    expect(ingerir(p1, "7".repeat(64), tel, null).ok).toBe(true);
+    expect(ingerir(p2, "8".repeat(64), tel, null).ok).toBe(true);
+    const ids = db.admin(`select id::text from public.site_lead_submissions where request_id in ('${p1}','${p2}') order by request_id;`).linhas.map((l) => l[0]!);
+    const contacto = valor(db.admin(`select contact_id::text from public.site_lead_submissions where id='${ids[0]}';`))!;
+    expect(db.admin(`update public.contacts set ghl_contact_id='ghlW2' where id='${contacto}'; update public.site_lead_submissions set remote_state='confirmado',ghl_contact_id='ghlW2' where id in ('${ids[0]}','${ids[1]}');`).ok).toBe(true);
+    expect(db.comoServico(`select public.claim_site_lead_welcome_v2('${ids[0]}','experiencia-falcao');`).ok).toBe(true);
+    const incerto = db.comoServico(`select public.finish_site_lead_welcome_v2('${ids[0]}','bloqueado','envio_incerto',null);`);
+    expect(incerto.ok, incerto.erro).toBe(true);
+    expect(valor(db.admin(`select state from public.site_lead_execution_ledger where first_submission_id='${ids[0]}' and scope='welcome';`))).toBe("uncertain");
+    const segundo = db.comoServico(`select public.claim_site_lead_welcome_v2('${ids[1]}','experiencia-falcao')::text;`);
+    expect(segundo.ok, segundo.erro).toBe(true);
+    expect(valor(segundo)).toContain("acolhimento_ja_registado_para_a_mesma_pessoa");
   });
 
   it("divergência com a identidade consentida vai para revisão sem mesclar", () => {
