@@ -27,6 +27,9 @@ export const LIMITACAO_ACOLHIMENTO =
 export const BLOQUEIO_ACOLHIMENTO =
   "Acolhimento desligado: o canal só envia depois de o administrador o ativar, com escrita no GoHighLevel ativa. Aceitação da API não é entrega — só há entrega com recibo do provedor.";
 
+export const NOTA_AUTOMATICO =
+  "Com o recebimento ligado, cada pedido novo é processado logo a seguir ao registo do próprio pedido (um pedido de cada vez, sem repetições): se a escrita no GoHighLevel estiver ligada, cria contacto e oportunidade; se o acolhimento também estiver ligado, envia a mensagem uma única vez. Pedidos antigos só avançam pelos botões manuais.";
+
 export type ContagemLeads = { total: number | null; emRevisao: number | null; erro: boolean };
 
 export type EstadoIntegracaoSite = {
@@ -40,6 +43,7 @@ export type EstadoIntegracaoSite = {
   ativa: boolean;
   escritaGhl: "pendente" | "habilitado" | "bloqueado";
   canalAcolhimento: "pendente" | "configurado" | "bloqueado";
+  escritaGlobalAtiva: boolean | null;
   acolhimento: string;
   pendencias: string[];
   leads: ContagemLeads;
@@ -90,6 +94,15 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     .eq("slug", FALCAO_SLUG)
     .maybeSingle();
 
+  const ligacao = await client
+    .from("ghl_connections")
+    .select("status,write_enabled")
+    .eq("location_id", FALCAO_LOCATION)
+    .maybeSingle();
+  const escritaGlobalAtiva = ligacao.error
+    ? null
+    : ligacao.data?.["status"] === "conectada" && ligacao.data["write_enabled"] === true;
+
   const leads = await contarLeads(client);
   const escrita = (integracao?.["remote_write_state"] ?? "pendente") as
     "pendente" | "habilitado" | "bloqueado";
@@ -105,6 +118,13 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     ...(escrita === "habilitado"
       ? []
       : ["Escrita no GoHighLevel (contacto e oportunidade) ainda não habilitada."]),
+    ...(escritaGlobalAtiva === false
+      ? ["A escrita global no GoHighLevel está desativada nesta conta: não é possível habilitar."]
+      : []),
+    ...(escritaGlobalAtiva === null
+      ? ["Não foi possível ler o estado da ligação ao GoHighLevel."]
+      : []),
+    NOTA_AUTOMATICO,
     CANAL_ACOLHIMENTO_NOTA,
     LIMITACAO_ACOLHIMENTO,
     ...(canal === "configurado" ? [] : [BLOQUEIO_ACOLHIMENTO]),
@@ -122,6 +142,7 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     ativa: Boolean(integracao?.["enabled"]),
     escritaGhl: escrita,
     canalAcolhimento: canal,
+    escritaGlobalAtiva,
     acolhimento: FALCAO_ACOLHIMENTO_TEXTO,
     pendencias,
     leads,
@@ -204,5 +225,62 @@ export async function configurarIntegracaoSite(
     };
   } catch {
     return { ok: false, message: "Não foi possível guardar a configuração. Tente novamente." };
+  }
+}
+
+
+export type AmbitoFlag = "remote_write" | "welcome_channel";
+
+const ROTULO: Record<AmbitoFlag, string> = {
+  remote_write: "Escrita no GoHighLevel",
+  welcome_channel: "Acolhimento",
+};
+
+/**
+ * Liga/desliga, em separado, a escrita remota e o canal de acolhimento.
+ * Só configura: não executa filas, não reprocessa pendências e nunca mexe no
+ * ledger nem em estados incertos. Desligar funciona mesmo sem credenciais.
+ */
+export async function definirFlagIntegracaoSite(
+  client: Cliente,
+  entrada: { confirm: boolean; scope: AmbitoFlag; enabled: boolean },
+  deps: { validarDestino?: typeof validarDestinoGhl } = {},
+): Promise<{ ok: boolean; message: string }> {
+  if (entrada.confirm !== true) return { ok: false, message: "Confirme a alteração." };
+  try {
+    if (!(await ehAdministrador(client)))
+      return { ok: false, message: "Acesso restrito a administradores." };
+
+    // Ligar exige destino confirmado na API oficial; desligar nunca depende disso.
+    if (entrada.enabled) {
+      const destino = await (deps.validarDestino ?? validarDestinoGhl)();
+      if (!destino.ok) return { ok: false, message: destino.message };
+    }
+
+    const { data, error } = await client.rpc("set_site_integration_flags_v2", {
+      _scope: entrada.scope,
+      _state: entrada.enabled ? "ligado" : "desligado",
+      _confirm: true,
+    });
+    const recibo = data as
+      | { remote_write_state?: string; welcome_channel_state?: string }
+      | null;
+    if (error || !recibo?.remote_write_state || !recibo.welcome_channel_state) {
+      return {
+        ok: false,
+        message: entrada.enabled
+          ? "Não foi possível habilitar. Confirme a ligação ao GoHighLevel desta conta, a escrita global e, no acolhimento, a escrita remota já habilitada."
+          : "Não foi possível guardar a alteração. Tente novamente.",
+      };
+    }
+    const estados = `Escrita: ${recibo.remote_write_state}. Acolhimento: ${recibo.welcome_channel_state}.`;
+    return {
+      ok: true,
+      message: entrada.enabled
+        ? `${ROTULO[entrada.scope]} habilitado. Novos pedidos passam a ser processados automaticamente; nada em fila foi executado agora. ${estados}`
+        : `${ROTULO[entrada.scope]} desligado. Nenhum pedido em curso foi reposto nem reenviado. ${estados}`,
+    };
+  } catch {
+    return { ok: false, message: "Não foi possível falar com o servidor. Tente novamente." };
   }
 }
