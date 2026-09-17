@@ -2,6 +2,7 @@ import { useOrganizacao } from "@/lib/organization";
 import { FUSO_DEMO, formatarDataHora } from "@/lib/clinic-time";
 import { SyncPendencias } from "@/components/sync-pendencias";
 import { BioreportSetup } from "@/components/bioreport-setup";
+import { FalcaoSiteIntegration } from "@/components/falcao-site-integration";
 import type { PendenciaContacto } from "@/lib/ghl-contacts.core";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -649,6 +650,7 @@ function Integracoes() {
           </TabsList>
 
           <TabsContent value="credenciais" className="mt-4 space-y-4">
+            <FalcaoSiteIntegration allowed={!demo && podeGerir} />
             <BioreportSetup allowed={!demo && podeGerir} />
             <div className="surface-card space-y-5 p-6">
               <p className="flex items-start gap-2 text-sm text-muted-foreground">

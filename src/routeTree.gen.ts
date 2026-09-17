@@ -23,6 +23,7 @@ import { Route as ModelosRouteImport } from './routes/modelos'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicBioreportEventRouteImport } from './routes/api/public/bioreport-event'
+import { Route as ApiPublicFalcaoLeadRouteImport } from './routes/api/public/falcao-lead'
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
 import { Route as ApiPublicHooksSincronizarAgendaRouteImport } from './routes/api/public/hooks/sincronizar-agenda'
 
@@ -97,6 +98,11 @@ const ApiPublicBioreportEventRoute = ApiPublicBioreportEventRouteImport.update({
   path: '/api/public/bioreport-event',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicFalcaoLeadRoute = ApiPublicFalcaoLeadRouteImport.update({
+  id: '/api/public/falcao-lead',
+  path: '/api/public/falcao-lead',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
   id: '/api/public/ghl-webhook',
   path: '/api/public/ghl-webhook',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
+  '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
+  '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
+  '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
+    | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
     | '/api/public/hooks/sincronizar-agenda'
   fileRoutesByTo: FileRoutesByTo
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
+    | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
     | '/api/public/hooks/sincronizar-agenda'
   id:
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
+    | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
     | '/api/public/hooks/sincronizar-agenda'
   fileRoutesById: FileRoutesById
@@ -236,6 +248,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicBioreportEventRoute: typeof ApiPublicBioreportEventRoute
+  ApiPublicFalcaoLeadRoute: typeof ApiPublicFalcaoLeadRoute
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
   ApiPublicHooksSincronizarAgendaRoute: typeof ApiPublicHooksSincronizarAgendaRoute
 }
@@ -340,6 +353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicBioreportEventRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/falcao-lead': {
+      id: '/api/public/falcao-lead'
+      path: '/api/public/falcao-lead'
+      fullPath: '/api/public/falcao-lead'
+      preLoaderRoute: typeof ApiPublicFalcaoLeadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/ghl-webhook': {
       id: '/api/public/ghl-webhook'
       path: '/api/public/ghl-webhook'
@@ -373,6 +393,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicBioreportEventRoute: ApiPublicBioreportEventRoute,
+  ApiPublicFalcaoLeadRoute: ApiPublicFalcaoLeadRoute,
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
   ApiPublicHooksSincronizarAgendaRoute: ApiPublicHooksSincronizarAgendaRoute,
 }
