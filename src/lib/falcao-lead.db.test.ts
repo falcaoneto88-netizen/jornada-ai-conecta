@@ -176,19 +176,73 @@ describe("ingresso do lead", () => {
     );
   });
 
-  it("pedidos simultâneos idênticos só produzem um recibo", async () => {
+  it("pedidos simultâneos idênticos devolvem ambos o mesmo recibo e um só contacto", async () => {
     const pedido = "aaaaaaaa-4444-4444-8444-aaaaaaaaaaaa";
-    await Promise.all([
-      db.adminAsync(
-        `set role service_role; select public.ingest_site_lead('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now());`,
-      ),
-      db.adminAsync(
-        `set role service_role; select public.ingest_site_lead('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now());`,
-      ),
-    ]);
+    const sql = `set role service_role; select public.ingest_site_lead('experiencia-falcao','${pedido}','${HASH_1}','Pessoa','+351900000333','351900000333',null,'2026-09-17.contact.v1', now())::text;`;
+    const [a, b] = await Promise.all([db.adminAsync(sql), db.adminAsync(sql)]);
+    expect(a.ok, a.erro).toBe(true);
+    expect(b.ok, b.erro).toBe(true);
+    const recibos = [valor(a) ?? "", valor(b) ?? ""].map(
+      (t) => /"receipt_id": "([0-9a-f-]+)"/.exec(t)?.[1] ?? "",
+    );
+    expect(recibos[0]).toBeTruthy();
+    expect(recibos[0]).toBe(recibos[1]);
+    expect([valor(a), valor(b)].filter((t) => (t ?? "").includes('"duplicate": true')).length).toBe(1);
     expect(
       valor(db.admin(`select count(*) from public.site_lead_submissions where request_id='${pedido}';`)),
     ).toBe("1");
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.contacts where organization_id='${orgA}' and phone_normalized='351900000333';`,
+        ),
+      ),
+    ).toBe("1");
+  });
+
+  it("pedidos distintos simultâneos da mesma pessoa não duplicam o contacto", async () => {
+    const um = "aaaaaaaa-5555-4555-8555-aaaaaaaaaaaa";
+    const dois = "aaaaaaaa-6666-4666-8666-aaaaaaaaaaaa";
+    const sql = (pedido: string, hash: string) =>
+      `set role service_role; select public.ingest_site_lead('experiencia-falcao','${pedido}','${hash}','Pessoa','+351900000444','351900000444',null,'2026-09-17.contact.v1', now())::text;`;
+    const [a, b] = await Promise.all([
+      db.adminAsync(sql(um, HASH_1)),
+      db.adminAsync(sql(dois, HASH_2)),
+    ]);
+    expect(a.ok, a.erro).toBe(true);
+    expect(b.ok, b.erro).toBe(true);
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.contacts where organization_id='${orgA}' and phone_normalized='351900000444';`,
+        ),
+      ),
+    ).toBe("1");
+    const estados = [valor(a) ?? "", valor(b) ?? ""].join(" ");
+    expect(estados).toContain('"local_state": "contacto_criado"');
+    expect(estados).toContain('"local_state": "contacto_existente"');
+  });
+
+  it("o mesmo pedido com dados diferentes é recusado sem alterar o recibo", () => {
+    const antes = valor(
+      db.admin(`select payload_hash from public.site_lead_submissions where request_id='${PEDIDO_1}';`),
+    );
+    const r = ingerir(PEDIDO_1, "3".repeat(64), "351900000111", null);
+    expect(r.ok).toBe(false);
+    expect(
+      valor(
+        db.admin(`select payload_hash from public.site_lead_submissions where request_id='${PEDIDO_1}';`),
+      ),
+    ).toBe(antes);
+  });
+
+  it("aplica limite por identidade dentro da janela", () => {
+    const resultados = [1, 2, 3, 4, 5, 6].map((n) =>
+      ingerir(`aaaaaaaa-77${String(n)}7-4777-8777-aaaaaaaaaaaa`, HASH_1, "351900000555", null),
+    );
+    expect(resultados.slice(0, 5).every((r) => r.ok)).toBe(true);
+    expect(resultados[5]?.ok).toBe(false);
+    expect(resultados[5]?.erro).toContain("Limite");
   });
 
   it("não regista dados pessoais na auditoria", () => {
