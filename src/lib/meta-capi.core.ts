@@ -160,37 +160,43 @@ export function interpretarRespostaMeta(entrada: {
   corpo: unknown;
   redirecionado?: boolean;
 }): LeituraRespostaMeta {
-  const corpo =
-    entrada.corpo && typeof entrada.corpo === "object" && !Array.isArray(entrada.corpo)
-      ? (entrada.corpo as Record<string, unknown>)
-      : null;
-  const fbtraceBruto = corpo?.["fbtrace_id"];
-  const fbtraceId =
-    typeof fbtraceBruto === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(fbtraceBruto)
-      ? fbtraceBruto
-      : null;
+  const objeto = (v: unknown): Record<string, unknown> | null =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  const corpo = objeto(entrada.corpo);
+  const erro = objeto(corpo?.["error"]);
+  const traco = (v: unknown) =>
+    typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : null;
+  const fbtraceId = traco(corpo?.["fbtrace_id"]) ?? traco(erro?.["fbtrace_id"]);
+  const diag = (motivo?: string) =>
+    diagnosticoEstruturado({
+      httpStatus: entrada.httpStatus,
+      erro,
+      ...(motivo === undefined ? {} : { motivo }),
+    });
 
   if (entrada.redirecionado === true) {
     return {
       status: "uncertain",
       eventsReceived: null,
       fbtraceId,
-      diagnostico: "Resposta redirecionada: envio recusado e resultado por confirmar.",
+      diagnostico: diag(DIAGNOSTICO_REDIRECIONAMENTO),
     };
   }
 
-  const ok = entrada.httpStatus >= 200 && entrada.httpStatus < 300;
-  if (!ok) {
-    const erro = corpo?.["error"];
-    const mensagem =
-      erro && typeof erro === "object" && !Array.isArray(erro)
-        ? ((erro as Record<string, unknown>)["message"] ?? erro)
-        : corpo ?? "";
+  // 5xx é indisponibilidade do lado da Meta: nunca uma recusa conclusiva.
+  if (entrada.httpStatus >= 500) {
+    return { status: "uncertain", eventsReceived: null, fbtraceId, diagnostico: diag() };
+  }
+  if (entrada.httpStatus < 200 || entrada.httpStatus >= 300) {
+    return { status: "rejected", eventsReceived: null, fbtraceId, diagnostico: diag() };
+  }
+  // Corpo 2xx com objeto error nunca é aceitação.
+  if (erro) {
     return {
       status: "rejected",
       eventsReceived: null,
       fbtraceId,
-      diagnostico: sanitizarDiagnostico(`HTTP ${entrada.httpStatus}: ${sanitizarDiagnostico(mensagem)}`),
+      diagnostico: diag(DIAGNOSTICO_ERRO_EM_2XX),
     };
   }
 
@@ -200,7 +206,7 @@ export function interpretarRespostaMeta(entrada: {
       status: "uncertain",
       eventsReceived: null,
       fbtraceId,
-      diagnostico: "Resposta sem events_received: resultado por confirmar na Meta.",
+      diagnostico: diag(DIAGNOSTICO_SEM_CONTAGEM),
     };
   }
   if (recebidos !== 1) {
@@ -208,13 +214,8 @@ export function interpretarRespostaMeta(entrada: {
       status: "uncertain",
       eventsReceived: recebidos,
       fbtraceId,
-      diagnostico: `A Meta indicou ${recebidos} eventos recebidos em vez de 1.`,
+      diagnostico: diag(`events_received=${recebidos}`),
     };
   }
-  return {
-    status: "api_accepted",
-    eventsReceived: 1,
-    fbtraceId,
-    diagnostico: "Pedido aceite pela API. Aceitação não é prova de visualização no Gestor de Eventos.",
-  };
+  return { status: "api_accepted", eventsReceived: 1, fbtraceId, diagnostico: diag() };
 }
