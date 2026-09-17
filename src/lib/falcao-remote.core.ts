@@ -2,23 +2,37 @@
  * Processamento remoto (GoHighLevel) dos leads já recebidos pelo site.
  *
  * Regras invioláveis:
+ *  - identidade só por procura exata documentada (duplicate check por telefone e
+ *    por e-mail, em separado). Resposta vazia, malformada ou truncada nunca
+ *    conclui "não existe" nem "existe": bloqueia;
+ *  - o identificador remoto já guardado é sempre relido e revalidado (location,
+ *    telefone/e-mail exatos, DND e bloqueios de canal) antes de qualquer escrita;
  *  - nunca move nem reabre oportunidades existentes;
- *  - identidade ambígua, DND/opt-out, permissão em falta ou resultado incerto
- *    bloqueiam o recibo para revisão humana — nunca há repetição automática;
- *  - só o funil e a etapa fixos da integração são usados.
+ *  - só há sucesso quando a persistência do desfecho é confirmada.
  */
 
 export type ResultadoRemotoApi<T> =
-  { ok: true; data: T } | { ok: false; code: string; message: string };
+  | { ok: true; data: T }
+  | { ok: false; code: string; message: string };
 
 export type ContactoRemoto = {
   id: string;
-  phoneNormalized: string | null;
+  locationId: string;
+  phone: string | null;
   email: string | null;
   dnd: boolean;
+  /** Canais com bloqueio explícito (SMS/WhatsApp/Call/e-mail). */
+  canaisBloqueados: string[];
 };
 
-export type OportunidadeRemota = { id: string; pipelineId: string | null; status: string | null };
+export type OportunidadeRemota = {
+  id: string;
+  name: string | null;
+  pipelineId: string | null;
+  stageId: string | null;
+  status: string | null;
+  contactId: string | null;
+};
 
 export type PedidoRemoto = {
   submission_id: string;
@@ -27,6 +41,7 @@ export type PedidoRemoto = {
   pipeline_id: string;
   stage_id: string;
   contact_id: string;
+  /** Identidade consentida no formulário — imutável, não é o cadastro atual. */
   full_name: string;
   phone: string | null;
   phone_normalized: string | null;
@@ -34,12 +49,31 @@ export type PedidoRemoto = {
   ghl_contact_id: string | null;
 };
 
+export type EstadoDesfecho = "confirmado" | "bloqueado" | "pendente_reconciliacao";
+
+export type DesfechoRemoto = {
+  submissionId: string;
+  estado: EstadoDesfecho;
+  motivo: string;
+  ghlContactId: string | null;
+  ghlOpportunityId: string | null;
+};
+
 export type DepsRemoto = {
-  procurar: (p: {
+  /**
+   * Procura exata documentada (duplicate check). `null` só quando a API
+   * respondeu de forma completa e explícita que não há correspondência.
+   */
+  procurarExato: (p: {
     locationId: string;
-    termo: string;
-  }) => Promise<ResultadoRemotoApi<ContactoRemoto[]>>;
-  criarContacto: (p: PedidoRemoto) => Promise<ResultadoRemotoApi<ContactoRemoto>>;
+    campo: "telefone" | "email";
+    valor: string;
+  }) => Promise<ResultadoRemotoApi<ContactoRemoto | null>>;
+  lerContacto: (p: {
+    locationId: string;
+    ghlContactId: string;
+  }) => Promise<ResultadoRemotoApi<ContactoRemoto>>;
+  criarContacto: (p: PedidoRemoto) => Promise<ResultadoRemotoApi<{ id: string }>>;
   oportunidades: (p: {
     locationId: string;
     ghlContactId: string;
@@ -50,114 +84,153 @@ export type DepsRemoto = {
     stageId: string;
     ghlContactId: string;
     nome: string;
-  }) => Promise<ResultadoRemotoApi<{ id: string }>>;
+  }) => Promise<ResultadoRemotoApi<OportunidadeRemota>>;
+  /** Persistência do desfecho; `ok:false` significa que nada foi confirmado. */
   concluir: (p: {
     submissionId: string;
     estado: "confirmado" | "bloqueado";
     motivo: string;
     ghlContactId: string | null;
-    ghlOpportunityId: string | null;
-  }) => Promise<void>;
-};
-
-export type DesfechoRemoto = {
-  submissionId: string;
-  estado: "confirmado" | "bloqueado";
-  motivo: string;
-  ghlContactId: string | null;
-  ghlOpportunityId: string | null;
+    oportunidade: OportunidadeRemota | null;
+  }) => Promise<{ ok: boolean }>;
 };
 
 /** Códigos que significam "não sabemos se a operação foi aplicada". */
-const INCERTO = new Set(["outcome_unknown", "timeout", "network_error"]);
+const INCERTO = new Set(["outcome_unknown", "timeout", "network_error", "malformed_response"]);
 
-function digitos(valor: string | null | undefined): string | null {
+export function digitos(valor: string | null | undefined): string | null {
   const so = (valor ?? "").replace(/\D/g, "");
   return so.length >= 8 ? so : null;
 }
 
-/** Correspondência exata: telefone só por dígitos, e-mail só em minúsculas. */
-export function corresponderExato(
-  candidatos: readonly ContactoRemoto[],
-  alvo: { telefone: string | null; email: string | null },
-): { tipo: "nenhum" } | { tipo: "unico"; contacto: ContactoRemoto } | { tipo: "ambiguo" } {
-  const telefone = digitos(alvo.telefone);
-  const email = alvo.email?.trim().toLowerCase() ?? null;
-  const exatos = candidatos.filter(
-    (c) =>
-      (telefone !== null && digitos(c.phoneNormalized) === telefone) ||
-      (email !== null && (c.email ?? "").trim().toLowerCase() === email),
-  );
-  const unicos = new Map(exatos.map((c) => [c.id, c]));
-  if (unicos.size === 0) return { tipo: "nenhum" };
-  if (unicos.size > 1) return { tipo: "ambiguo" };
-  return { tipo: "unico", contacto: [...unicos.values()][0]! };
+function mesmoEmail(a: string | null, b: string | null): boolean {
+  return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 }
 
-async function bloquear(
+/** O contacto remoto tem de pertencer à location e bater exatamente com o consentido. */
+export function validarContacto(
+  contacto: ContactoRemoto,
+  pedido: PedidoRemoto,
+): { ok: true } | { ok: false; motivo: string } {
+  if (contacto.locationId !== pedido.location_id) {
+    return { ok: false, motivo: "contacto_de_outra_location" };
+  }
+  const telefoneAlvo = digitos(pedido.phone_normalized ?? pedido.phone);
+  const emailAlvo = pedido.email?.trim().toLowerCase() ?? null;
+  const telefoneBate = telefoneAlvo !== null && digitos(contacto.phone) === telefoneAlvo;
+  const emailBate = emailAlvo !== null && mesmoEmail(contacto.email, emailAlvo);
+  if (!telefoneBate && !emailBate) return { ok: false, motivo: "identidade_nao_exata" };
+  // Um campo presente e diferente é divergência, não "permitido".
+  if (telefoneAlvo !== null && contacto.phone !== null && !telefoneBate) {
+    return { ok: false, motivo: "telefone_divergente" };
+  }
+  if (emailAlvo !== null && contacto.email !== null && !emailBate) {
+    return { ok: false, motivo: "email_divergente" };
+  }
+  if (contacto.dnd) return { ok: false, motivo: "contacto_com_dnd" };
+  if (contacto.canaisBloqueados.length > 0) return { ok: false, motivo: "canal_bloqueado" };
+  return { ok: true };
+}
+
+async function fechar(
+  deps: DepsRemoto,
+  pedido: PedidoRemoto,
+  estado: "confirmado" | "bloqueado",
+  motivo: string,
+  ghlContactId: string | null,
+  oportunidade: OportunidadeRemota | null,
+): Promise<DesfechoRemoto> {
+  let persistido = false;
+  try {
+    persistido = (
+      await deps.concluir({
+        submissionId: pedido.submission_id,
+        estado,
+        motivo,
+        ghlContactId,
+        oportunidade,
+      })
+    ).ok;
+  } catch {
+    persistido = false;
+  }
+  return {
+    submissionId: pedido.submission_id,
+    estado: persistido ? estado : "pendente_reconciliacao",
+    motivo: persistido ? motivo : `persistencia_falhou:${motivo}`,
+    ghlContactId,
+    ghlOpportunityId: oportunidade?.id ?? null,
+  };
+}
+
+const bloquear = (
   deps: DepsRemoto,
   pedido: PedidoRemoto,
   motivo: string,
   ghlContactId: string | null = null,
-): Promise<DesfechoRemoto> {
-  const desfecho: DesfechoRemoto = {
-    submissionId: pedido.submission_id,
-    estado: "bloqueado",
-    motivo,
-    ghlContactId,
-    ghlOpportunityId: null,
-  };
-  await deps.concluir({
-    submissionId: pedido.submission_id,
-    estado: "bloqueado",
-    motivo,
-    ghlContactId,
-    ghlOpportunityId: null,
-  });
-  return desfecho;
+): Promise<DesfechoRemoto> => fechar(deps, pedido, "bloqueado", motivo, ghlContactId, null);
+
+async function resolverContacto(
+  pedido: PedidoRemoto,
+  deps: DepsRemoto,
+): Promise<{ ok: true; id: string } | { ok: false; motivo: string; id: string | null }> {
+  if (pedido.ghl_contact_id) {
+    const lido = await deps.lerContacto({
+      locationId: pedido.location_id,
+      ghlContactId: pedido.ghl_contact_id,
+    });
+    if (!lido.ok) return { ok: false, motivo: `leitura_falhou:${lido.code}`, id: null };
+    const v = validarContacto(lido.data, pedido);
+    return v.ok
+      ? { ok: true, id: lido.data.id }
+      : { ok: false, motivo: v.motivo, id: lido.data.id };
+  }
+
+  const alvos: { campo: "telefone" | "email"; valor: string }[] = [];
+  if (pedido.phone) alvos.push({ campo: "telefone", valor: pedido.phone });
+  if (pedido.email) alvos.push({ campo: "email", valor: pedido.email });
+  if (alvos.length === 0) return { ok: false, motivo: "sem_identidade_para_procura", id: null };
+
+  const achados = new Set<string>();
+  for (const alvo of alvos) {
+    const res = await deps.procurarExato({
+      locationId: pedido.location_id,
+      campo: alvo.campo,
+      valor: alvo.valor,
+    });
+    if (!res.ok) return { ok: false, motivo: `procura_falhou:${res.code}`, id: null };
+    if (res.data) achados.add(res.data.id);
+  }
+  if (achados.size > 1) return { ok: false, motivo: "identidade_ambigua", id: null };
+
+  let id = [...achados][0] ?? null;
+  if (!id) {
+    const criado = await deps.criarContacto(pedido);
+    if (!criado.ok) {
+      return {
+        ok: false,
+        motivo: INCERTO.has(criado.code) ? "criacao_incerta" : `criacao_falhou:${criado.code}`,
+        id: null,
+      };
+    }
+    id = criado.data.id;
+  }
+
+  // Releitura obrigatória: o criado/encontrado tem de pertencer à location e ser exato.
+  const lido = await deps.lerContacto({ locationId: pedido.location_id, ghlContactId: id });
+  if (!lido.ok) return { ok: false, motivo: `releitura_falhou:${lido.code}`, id };
+  if (lido.data.id !== id) return { ok: false, motivo: "contacto_nao_corresponde", id };
+  const v = validarContacto(lido.data, pedido);
+  return v.ok ? { ok: true, id } : { ok: false, motivo: v.motivo, id };
 }
 
 export async function processarSubmissaoRemota(
   pedido: PedidoRemoto,
   deps: DepsRemoto,
 ): Promise<DesfechoRemoto> {
-  let ghlContactId = pedido.ghl_contact_id;
-
-  if (!ghlContactId) {
-    const termos = [pedido.phone_normalized ?? pedido.phone, pedido.email].filter(
-      (t): t is string => typeof t === "string" && t.length > 0,
-    );
-    if (termos.length === 0) return bloquear(deps, pedido, "sem_identidade_para_procura");
-
-    const encontrados: ContactoRemoto[] = [];
-    for (const termo of termos) {
-      const res = await deps.procurar({ locationId: pedido.location_id, termo });
-      if (!res.ok) return bloquear(deps, pedido, `procura_falhou:${res.code}`);
-      encontrados.push(...res.data);
-    }
-    const correspondencia = corresponderExato(encontrados, {
-      telefone: pedido.phone_normalized ?? pedido.phone,
-      email: pedido.email,
-    });
-    if (correspondencia.tipo === "ambiguo") return bloquear(deps, pedido, "identidade_ambigua");
-    if (correspondencia.tipo === "unico") {
-      if (correspondencia.contacto.dnd) {
-        return bloquear(deps, pedido, "contacto_com_dnd", correspondencia.contacto.id);
-      }
-      ghlContactId = correspondencia.contacto.id;
-    } else {
-      const criado = await deps.criarContacto(pedido);
-      if (!criado.ok) {
-        return bloquear(
-          deps,
-          pedido,
-          INCERTO.has(criado.code) ? "criacao_incerta" : `criacao_falhou:${criado.code}`,
-        );
-      }
-      if (criado.data.dnd) return bloquear(deps, pedido, "contacto_com_dnd", criado.data.id);
-      ghlContactId = criado.data.id;
-    }
-  }
+  const contacto = await resolverContacto(pedido, deps);
+  if (!contacto.ok) return bloquear(deps, pedido, contacto.motivo, contacto.id);
+  const ghlContactId = contacto.id;
 
   const existentes = await deps.oportunidades({
     locationId: pedido.location_id,
@@ -168,21 +241,18 @@ export async function processarSubmissaoRemota(
   }
   const jaNoFunil = existentes.data.find((o) => o.pipelineId === pedido.pipeline_id);
   if (jaNoFunil) {
-    // Nunca mover nem reabrir: o registo aponta para a oportunidade que já existe.
-    await deps.concluir({
-      submissionId: pedido.submission_id,
-      estado: "confirmado",
-      motivo: "oportunidade_existente_preservada",
+    // Nunca mover nem reabrir: espelha-se exatamente o que o remoto devolveu.
+    if (!jaNoFunil.stageId || !jaNoFunil.status) {
+      return bloquear(deps, pedido, "oportunidade_existente_sem_dados_reais", ghlContactId);
+    }
+    return fechar(
+      deps,
+      pedido,
+      "confirmado",
+      "oportunidade_existente_preservada",
       ghlContactId,
-      ghlOpportunityId: jaNoFunil.id,
-    });
-    return {
-      submissionId: pedido.submission_id,
-      estado: "confirmado",
-      motivo: "oportunidade_existente_preservada",
-      ghlContactId,
-      ghlOpportunityId: jaNoFunil.id,
-    };
+      jaNoFunil,
+    );
   }
 
   const nova = await deps.criarOportunidade({
@@ -200,19 +270,22 @@ export async function processarSubmissaoRemota(
       ghlContactId,
     );
   }
+  const criada = nova.data;
+  const coerente =
+    criada.id.length > 0 &&
+    criada.contactId === ghlContactId &&
+    criada.pipelineId === pedido.pipeline_id &&
+    criada.stageId === pedido.stage_id &&
+    typeof criada.status === "string" &&
+    criada.status.length > 0;
+  if (!coerente) return bloquear(deps, pedido, "oportunidade_criada_incoerente", ghlContactId);
 
-  await deps.concluir({
-    submissionId: pedido.submission_id,
-    estado: "confirmado",
-    motivo: "contacto_e_oportunidade_confirmados",
+  return fechar(
+    deps,
+    pedido,
+    "confirmado",
+    "contacto_e_oportunidade_confirmados",
     ghlContactId,
-    ghlOpportunityId: nova.data.id,
-  });
-  return {
-    submissionId: pedido.submission_id,
-    estado: "confirmado",
-    motivo: "contacto_e_oportunidade_confirmados",
-    ghlContactId,
-    ghlOpportunityId: nova.data.id,
-  };
+    criada,
+  );
 }
