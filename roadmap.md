@@ -41,3 +41,14 @@
 - [ ] Ligar o recebimento no cartão de Integrações (desligado por omissão)
 - [ ] Escrita no GoHighLevel (contacto + oportunidade) por validar — mantida bloqueada
 - [ ] Canal e modelo aprovado do acolhimento por confirmar — nada é enviado
+
+### Correções de revisão (2026-09-17, migração 0001)
+- [x] Ingresso serializado por pedido e por identidade (sem corrida de idempotência)
+- [x] Configuração restrita aos valores fixos e validada no funil real do GoHighLevel
+- [x] Contagens exatas no cartão, com aviso explícito quando a leitura falha
+- [x] Limites de abuso por identidade e por integração (sem IP em bruto); reenvios não consomem quota
+- [x] Recibo validado campo a campo; limite temporário responde 429
+- [x] Escrita remota (contacto + oportunidade) reservada, idempotente e auditada
+- [ ] Canal do acolhimento por verificar: só existe envio pelo GoHighLevel, dependente de escrita ativa, modelo aprovado e janela de 24 h
+- [ ] `FALCAO_SITE_SIGNING_SECRET` por registar pelo proprietário
+- [ ] `remote_write_state` continua 'pendente': escrita remota desligada
