@@ -8,10 +8,35 @@ import {
   leadSchema,
   lerCorpoLimitado,
   processarLeadFalcao,
+  validarRecibo,
   type LeadStore,
+  type ReciboLead,
   type ResultadoIngresso,
 } from "./falcao-lead.core";
-import { compararHex, hmacHex } from "./falcao-lead.server";
+import { compararHex, criarLeadStore, hmacHex } from "./falcao-lead.server";
+
+const reciboValido = (over: Record<string, unknown> = {}) => ({
+  receipt_id: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+  request_id: "11111111-2222-4333-8444-555555555555",
+  status: "registado",
+  local_state: "contacto_criado",
+  remote_state: "pendente",
+  welcome_state: "pendente",
+  duplicate: false,
+  ...over,
+});
+
+const entradaStore = () => ({
+  source: "experiencia-falcao",
+  requestId: "11111111-2222-4333-8444-555555555555",
+  payloadHash: "a".repeat(64),
+  fullName: "Pessoa",
+  phone: "+351912345678",
+  phoneNormalized: "351912345678",
+  email: null,
+  consentVersion: "2026-09-17.contact.v1",
+  consentAt: new Date().toISOString(),
+});
 
 const SEGREDO = "a".repeat(64);
 
@@ -30,16 +55,17 @@ const bytes = (corpo: unknown) => new TextEncoder().encode(JSON.stringify(corpo)
 const assinar = (corpo: Uint8Array) =>
   createHmac("sha256", Buffer.from(SEGREDO, "utf8")).update(Buffer.from(corpo)).digest("hex");
 
-const recibo = (over: Partial<ResultadoIngresso & Record<string, unknown>> = {}) => ({
-  receipt_id: "r-1",
-  request_id: "11111111-2222-4333-8444-555555555555",
-  status: "registado",
-  local_state: "contacto_criado",
-  remote_state: "pendente",
-  welcome_state: "pendente",
-  duplicate: false,
-  ...over,
-});
+const recibo = (over: Record<string, unknown> = {}) =>
+  ({
+    receipt_id: "r-1",
+    request_id: "11111111-2222-4333-8444-555555555555",
+    status: "registado",
+    local_state: "contacto_criado",
+    remote_state: "pendente",
+    welcome_state: "pendente",
+    duplicate: false,
+    ...over,
+  }) as unknown as ReciboLead;
 
 function store(resultado: ResultadoIngresso): LeadStore & { ingest: ReturnType<typeof vi.fn> } {
   return { ingest: vi.fn(async () => resultado) } as never;
@@ -178,5 +204,46 @@ describe("ingresso Experiência Falcão", () => {
     });
     const r = await lerCorpoLimitado(grande);
     expect(r).toEqual({ ok: false, status: 413 });
+  });
+});
+
+describe("validação estrita do recibo e dos campos", () => {
+  it("recusa e-mail vazio e e-mail acima de 160 caracteres", () => {
+    expect(leadSchema.safeParse(leadValido({ email: "" })).success).toBe(false);
+    expect(
+      leadSchema.safeParse(leadValido({ email: `${"a".repeat(160)}@exemplo.test` })).success,
+    ).toBe(false);
+    expect(leadSchema.safeParse(leadValido({ email: "pessoa@exemplo.test" })).success).toBe(true);
+    expect(leadSchema.safeParse(leadValido()).success).toBe(true);
+  });
+
+  it("aceita apenas estados conhecidos no recibo", () => {
+    expect(validarRecibo(reciboValido())).not.toBeNull();
+    expect(validarRecibo(reciboValido({ status: "inventado" }))).toBeNull();
+    expect(validarRecibo(reciboValido({ remote_state: undefined }))).toBeNull();
+    expect(validarRecibo(reciboValido({ receipt_id: "r-1" }))).toBeNull();
+    expect(validarRecibo(reciboValido({ duplicate: "sim" }))).toBeNull();
+  });
+
+  it("um recibo inválido do banco nunca vira sucesso", async () => {
+    const store = criarLeadStore({
+      rpc: async () => ({ data: reciboValido({ local_state: "?" }), error: null }),
+    } as never);
+    const r = await store.ingest(entradaStore());
+    expect(r.outcome).toBe("erro");
+  });
+
+  it("o limite temporário responde 429 e não declara sucesso", async () => {
+    const store = criarLeadStore({
+      rpc: async () => ({ data: null, error: { code: "53400", message: "limite" } }),
+    } as never);
+    expect((await store.ingest(entradaStore())).outcome).toBe("limite");
+    const corpo = bytes(leadValido());
+    const resposta = await processarLeadFalcao(
+      { corpo, assinatura: assinar(corpo) },
+      deps({ ingest: async () => ({ outcome: "limite" as const }) }),
+    );
+    expect(resposta.status).toBe(429);
+    expect(resposta.body["ok"]).toBe(false);
   });
 });

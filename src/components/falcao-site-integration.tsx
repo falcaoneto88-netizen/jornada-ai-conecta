@@ -5,14 +5,13 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  configurarIntegracaoFalcao,
-  estadoIntegracaoFalcao,
-} from "@/lib/falcao-site.functions";
+import { processarLeadsFalcao } from "@/lib/falcao-remote.functions";
+import { configurarIntegracaoFalcao, estadoIntegracaoFalcao } from "@/lib/falcao-site.functions";
 
 export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoIntegracaoFalcao);
   const configurar = useServerFn(configurarIntegracaoFalcao);
+  const processar = useServerFn(processarLeadsFalcao);
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
@@ -78,11 +77,11 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             </div>
             <div>
               <dt className="text-muted-foreground">Pedidos recebidos</dt>
-              <dd className="font-medium">{data.leads.total}</dd>
+              <dd className="font-medium">{data.leads.total ?? "Indisponível"}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Em revisão</dt>
-              <dd className="font-medium">{data.leads.emRevisao}</dd>
+              <dd className="font-medium">{data.leads.emRevisao ?? "Indisponível"}</dd>
             </div>
           </dl>
 
@@ -109,6 +108,26 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
             <Button variant="outline" disabled={pending} onClick={() => void guardar(false)}>
               Desligar
             </Button>
+            {data.escritaGhl === "habilitado" && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  setPending(true);
+                  void processar({ data: undefined })
+                    .then((r) => (r.ok ? toast.success(r.message) : toast.error(r.message)))
+                    .catch(() => toast.error("Não foi possível processar agora."))
+                    .finally(() => {
+                      setPending(false);
+                      void queryClient.invalidateQueries({
+                        queryKey: ["integracao-experiencia-falcao"],
+                      });
+                    });
+                }}
+              >
+                Processar leads no GoHighLevel
+              </Button>
+            )}
           </div>
         </>
       )}

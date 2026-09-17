@@ -4,7 +4,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import type { LeadStore, ResultadoIngresso } from "./falcao-lead.core";
+import { validarRecibo, type LeadStore, type ResultadoIngresso } from "./falcao-lead.core";
 
 /** Destino autorizado, fixo no servidor e reconferido contra o binding real. */
 export const FALCAO_LOCATION = "ok2UHC2QMZsd8UHsAgEa";
@@ -14,8 +14,9 @@ export const FALCAO_SLUG = "experiencia-falcao";
 export const FALCAO_STAGE_LOCAL = "novo_lead";
 export const FALCAO_SITE_URL = "https://experiencia-falcao-teste.falcaoneto88.chatgpt.site";
 
+/** Rascunho neutro; {{nome}} só é preenchido quando houver canal verificado. */
 export const FALCAO_ACOLHIMENTO_RASCUNHO =
-  "Olá! Somos a equipa do Dr. João Falcão. Recebemos o seu pedido de contacto pela Experiência Falcão. Como podemos ajudar? Se preferir não receber mais mensagens, responda SAIR.";
+  "Olá, {{nome}}! Sou da equipa do Dr. João Falcão. Recebemos o seu pedido de contacto pela Experiência Falcão. Como podemos ajudar? Se preferir não receber mensagens, diga-nos por aqui.";
 
 export function segredoFalcao(): string | null {
   const valor = (process.env["FALCAO_SITE_SIGNING_SECRET"] ?? "").trim();
@@ -23,7 +24,9 @@ export function segredoFalcao(): string | null {
 }
 
 export async function hmacHex(segredo: string, corpo: Uint8Array): Promise<string> {
-  return createHmac("sha256", Buffer.from(segredo, "utf8")).update(Buffer.from(corpo)).digest("hex");
+  return createHmac("sha256", Buffer.from(segredo, "utf8"))
+    .update(Buffer.from(corpo))
+    .digest("hex");
 }
 
 export function compararHex(recebida: string, esperada: string): boolean {
@@ -56,25 +59,14 @@ export function criarLeadStore(admin: ClienteRpc): LeadStore {
       });
       if (error) {
         if (error.code === "23505") return { outcome: "conflito" };
+        if (error.code === "53400") return { outcome: "limite" };
         if (error.code === "42501") return { outcome: "indisponivel" };
         if (error.code === "22023" || error.code === "22P02") return { outcome: "invalido" };
         return { outcome: "erro" };
       }
-      if (!data || typeof data !== "object") return { outcome: "erro" };
-      const r = data as Record<string, unknown>;
-      if (typeof r["receipt_id"] !== "string") return { outcome: "erro" };
-      return {
-        outcome: "ok",
-        recibo: {
-          receipt_id: String(r["receipt_id"]),
-          request_id: String(r["request_id"]),
-          status: String(r["status"]),
-          local_state: String(r["local_state"]),
-          remote_state: String(r["remote_state"]),
-          welcome_state: String(r["welcome_state"]),
-          duplicate: Boolean(r["duplicate"]),
-        },
-      };
+      // Recibo inválido nunca vira sucesso: falha fechada para reconciliação.
+      const recibo = validarRecibo(data);
+      return recibo ? { outcome: "ok", recibo } : { outcome: "erro" };
     },
   };
 }

@@ -1114,22 +1114,56 @@ export type Database = {
           },
         ]
       }
+      site_lead_rate: {
+        Row: {
+          bucket: string
+          hits: number
+          integration_id: string
+          window_start: string
+        }
+        Insert: {
+          bucket: string
+          hits?: number
+          integration_id: string
+          window_start: string
+        }
+        Update: {
+          bucket?: string
+          hits?: number
+          integration_id?: string
+          window_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_lead_rate_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "site_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_lead_submissions: {
         Row: {
           consent_at: string
           consent_version: string
           contact_id: string | null
           created_at: string
+          ghl_contact_id: string | null
+          ghl_opportunity_id: string | null
           id: string
           integration_id: string
           local_state: string
           organization_id: string
           payload_hash: string
+          remote_attempted_at: string | null
+          remote_reason: string | null
           remote_state: string
           request_id: string
           review_reason: string | null
           status: string
           updated_at: string
+          welcome_reason: string | null
           welcome_state: string
         }
         Insert: {
@@ -1137,16 +1171,21 @@ export type Database = {
           consent_version: string
           contact_id?: string | null
           created_at?: string
+          ghl_contact_id?: string | null
+          ghl_opportunity_id?: string | null
           id?: string
           integration_id: string
           local_state: string
           organization_id: string
           payload_hash: string
+          remote_attempted_at?: string | null
+          remote_reason?: string | null
           remote_state?: string
           request_id: string
           review_reason?: string | null
           status: string
           updated_at?: string
+          welcome_reason?: string | null
           welcome_state?: string
         }
         Update: {
@@ -1154,16 +1193,21 @@ export type Database = {
           consent_version?: string
           contact_id?: string | null
           created_at?: string
+          ghl_contact_id?: string | null
+          ghl_opportunity_id?: string | null
           id?: string
           integration_id?: string
           local_state?: string
           organization_id?: string
           payload_hash?: string
+          remote_attempted_at?: string | null
+          remote_reason?: string | null
           remote_state?: string
           request_id?: string
           review_reason?: string | null
           status?: string
           updated_at?: string
+          welcome_reason?: string | null
           welcome_state?: string
         }
         Relationships: [
@@ -1302,6 +1346,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
       configure_bioreport_integration: {
         Args: {
           _confirm: boolean
@@ -1327,6 +1372,16 @@ export type Database = {
         Returns: Json
       }
       current_org_id: { Args: never; Returns: string }
+      finish_site_lead_remote: {
+        Args: {
+          _ghl_contact: string
+          _ghl_opportunity: string
+          _reason: string
+          _state: string
+          _submission: string
+        }
+        Returns: Json
+      }
       ghl_apply_contact_event: {
         Args: {
           _email: string
