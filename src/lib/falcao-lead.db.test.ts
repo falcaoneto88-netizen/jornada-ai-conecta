@@ -61,7 +61,8 @@ beforeAll(async () => {
       update public.profiles set organization_id = '${orgA}' where id = '${UID_V}';
       delete from public.user_roles where user_id = '${UID_V}';
       insert into public.user_roles (user_id, organization_id, role) values ('${UID_V}','${orgA}','visualizador');
-      insert into public.ghl_location_bindings (location_id, organization_id) values ('${LOCATION}','${orgA}');
+      insert into public.ghl_location_bindings (location_id, organization_id) values ('${LOCATION}','${orgA}')
+        on conflict (location_id) do update set organization_id = excluded.organization_id;
       insert into public.journey_stages (organization_id, key, name, position, color)
         values ('${orgA}','novo_lead','Novo Lead', 1, '#000000')
         on conflict do nothing;
