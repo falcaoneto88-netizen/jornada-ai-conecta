@@ -42,6 +42,7 @@ beforeAll(async () => {
   for (const ficheiro of [
     "drizzle/migrations/0000_site_integration_experiencia_falcao.sql",
     "drizzle/migrations/0001_site_lead_serializacao_quota_e_escrita_remota.sql",
+    "drizzle/migrations/0002_site_lead_acolhimento_sms_outbox.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -365,6 +366,95 @@ describe("escrita remota reservada e auditada", () => {
       valor(
         db.admin(
           `select count(*) from public.audit_logs where action like 'site_lead.remote_%' and metadata::text ilike '%Pessoa%';`,
+        ),
+      ),
+    ).toBe("0");
+  });
+});
+
+describe("acolhimento pelo canal existente", () => {
+  const recibo = () =>
+    valor(
+      db.admin(
+        `select id::text from public.site_lead_submissions where request_id='${PEDIDO_1}' and organization_id='${orgA}';`,
+      ),
+    )!;
+
+  it("não reserva enquanto o canal não estiver ativado pelo administrador", () => {
+    const r = db.comoServico(`select public.claim_site_lead_welcome('${recibo()}');`);
+    expect(r.ok).toBe(false);
+    expect(r.erro).toContain("Canal de acolhimento não configurado");
+  });
+
+  it("só o administrador liga os interruptores da integração", () => {
+    const negado = db.comoUtilizador(
+      UID_V,
+      `select public.set_site_integration_flags('${orgA}','habilitado','configurado',true);`,
+    );
+    expect(negado.ok).toBe(false);
+    const ok = db.comoUtilizador(
+      UID_A,
+      `select public.set_site_integration_flags('${orgA}','habilitado','configurado',true)::text;`,
+    );
+    expect(ok.ok, ok.erro).toBe(true);
+    expect(valor(ok)).toContain('"welcome_channel_state": "configurado"');
+  });
+
+  it("uma única tentativa: envio aceite não é entrega e não se repete", () => {
+    const id = recibo();
+    const reserva = db.comoServico(`select public.claim_site_lead_welcome('${id}')::text;`);
+    expect(reserva.ok, reserva.erro).toBe(true);
+    expect(valor(reserva)).toContain('"consent_version": "2026-09-17.contact.v1"');
+
+    const segunda = db.comoServico(`select public.claim_site_lead_welcome('${id}');`);
+    expect(segunda.ok).toBe(false);
+
+    const fim = db.comoServico(
+      `select public.finish_site_lead_welcome('${id}','enviado','aceite_pela_api:accepted','msg1')::text;`,
+    );
+    expect(fim.ok, fim.erro).toBe(true);
+    expect(valor(fim)).toContain('"delivered": false');
+    expect(
+      valor(db.admin(`select welcome_state from public.site_lead_submissions where id='${id}';`)),
+    ).toBe("enviado");
+    expect(
+      valor(
+        db.admin(
+          `select coalesce(welcome_delivered_at::text,'nulo') from public.site_lead_submissions where id='${id}';`,
+        ),
+      ),
+    ).toBe("nulo");
+  });
+
+  it("entrega só com recibo real do provedor para a mesma mensagem", () => {
+    const id = recibo();
+    const errada = db.comoServico(
+      `select public.record_site_lead_welcome_delivery('${id}','outra', now());`,
+    );
+    expect(errada.ok).toBe(false);
+    const certa = db.comoServico(
+      `select public.record_site_lead_welcome_delivery('${id}','msg1', now())::text;`,
+    );
+    expect(certa.ok, certa.erro).toBe(true);
+    expect(
+      valor(db.admin(`select welcome_state from public.site_lead_submissions where id='${id}';`)),
+    ).toBe("entregue");
+  });
+
+  it("a auditoria do acolhimento regista intenção e não guarda a mensagem nem dados pessoais", () => {
+    expect(
+      Number(
+        valor(
+          db.admin(
+            `select count(*) from public.audit_logs where action='site_lead.welcome_intent';`,
+          ),
+        ),
+      ),
+    ).toBeGreaterThan(0);
+    expect(
+      valor(
+        db.admin(
+          `select count(*) from public.audit_logs where action like 'site_lead.welcome%' and (metadata::text ilike '%Pessoa%' or metadata::text ilike '%Olá%');`,
         ),
       ),
     ).toBe("0");

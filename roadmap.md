@@ -52,3 +52,11 @@
 - [ ] Canal do acolhimento por verificar: só existe envio pelo GoHighLevel, dependente de escrita ativa, modelo aprovado e janela de 24 h
 - [ ] `FALCAO_SITE_SIGNING_SECRET` por registar pelo proprietário
 - [ ] `remote_write_state` continua 'pendente': escrita remota desligada
+
+### Acolhimento pelo canal existente (2026-09-17, migração 0002)
+- [x] Envio pelo tipo SMS da API oficial, encaminhado pelo provedor predefinido da conta (ZaptosWPP V2)
+- [x] Outbox durável com intenção auditada e uma única tentativa por recibo
+- [x] DND/opt-out verificados imediatamente antes do envio
+- [x] Estados separados: enviado (aceite pela API) e entregue (só com recibo do provedor)
+- [x] Interruptores explícitos do administrador; tudo desligado por omissão
+- [ ] Teste controlado do encaminhamento pelo provedor (sem prova técnica na API)

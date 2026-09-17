@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
-  FALCAO_ACOLHIMENTO_RASCUNHO,
   FALCAO_LOCATION,
   FALCAO_PIPELINE,
   FALCAO_SITE_URL,
@@ -10,18 +9,23 @@ import {
   FALCAO_STAGE_LOCAL,
   segredoFalcao,
 } from "./falcao-lead.server";
+import { FALCAO_ACOLHIMENTO_TEXTO } from "./falcao-welcome.core";
 import { FALCAO_SOURCE } from "./falcao-lead.core";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets } from "./ghl.server";
 
 /**
- * Canal do acolhimento: não existe neste código qualquer provedor de WhatsApp
- * verificado. A única via de envio disponível é a operação de escrita do
- * GoHighLevel (conversations/messages), hoje bloqueada por write_enabled e sem
- * modelo aprovado nem janela de sessão confirmada. Enquanto isso não for
- * verificado, o acolhimento fica apenas como rascunho.
+ * Canal do acolhimento: usa a ligação de mensagens já existente do GoHighLevel
+ * (tipo SMS), cuja rota na location autorizada é o provedor predefinido
+ * ZaptosWPP V2. Não há credencial nova nem assinatura adicional.
  */
+export const CANAL_ACOLHIMENTO_NOTA =
+  "Acolhimento pelo canal de mensagens já existente da conta: a mensagem segue como SMS na API oficial e é encaminhada pelo provedor predefinido da location (ZaptosWPP V2 — WhatsApp like SMS). Sem credencial nova.";
+
+export const LIMITACAO_ACOLHIMENTO =
+  "Limitação: o encaminhamento por esse provedor só está comprovado pela seleção manual na conta; a API não devolve prova do canal. Faça um teste controlado antes de usar com pessoas reais.";
+
 export const BLOQUEIO_ACOLHIMENTO =
-  "Canal de WhatsApp por verificar: no código só existe o envio pelo GoHighLevel (conversations/messages), que depende de escrita ativa, modelo aprovado e janela de 24 horas. Nada é enviado.";
+  "Acolhimento desligado: o canal só envia depois de o administrador o ativar, com escrita no GoHighLevel ativa. Aceitação da API não é entrega — só há entrega com recibo do provedor.";
 
 export type ContagemLeads = { total: number | null; emRevisao: number | null; erro: boolean };
 
@@ -35,6 +39,7 @@ export type EstadoIntegracaoSite = {
   configurada: boolean;
   ativa: boolean;
   escritaGhl: "pendente" | "habilitado" | "bloqueado";
+  canalAcolhimento: "pendente" | "configurado" | "bloqueado";
   acolhimento: string;
   pendencias: string[];
   leads: ContagemLeads;
@@ -88,6 +93,8 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
   const leads = await contarLeads(client);
   const escrita = (integracao?.["remote_write_state"] ?? "pendente") as
     "pendente" | "habilitado" | "bloqueado";
+  const canal = (integracao?.["welcome_channel_state"] ?? "pendente") as
+    "pendente" | "configurado" | "bloqueado";
 
   const pendencias = [
     ...(segredoPresente
@@ -98,7 +105,9 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     ...(escrita === "habilitado"
       ? []
       : ["Escrita no GoHighLevel (contacto e oportunidade) ainda não habilitada."]),
-    BLOQUEIO_ACOLHIMENTO,
+    CANAL_ACOLHIMENTO_NOTA,
+    LIMITACAO_ACOLHIMENTO,
+    ...(canal === "configurado" ? [] : [BLOQUEIO_ACOLHIMENTO]),
     ...(leads.erro ? ["Não foi possível ler as contagens dos pedidos recebidos."] : []),
   ];
 
@@ -112,7 +121,8 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     configurada: Boolean(integracao),
     ativa: Boolean(integracao?.["enabled"]),
     escritaGhl: escrita,
-    acolhimento: FALCAO_ACOLHIMENTO_RASCUNHO,
+    canalAcolhimento: canal,
+    acolhimento: FALCAO_ACOLHIMENTO_TEXTO,
     pendencias,
     leads,
   };
