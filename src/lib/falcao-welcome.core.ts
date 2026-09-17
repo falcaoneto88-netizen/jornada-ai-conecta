@@ -24,6 +24,7 @@ export function montarAcolhimento(primeiroNome: string | null): string {
 export type PedidoAcolhimento = {
   submission_id: string;
   organization_id: string;
+  integration_id: string;
   location_id: string;
   ghl_contact_id: string;
   first_name: string | null;
@@ -85,14 +86,16 @@ export function validarDestino(
     return { ok: false, motivo: "contacto_de_outra_location" };
   }
   const telefone = digitos(pedido.phone_normalized);
+  if (telefone === null || estado.phone === null) {
+    return { ok: false, motivo: "telefone_nao_confirmado" };
+  }
   const email = pedido.email?.trim().toLowerCase() ?? null;
-  const telefoneBate = telefone !== null && digitos(estado.phone) === telefone;
+  const telefoneBate = digitos(estado.phone) === telefone;
   const emailBate = email !== null && (estado.email ?? "").trim().toLowerCase() === email;
-  if (!telefoneBate && !emailBate) return { ok: false, motivo: "identidade_nao_exata" };
-  if (telefone !== null && estado.phone !== null && !telefoneBate) {
+  if (!telefoneBate) {
     return { ok: false, motivo: "telefone_divergente" };
   }
-  if (email !== null && estado.email !== null && !emailBate) {
+  if (email !== null && !emailBate) {
     return { ok: false, motivo: "email_divergente" };
   }
   if (estado.dnd || estado.canaisBloqueados.length > 0) {

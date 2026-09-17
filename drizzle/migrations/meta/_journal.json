@@ -29,6 +29,13 @@
       "when": 1789677544226,
       "tag": "0003_site_lead_identidade_consentida_locks_e_quota_hmac",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789678307897,
+      "tag": "0004_site_lead_durable_execution_ledger",
+      "breakpoints": true
     }
   ]
 }

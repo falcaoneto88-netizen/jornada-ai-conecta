@@ -24,7 +24,7 @@ type ContactoApi = {
     phone?: string;
     email?: string;
     dnd?: boolean;
-    dndSettings?: Record<string, { status?: string }>;
+    dndSettings?: unknown;
   };
 };
 
@@ -45,8 +45,19 @@ export function criarDepsAcolhimento(
       if (!c?.id || !c.locationId || typeof c.dnd !== "boolean") {
         return { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
       }
-      const bloqueados = Object.entries(c.dndSettings ?? {})
-        .filter(([, v]) => (v?.status ?? "").toLowerCase() === "active")
+       if (!c.dndSettings || typeof c.dndSettings !== "object" || Array.isArray(c.dndSettings)) {
+         return { ok: false, code: "malformed_response", message: "Estado de bloqueio desconhecido." };
+       }
+       const entradas = Object.entries(c.dndSettings as Record<string, unknown>);
+       if (entradas.some(([, valor]) => {
+         if (!valor || typeof valor !== "object" || Array.isArray(valor)) return true;
+         const status = (valor as Record<string, unknown>)["status"];
+         return status !== "active" && status !== "inactive";
+       })) {
+         return { ok: false, code: "malformed_response", message: "Estado de bloqueio desconhecido." };
+       }
+       const bloqueados = entradas
+         .filter(([, valor]) => (valor as Record<string, unknown>)["status"] === "active")
         .map(([canal]) => canal);
       return {
         ok: true,
@@ -187,12 +198,17 @@ export async function enviarAcolhimentosFalcao(
       continue;
     }
     const pedido = reserva.data as PedidoAcolhimento & { blocked?: boolean };
-    if (pedido.blocked === true || pedido.submission_id !== linha.id) {
+    if (
+      pedido.blocked === true || pedido.submission_id !== linha.id ||
+      pedido.organization_id !== acesso.acesso.orgId ||
+      pedido.integration_id !== linhaIntegracao.id ||
+      pedido.location_id !== acesso.acesso.locationId
+    ) {
       ignorados += 1;
       continue;
     }
     desfechos.push(
-      await processarAcolhimento({ ...pedido, location_id: acesso.acesso.locationId }, depsGhl),
+      await processarAcolhimento(pedido, depsGhl),
     );
   }
 

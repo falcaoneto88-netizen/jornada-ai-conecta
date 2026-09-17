@@ -36,6 +36,7 @@ export type OportunidadeRemota = {
 export type PedidoRemoto = {
   submission_id: string;
   organization_id: string;
+  integration_id: string;
   location_id: string;
   pipeline_id: string;
   stage_id: string;
@@ -116,14 +117,15 @@ export function validarContacto(
   }
   const telefoneAlvo = digitos(pedido.phone_normalized ?? pedido.phone);
   const emailAlvo = pedido.email?.trim().toLowerCase() ?? null;
-  const telefoneBate = telefoneAlvo !== null && digitos(contacto.phone) === telefoneAlvo;
+  if (telefoneAlvo === null || contacto.phone === null) {
+    return { ok: false, motivo: "telefone_nao_confirmado" };
+  }
+  const telefoneBate = digitos(contacto.phone) === telefoneAlvo;
   const emailBate = emailAlvo !== null && mesmoEmail(contacto.email, emailAlvo);
-  if (!telefoneBate && !emailBate) return { ok: false, motivo: "identidade_nao_exata" };
-  // Um campo presente e diferente é divergência, não "permitido".
-  if (telefoneAlvo !== null && contacto.phone !== null && !telefoneBate) {
+  if (!telefoneBate) {
     return { ok: false, motivo: "telefone_divergente" };
   }
-  if (emailAlvo !== null && contacto.email !== null && !emailBate) {
+  if (emailAlvo !== null && !emailBate) {
     return { ok: false, motivo: "email_divergente" };
   }
   if (contacto.dnd) return { ok: false, motivo: "contacto_com_dnd" };
@@ -179,6 +181,9 @@ async function resolverContacto(
       ghlContactId: pedido.ghl_contact_id,
     });
     if (!lido.ok) return { ok: false, motivo: `leitura_falhou:${lido.code}`, id: null };
+    if (lido.data.id !== pedido.ghl_contact_id) {
+      return { ok: false, motivo: "contacto_nao_corresponde", id: null };
+    }
     const v = validarContacto(lido.data, pedido);
     return v.ok
       ? { ok: true, id: lido.data.id }
@@ -238,10 +243,18 @@ export async function processarSubmissaoRemota(
   if (!existentes.ok) {
     return bloquear(deps, pedido, `consulta_oportunidades_falhou:${existentes.code}`, ghlContactId);
   }
-  const jaNoFunil = existentes.data.find((o) => o.pipelineId === pedido.pipeline_id);
+  const noFunil = existentes.data.filter((o) => o.pipelineId === pedido.pipeline_id);
+  if (noFunil.length > 1) {
+    return bloquear(deps, pedido, "oportunidades_ambiguas", ghlContactId);
+  }
+  const jaNoFunil = noFunil[0];
   if (jaNoFunil) {
     // Nunca mover nem reabrir: espelha-se exatamente o que o remoto devolveu.
-    if (!jaNoFunil.stageId || !jaNoFunil.status) {
+    if (
+      jaNoFunil.contactId !== ghlContactId ||
+      !jaNoFunil.stageId ||
+      !jaNoFunil.status
+    ) {
       return bloquear(deps, pedido, "oportunidade_existente_sem_dados_reais", ghlContactId);
     }
     return fechar(

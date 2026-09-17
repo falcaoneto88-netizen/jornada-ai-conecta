@@ -48,6 +48,7 @@ beforeAll(async () => {
     "drizzle/migrations/0001_site_lead_serializacao_quota_e_escrita_remota.sql",
     "drizzle/migrations/0002_site_lead_acolhimento_sms_outbox.sql",
     "drizzle/migrations/0003_site_lead_identidade_consentida_locks_e_quota_hmac.sql",
+    "drizzle/migrations/0004_site_lead_durable_execution_ledger.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -71,6 +72,8 @@ beforeAll(async () => {
       insert into public.user_roles (user_id, organization_id, role) values ('${UID_V}','${orgA}','visualizador');
       insert into public.ghl_location_bindings (location_id, organization_id) values ('${LOCATION}','${orgA}')
         on conflict (location_id) do update set organization_id = excluded.organization_id;
+      update public.ghl_connections set location_id='${LOCATION}', status='conectada', write_enabled=false
+        where organization_id='${orgA}';
       insert into public.journey_stages (organization_id, key, name, position, color)
         values ('${orgA}','novo_lead','Novo Lead', 1, '#000000')
         on conflict do nothing;
@@ -327,7 +330,7 @@ describe("escrita remota reservada e auditada", () => {
       `select public.claim_site_lead_remote_v2('${recibo()}','experiencia-falcao');`,
     );
     expect(r.ok).toBe(false);
-    expect(r.erro).toContain("Escrita no GoHighLevel desativada");
+    expect(r.erro).toContain("escrita desativada");
   });
 
   it("reserva uma única vez e confirma os identificadores devolvidos", () => {
@@ -519,7 +522,7 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
       `select public.claim_site_lead_remote_v2('${ids[1]!}','experiencia-falcao')::text;`,
     );
     expect(segunda.ok, segunda.erro).toBe(true);
-    expect(valor(segunda)).toContain("execucao_em_curso_para_a_mesma_pessoa");
+    expect(valor(segunda)).toContain("execucao_remota_ja_registada_para_a_mesma_pessoa");
     expect(
       valor(
         db.admin(`select remote_state from public.site_lead_submissions where id='${ids[1]!}';`),
@@ -544,12 +547,71 @@ describe("identidade consentida e exclusão mútua por pessoa", () => {
         ),
       ),
     ).toBe("abandoned|etapa-real");
-    // Libertada a exclusão mútua, a segunda submissão já pode reservar.
+    // O ledger é durável: a segunda submissão nunca executa de novo.
     const terceira = db.comoServico(
       `select public.claim_site_lead_remote_v2('${ids[1]!}','experiencia-falcao')::text;`,
     );
     expect(terceira.ok, terceira.erro).toBe(true);
-    expect(valor(terceira)).toContain('"blocked": false');
+    expect(valor(terceira)).toContain("execucao_remota_ja_registada_para_a_mesma_pessoa");
+  });
+
+  it("mantém tombstone remoto após resultado incerto e nunca vincula ID não validado", () => {
+    const tel = "351900000779";
+    const p1 = "aaaaaaaa-8891-4888-8888-aaaaaaaaaaaa";
+    const p2 = "aaaaaaaa-8892-4888-8888-aaaaaaaaaaaa";
+    expect(ingerir(p1, "4".repeat(64), tel, null).ok).toBe(true);
+    expect(ingerir(p2, "5".repeat(64), tel, null).ok).toBe(true);
+    const ids = db.admin(`select id::text from public.site_lead_submissions where request_id in ('${p1}','${p2}') order by request_id;`).linhas.map((l) => l[0]!);
+    expect(db.comoServico(`select public.claim_site_lead_remote_v2('${ids[0]}','experiencia-falcao');`).ok).toBe(true);
+    const fim = db.comoServico(`select public.finish_site_lead_remote_v2('${ids[0]}','bloqueado','criacao_incerta','incertoC',null,null,null,null,null);`);
+    expect(fim.ok, fim.erro).toBe(true);
+    expect(valor(db.admin(`select coalesce(ghl_contact_id,'nulo') from public.contacts where id=(select contact_id from public.site_lead_submissions where id='${ids[0]}');`))).toBe("nulo");
+    expect(valor(db.admin(`select remote_observed_contact_id from public.site_lead_submissions where id='${ids[0]}';`))).toBe("incertoC");
+    const segunda = db.comoServico(`select public.claim_site_lead_remote_v2('${ids[1]}','experiencia-falcao')::text;`);
+    expect(segunda.ok, segunda.erro).toBe(true);
+    expect(valor(segunda)).toContain("execucao_remota_ja_registada_para_a_mesma_pessoa");
+  });
+
+  it("rollback de persistência não confirma nem perde o ledger", () => {
+    const tel = "351900000780";
+    const p = "aaaaaaaa-8893-4888-8888-aaaaaaaaaaaa";
+    expect(ingerir(p, "6".repeat(64), tel, null).ok).toBe(true);
+    const id = valor(db.admin(`select id::text from public.site_lead_submissions where request_id='${p}';`))!;
+    expect(db.comoServico(`select public.claim_site_lead_remote_v2('${id}','experiencia-falcao');`).ok).toBe(true);
+    const falha = db.comoServico(`select public.finish_site_lead_remote_v2('${id}','confirmado','x','cRollback','oRollback','Lead','funil-errado','${STAGE}','open');`);
+    expect(falha.ok).toBe(false);
+    expect(valor(db.admin(`select remote_state from public.site_lead_submissions where id='${id}';`))).toBe("a_processar");
+    expect(valor(db.admin(`select state from public.site_lead_execution_ledger where first_submission_id='${id}' and scope='remote';`))).toBe("reserved");
+  });
+
+  it("acolhimento aceite bloqueia para sempre o segundo requestId da mesma pessoa", () => {
+    const segundo = valor(db.admin(`select id::text from public.site_lead_submissions where request_id='${PEDIDO_2}';`))!;
+    const preparado = db.admin(`
+      update public.site_lead_submissions s set remote_state='confirmado', ghl_contact_id='ghlC1'
+        where s.id='${segundo}';
+    `);
+    expect(preparado.ok, preparado.erro).toBe(true);
+    const r = db.comoServico(`select public.claim_site_lead_welcome_v2('${segundo}','experiencia-falcao')::text;`);
+    expect(r.ok, r.erro).toBe(true);
+    expect(valor(r)).toContain("acolhimento_ja_registado_para_a_mesma_pessoa");
+  });
+
+  it("acolhimento incerto mantém tombstone e bloqueia requestId posterior", () => {
+    const tel = "351900000781";
+    const p1 = "aaaaaaaa-8894-4888-8888-aaaaaaaaaaaa";
+    const p2 = "aaaaaaaa-8895-4888-8888-aaaaaaaaaaaa";
+    expect(ingerir(p1, "7".repeat(64), tel, null).ok).toBe(true);
+    expect(ingerir(p2, "8".repeat(64), tel, null).ok).toBe(true);
+    const ids = db.admin(`select id::text from public.site_lead_submissions where request_id in ('${p1}','${p2}') order by request_id;`).linhas.map((l) => l[0]!);
+    const contacto = valor(db.admin(`select contact_id::text from public.site_lead_submissions where id='${ids[0]}';`))!;
+    expect(db.admin(`update public.contacts set ghl_contact_id='ghlW2' where id='${contacto}'; update public.site_lead_submissions set remote_state='confirmado',ghl_contact_id='ghlW2' where id in ('${ids[0]}','${ids[1]}');`).ok).toBe(true);
+    expect(db.comoServico(`select public.claim_site_lead_welcome_v2('${ids[0]}','experiencia-falcao');`).ok).toBe(true);
+    const incerto = db.comoServico(`select public.finish_site_lead_welcome_v2('${ids[0]}','bloqueado','envio_incerto',null);`);
+    expect(incerto.ok, incerto.erro).toBe(true);
+    expect(valor(db.admin(`select state from public.site_lead_execution_ledger where first_submission_id='${ids[0]}' and scope='welcome';`))).toBe("uncertain");
+    const segundo = db.comoServico(`select public.claim_site_lead_welcome_v2('${ids[1]}','experiencia-falcao')::text;`);
+    expect(segundo.ok, segundo.erro).toBe(true);
+    expect(valor(segundo)).toContain("acolhimento_ja_registado_para_a_mesma_pessoa");
   });
 
   it("divergência com a identidade consentida vai para revisão sem mesclar", () => {
