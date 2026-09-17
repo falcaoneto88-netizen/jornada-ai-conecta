@@ -15,6 +15,13 @@
       "when": 1789676692705,
       "tag": "0001_site_lead_serializacao_quota_e_escrita_remota",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789677215707,
+      "tag": "0002_site_lead_acolhimento_sms_outbox",
+      "breakpoints": true
     }
   ]
 }

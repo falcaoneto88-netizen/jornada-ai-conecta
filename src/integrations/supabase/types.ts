@@ -1163,7 +1163,12 @@ export type Database = {
           review_reason: string | null
           status: string
           updated_at: string
+          welcome_consent_version: string | null
+          welcome_delivered_at: string | null
+          welcome_intent_at: string | null
+          welcome_message_id: string | null
           welcome_reason: string | null
+          welcome_sent_at: string | null
           welcome_state: string
         }
         Insert: {
@@ -1185,7 +1190,12 @@ export type Database = {
           review_reason?: string | null
           status: string
           updated_at?: string
+          welcome_consent_version?: string | null
+          welcome_delivered_at?: string | null
+          welcome_intent_at?: string | null
+          welcome_message_id?: string | null
           welcome_reason?: string | null
+          welcome_sent_at?: string | null
           welcome_state?: string
         }
         Update: {
@@ -1207,7 +1217,12 @@ export type Database = {
           review_reason?: string | null
           status?: string
           updated_at?: string
+          welcome_consent_version?: string | null
+          welcome_delivered_at?: string | null
+          welcome_intent_at?: string | null
+          welcome_message_id?: string | null
           welcome_reason?: string | null
+          welcome_sent_at?: string | null
           welcome_state?: string
         }
         Relationships: [
@@ -1347,6 +1362,7 @@ export type Database = {
     }
     Functions: {
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
+      claim_site_lead_welcome: { Args: { _submission: string }; Returns: Json }
       configure_bioreport_integration: {
         Args: {
           _confirm: boolean
@@ -1376,6 +1392,15 @@ export type Database = {
         Args: {
           _ghl_contact: string
           _ghl_opportunity: string
+          _reason: string
+          _state: string
+          _submission: string
+        }
+        Returns: Json
+      }
+      finish_site_lead_welcome: {
+        Args: {
+          _message_id: string
           _reason: string
           _state: string
           _submission: string
@@ -1516,12 +1541,29 @@ export type Database = {
         }
         Returns: string
       }
+      record_site_lead_welcome_delivery: {
+        Args: {
+          _delivered_at: string
+          _message_id: string
+          _submission: string
+        }
+        Returns: Json
+      }
       save_message_template_draft: {
         Args: {
           _draft: Json
           _expected_revision: number
           _id: string
           _org: string
+        }
+        Returns: Json
+      }
+      set_site_integration_flags: {
+        Args: {
+          _confirm: boolean
+          _organization_id: string
+          _remote_write_state: string
+          _welcome_channel_state: string
         }
         Returns: Json
       }
