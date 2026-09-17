@@ -5,13 +5,25 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { processarLeadsFalcao } from "@/lib/falcao-remote.functions";
+import { enviarAcolhimentoFalcao, processarLeadsFalcao } from "@/lib/falcao-remote.functions";
 import { configurarIntegracaoFalcao, estadoIntegracaoFalcao } from "@/lib/falcao-site.functions";
 
 export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoIntegracaoFalcao);
   const configurar = useServerFn(configurarIntegracaoFalcao);
   const processar = useServerFn(processarLeadsFalcao);
+  const acolher = useServerFn(enviarAcolhimentoFalcao);
+
+  function executar(accao: () => Promise<{ ok: boolean; message: string }>) {
+    setPending(true);
+    void accao()
+      .then((r) => (r.ok ? toast.success(r.message) : toast.error(r.message)))
+      .catch(() => toast.error("Não foi possível executar agora."))
+      .finally(() => {
+        setPending(false);
+        void queryClient.invalidateQueries({ queryKey: ["integracao-experiencia-falcao"] });
+      });
+  }
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
@@ -76,6 +88,10 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
               <dd className="font-medium">{data.escritaGhl}</dd>
             </div>
             <div>
+              <dt className="text-muted-foreground">Canal do acolhimento</dt>
+              <dd className="font-medium">{data.canalAcolhimento}</dd>
+            </div>
+            <div>
               <dt className="text-muted-foreground">Pedidos recebidos</dt>
               <dd className="font-medium">{data.leads.total ?? "Indisponível"}</dd>
             </div>
@@ -95,7 +111,7 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
           </div>
 
           <div>
-            <p className="text-sm font-medium">Rascunho de acolhimento (não enviado)</p>
+            <p className="text-sm font-medium">Mensagem de acolhimento (envio manual, desligado por omissão)</p>
             <p className="mt-1 rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
               {data.acolhimento}
             </p>
@@ -113,19 +129,21 @@ export function FalcaoSiteIntegration({ allowed }: { allowed: boolean }) {
                 variant="outline"
                 disabled={pending}
                 onClick={() => {
-                  setPending(true);
-                  void processar({ data: undefined })
-                    .then((r) => (r.ok ? toast.success(r.message) : toast.error(r.message)))
-                    .catch(() => toast.error("Não foi possível processar agora."))
-                    .finally(() => {
-                      setPending(false);
-                      void queryClient.invalidateQueries({
-                        queryKey: ["integracao-experiencia-falcao"],
-                      });
-                    });
+                  executar(() => processar({ data: undefined }));
                 }}
               >
                 Processar leads no GoHighLevel
+              </Button>
+            )}
+            {data.canalAcolhimento === "configurado" && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  executar(() => acolher({ data: undefined }));
+                }}
+              >
+                Enviar acolhimento pendente
               </Button>
             )}
           </div>

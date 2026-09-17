@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
-  FALCAO_ACOLHIMENTO_RASCUNHO,
   FALCAO_LOCATION,
   FALCAO_PIPELINE,
   FALCAO_SITE_URL,
