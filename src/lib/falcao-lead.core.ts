@@ -33,14 +33,8 @@ export type LeadFalcao = z.infer<typeof leadSchema>;
 /** Estados possíveis do recibo — qualquer outro valor invalida a resposta. */
 export const ESTADOS_RECIBO = ["registado", "em_revisao"] as const;
 export const ESTADOS_LOCAIS = ["contacto_criado", "contacto_existente", "em_revisao"] as const;
-export const ESTADOS_REMOTOS = [
-  "pendente",
-  "a_processar",
-  "confirmado",
-  "bloqueado",
-  "enviado",
-] as const;
-export const ESTADOS_ACOLHIMENTO = ["pendente", "preparado", "enviado"] as const;
+export const ESTADOS_REMOTOS = ["pendente", "a_processar", "confirmado", "bloqueado"] as const;
+export const ESTADOS_ACOLHIMENTO = ["pendente", "a_enviar", "enviado", "bloqueado"] as const;
 
 export type ReciboLead = {
   receipt_id: string;

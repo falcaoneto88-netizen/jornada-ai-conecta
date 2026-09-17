@@ -20,16 +20,23 @@ export function montarAcolhimento(primeiroNome: string | null): string {
   return FALCAO_ACOLHIMENTO_TEXTO.replace("{{nome}}", nome.length >= 2 ? nome : "tudo bem");
 }
 
+/** Identidade consentida no formulário (não é o cadastro atual do CRM). */
 export type PedidoAcolhimento = {
   submission_id: string;
   organization_id: string;
+  location_id: string;
   ghl_contact_id: string;
   first_name: string | null;
+  phone_normalized: string | null;
+  email: string | null;
   consent_version: string;
 };
 
 export type EstadoContactoRemoto = {
   id: string;
+  locationId: string;
+  phone: string | null;
+  email: string | null;
   dnd: boolean;
   /** Canais com bloqueio específico (ex.: SMS desativado nas definições). */
   canaisBloqueados: string[];
@@ -49,19 +56,50 @@ export type DepsAcolhimento = {
     estado: "enviado" | "bloqueado";
     motivo: string;
     messageId: string | null;
-  }) => Promise<void>;
+  }) => Promise<{ ok: boolean }>;
 };
 
 export type DesfechoAcolhimento = {
   submissionId: string;
-  estado: "enviado" | "bloqueado";
+  estado: "enviado" | "bloqueado" | "pendente_reconciliacao";
   motivo: string;
   messageId: string | null;
   /** Nunca verdadeiro aqui: a entrega só é registada com recibo do provedor. */
   entregue: false;
 };
 
-const INCERTO = new Set(["outcome_unknown", "timeout", "network_error"]);
+const INCERTO = new Set(["outcome_unknown", "timeout", "network_error", "malformed_response"]);
+
+function digitos(valor: string | null): string | null {
+  const so = (valor ?? "").replace(/\D/g, "");
+  return so.length >= 8 ? so : null;
+}
+
+/** O contacto tem de ser o reservado, da location certa e exatamente o consentido. */
+export function validarDestino(
+  estado: EstadoContactoRemoto,
+  pedido: PedidoAcolhimento,
+): { ok: true } | { ok: false; motivo: string } {
+  if (estado.id !== pedido.ghl_contact_id) return { ok: false, motivo: "contacto_nao_corresponde" };
+  if (estado.locationId !== pedido.location_id) {
+    return { ok: false, motivo: "contacto_de_outra_location" };
+  }
+  const telefone = digitos(pedido.phone_normalized);
+  const email = pedido.email?.trim().toLowerCase() ?? null;
+  const telefoneBate = telefone !== null && digitos(estado.phone) === telefone;
+  const emailBate = email !== null && (estado.email ?? "").trim().toLowerCase() === email;
+  if (!telefoneBate && !emailBate) return { ok: false, motivo: "identidade_nao_exata" };
+  if (telefone !== null && estado.phone !== null && !telefoneBate) {
+    return { ok: false, motivo: "telefone_divergente" };
+  }
+  if (email !== null && estado.email !== null && !emailBate) {
+    return { ok: false, motivo: "email_divergente" };
+  }
+  if (estado.dnd || estado.canaisBloqueados.length > 0) {
+    return { ok: false, motivo: "dnd_ou_opt_out" };
+  }
+  return { ok: true };
+}
 
 async function concluir(
   deps: DepsAcolhimento,
@@ -70,8 +108,19 @@ async function concluir(
   motivo: string,
   messageId: string | null,
 ): Promise<DesfechoAcolhimento> {
-  await deps.concluir({ submissionId, estado, motivo, messageId });
-  return { submissionId, estado, motivo, messageId, entregue: false };
+  let persistido = false;
+  try {
+    persistido = (await deps.concluir({ submissionId, estado, motivo, messageId })).ok;
+  } catch {
+    persistido = false;
+  }
+  return {
+    submissionId,
+    estado: persistido ? estado : "pendente_reconciliacao",
+    motivo: persistido ? motivo : `persistencia_falhou:${motivo}`,
+    messageId,
+    entregue: false,
+  };
 }
 
 /** Uma única tentativa. Qualquer dúvida bloqueia o recibo para revisão humana. */
@@ -83,12 +132,8 @@ export async function processarAcolhimento(
   if (!estado.ok) {
     return concluir(deps, pedido.submission_id, "bloqueado", `estado_falhou:${estado.code}`, null);
   }
-  if (estado.data.id !== pedido.ghl_contact_id) {
-    return concluir(deps, pedido.submission_id, "bloqueado", "contacto_nao_corresponde", null);
-  }
-  if (estado.data.dnd || estado.data.canaisBloqueados.length > 0) {
-    return concluir(deps, pedido.submission_id, "bloqueado", "dnd_ou_opt_out", null);
-  }
+  const valido = validarDestino(estado.data, pedido);
+  if (!valido.ok) return concluir(deps, pedido.submission_id, "bloqueado", valido.motivo, null);
 
   const envio = await deps.enviar({
     ghlContactId: pedido.ghl_contact_id,
