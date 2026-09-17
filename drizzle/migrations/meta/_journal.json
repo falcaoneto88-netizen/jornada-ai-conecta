@@ -8,6 +8,13 @@
       "when": 1789675926010,
       "tag": "0000_site_integration_experiencia_falcao",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789676692705,
+      "tag": "0001_site_lead_serializacao_quota_e_escrita_remota",
+      "breakpoints": true
     }
   ]
 }

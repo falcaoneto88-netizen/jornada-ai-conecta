@@ -11,6 +11,19 @@ import {
   segredoFalcao,
 } from "./falcao-lead.server";
 import { FALCAO_SOURCE } from "./falcao-lead.core";
+import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets } from "./ghl.server";
+
+/**
+ * Canal do acolhimento: não existe neste código qualquer provedor de WhatsApp
+ * verificado. A única via de envio disponível é a operação de escrita do
+ * GoHighLevel (conversations/messages), hoje bloqueada por write_enabled e sem
+ * modelo aprovado nem janela de sessão confirmada. Enquanto isso não for
+ * verificado, o acolhimento fica apenas como rascunho.
+ */
+export const BLOQUEIO_ACOLHIMENTO =
+  "Canal de WhatsApp por verificar: no código só existe o envio pelo GoHighLevel (conversations/messages), que depende de escrita ativa, modelo aprovado e janela de 24 horas. Nada é enviado.";
+
+export type ContagemLeads = { total: number | null; emRevisao: number | null; erro: boolean };
 
 export type EstadoIntegracaoSite = {
   admin: boolean;
@@ -24,7 +37,7 @@ export type EstadoIntegracaoSite = {
   escritaGhl: "pendente" | "habilitado" | "bloqueado";
   acolhimento: string;
   pendencias: string[];
-  leads: { total: number; emRevisao: number };
+  leads: ContagemLeads;
 };
 
 type Cliente = Pick<SupabaseClient, "rpc" | "from" | "auth">;
@@ -43,6 +56,21 @@ async function organizacao(client: Cliente): Promise<string | null> {
   return typeof org === "string" ? org : null;
 }
 
+/** Contagens exatas; um erro de leitura nunca é apresentado como zero. */
+async function contarLeads(client: Cliente): Promise<ContagemLeads> {
+  const total = await client
+    .from("site_lead_submissions")
+    .select("id", { count: "exact", head: true });
+  const revisao = await client
+    .from("site_lead_submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "em_revisao");
+  if (total.error || revisao.error || total.count == null || revisao.count == null) {
+    return { total: null, emRevisao: null, erro: true };
+  }
+  return { total: total.count, emRevisao: revisao.count, erro: false };
+}
+
 export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIntegracaoSite> {
   const admin = await ehAdministrador(client);
   const segredoPresente = segredoFalcao() !== null;
@@ -53,23 +81,23 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     .eq("slug", FALCAO_SLUG)
     .maybeSingle();
 
-  const { data: submissoes } = await client
-    .from("site_lead_submissions")
-    .select("status")
-    .limit(500);
-
-  const lista = Array.isArray(submissoes) ? submissoes : [];
+  const leads = await contarLeads(client);
   const escrita = (integracao?.["remote_write_state"] ?? "pendente") as
     | "pendente"
     | "habilitado"
     | "bloqueado";
 
   const pendencias = [
-    ...(segredoPresente ? [] : ["Falta o segredo FALCAO_SITE_SIGNING_SECRET nos Secrets do servidor."]),
+    ...(segredoPresente
+      ? []
+      : ["Falta o segredo FALCAO_SITE_SIGNING_SECRET nos Secrets do servidor."]),
     ...(integracao ? [] : ["Integração por configurar."]),
     ...(integracao?.["enabled"] ? [] : ["Recebimento desligado."]),
-    "Escrita no GoHighLevel (contacto e oportunidade) por validar: mantém-se bloqueada.",
-    "Canal e modelo aprovado do acolhimento por confirmar; nada é enviado.",
+    ...(escrita === "habilitado"
+      ? []
+      : ["Escrita no GoHighLevel (contacto e oportunidade) ainda não habilitada."]),
+    BLOQUEIO_ACOLHIMENTO,
+    ...(leads.erro ? ["Não foi possível ler as contagens dos pedidos recebidos."] : []),
   ];
 
   return {
@@ -84,17 +112,44 @@ export async function lerEstadoIntegracaoSite(client: Cliente): Promise<EstadoIn
     escritaGhl: escrita,
     acolhimento: FALCAO_ACOLHIMENTO_RASCUNHO,
     pendencias,
-    leads: {
-      total: lista.length,
-      emRevisao: lista.filter((l) => l["status"] === "em_revisao").length,
-    },
+    leads,
   };
+}
+
+type Pipelines = { pipelines?: { id?: string; stages?: { id?: string }[] }[] };
+
+/**
+ * Confirma na API oficial (versão 2021-07-28) que o funil e a etapa fixos
+ * existem na location autorizada. Não lê contactos nem conversas.
+ */
+export async function validarDestinoGhl(
+  buscar: typeof ghlFetch = ghlFetch,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { token, locationId } = readGhlSecrets();
+  if (!token || locationId !== FALCAO_LOCATION) {
+    return { ok: false, message: "Credenciais do GoHighLevel indisponíveis para esta conta." };
+  }
+  const res = await buscar<Pipelines>(
+    { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId },
+    "opportunities/pipelines",
+    { query: { locationId } },
+  );
+  if (!res.ok) {
+    return { ok: false, message: "Não foi possível confirmar o funil no GoHighLevel." };
+  }
+  const funil = (res.data.pipelines ?? []).find((p) => p.id === FALCAO_PIPELINE);
+  if (!funil) return { ok: false, message: "O funil fixo não existe nesta conta do GoHighLevel." };
+  if (!(funil.stages ?? []).some((s) => s.id === FALCAO_STAGE_GHL)) {
+    return { ok: false, message: "A etapa fixa não existe no funil desta conta." };
+  }
+  return { ok: true };
 }
 
 /** Só um administrador autenticado da organização pode configurar ou ligar. */
 export async function configurarIntegracaoSite(
   client: Cliente,
   entrada: { confirm: boolean; enabled: boolean },
+  deps: { validarDestino?: typeof validarDestinoGhl } = {},
 ): Promise<{ ok: boolean; message: string }> {
   if (entrada.confirm !== true) return { ok: false, message: "Confirme a configuração." };
   try {
@@ -108,6 +163,9 @@ export async function configurarIntegracaoSite(
       };
     const org = await organizacao(client);
     if (!org) return { ok: false, message: "Sessão expirada. Inicie sessão novamente." };
+
+    const destino = await (deps.validarDestino ?? validarDestinoGhl)();
+    if (!destino.ok) return { ok: false, message: destino.message };
 
     const { data, error } = await client.rpc("configure_site_integration", {
       _organization_id: org,

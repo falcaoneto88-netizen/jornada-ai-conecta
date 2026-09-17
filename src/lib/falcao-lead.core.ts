@@ -20,7 +20,8 @@ export const leadSchema = z
     adult: z.literal(true),
     name: z.string().trim().min(2).max(80),
     phone: z.string().regex(/^\+[1-9]\d{7,14}$/),
-    email: z.string().trim().email().max(160).optional(),
+    // Opcional: quando não há e-mail, o campo é omitido (string vazia é recusada).
+    email: z.string().trim().min(6).max(160).email().optional(),
     consent: z
       .object({ contact: z.literal(true), version: z.literal(FALCAO_CONSENT_VERSION) })
       .strict(),
@@ -29,20 +30,59 @@ export const leadSchema = z
 
 export type LeadFalcao = z.infer<typeof leadSchema>;
 
+/** Estados possíveis do recibo — qualquer outro valor invalida a resposta. */
+export const ESTADOS_RECIBO = ["registado", "em_revisao"] as const;
+export const ESTADOS_LOCAIS = ["contacto_criado", "contacto_existente", "em_revisao"] as const;
+export const ESTADOS_REMOTOS = [
+  "pendente",
+  "a_processar",
+  "confirmado",
+  "bloqueado",
+  "enviado",
+] as const;
+export const ESTADOS_ACOLHIMENTO = ["pendente", "preparado", "enviado"] as const;
+
 export type ReciboLead = {
   receipt_id: string;
   request_id: string;
-  status: string;
-  local_state: string;
-  remote_state: string;
-  welcome_state: string;
+  status: (typeof ESTADOS_RECIBO)[number];
+  local_state: (typeof ESTADOS_LOCAIS)[number];
+  remote_state: (typeof ESTADOS_REMOTOS)[number];
+  welcome_state: (typeof ESTADOS_ACOLHIMENTO)[number];
   duplicate: boolean;
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Valida o recibo devolvido pela base de dados: nada de String(undefined). */
+export function validarRecibo(valor: unknown): ReciboLead | null {
+  if (!valor || typeof valor !== "object" || Array.isArray(valor)) return null;
+  const r = valor as Record<string, unknown>;
+  const texto = (k: string) => (typeof r[k] === "string" ? (r[k] as string) : null);
+  const recibo = {
+    receipt_id: texto("receipt_id"),
+    request_id: texto("request_id"),
+    status: texto("status"),
+    local_state: texto("local_state"),
+    remote_state: texto("remote_state"),
+    welcome_state: texto("welcome_state"),
+    duplicate: r["duplicate"],
+  };
+  if (!recibo.receipt_id || !UUID.test(recibo.receipt_id)) return null;
+  if (!recibo.request_id || !UUID.test(recibo.request_id)) return null;
+  if (typeof recibo.duplicate !== "boolean") return null;
+  if (!ESTADOS_RECIBO.includes(recibo.status as never)) return null;
+  if (!ESTADOS_LOCAIS.includes(recibo.local_state as never)) return null;
+  if (!ESTADOS_REMOTOS.includes(recibo.remote_state as never)) return null;
+  if (!ESTADOS_ACOLHIMENTO.includes(recibo.welcome_state as never)) return null;
+  return recibo as ReciboLead;
+}
 
 export type ResultadoIngresso =
   | { outcome: "ok"; recibo: ReciboLead }
   | { outcome: "conflito" }
   | { outcome: "indisponivel" }
+  | { outcome: "limite" }
   | { outcome: "invalido" }
   | { outcome: "erro" };
 
@@ -185,6 +225,8 @@ export async function processarLeadFalcao(
       return responder(409, { ok: false, erro: "pedido_ja_registado_com_outros_dados" });
     case "indisponivel":
       return responder(503, { ok: false, erro: "integracao_nao_configurada" });
+    case "limite":
+      return responder(429, { ok: false, erro: "limite_temporario", retentavel: true });
     case "invalido":
       return responder(400, { ok: false, erro: "pedido_invalido" });
     default:
