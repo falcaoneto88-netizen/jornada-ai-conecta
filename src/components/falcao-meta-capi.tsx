@@ -30,7 +30,7 @@ export function FalcaoMetaCapi({ allowed }: { allowed: boolean }) {
   const [codigo, setCodigo] = useState("");
   const [pending, setPending] = useState(false);
 
-  const { data } = useQuery({
+  const { data, isError } = useQuery({
     queryKey: ["meta-capi-falcao"],
     enabled: allowed,
     queryFn: () => ler({ data: undefined }),
@@ -42,24 +42,46 @@ export function FalcaoMetaCapi({ allowed }: { allowed: boolean }) {
       const r = await testar({ data: { confirm: true, testEventCode: codigo.trim() } });
       if (r.ok) toast.success(r.message);
       else toast.error(r.message);
-      await queryClient.invalidateQueries({ queryKey: ["meta-capi-falcao"] });
     } catch {
-      toast.error("Não foi possível falar com o servidor. Tente novamente.");
+      toast.error(
+        "Não foi possível confirmar o resultado no servidor. Não repita: consulte o estado abaixo e verifique no Gestor de Eventos da Meta.",
+      );
     } finally {
       setPending(false);
+      await queryClient.invalidateQueries({ queryKey: ["meta-capi-falcao"] });
     }
   }
 
-  if (!allowed || !data) return null;
+  if (!allowed) return null;
+
+  if (isError || (data && !data.autorizado)) {
+    return (
+      <div className="space-y-2 rounded-md border p-4">
+        <p className="text-sm font-medium">4. Teste da API de Conversões da Meta</p>
+        <p className="text-sm text-muted-foreground">
+          Estado indisponível. Esta área é reservada ao administrador da organização com a
+          integração Experiência Falcão ligada a esta conta do GoHighLevel.
+        </p>
+      </div>
+    );
+  }
+  if (!data) return null;
 
   const t = data.ultimaTentativa;
+  const codigoLimpo = codigo.trim();
+  const codigoJaUsado = data.codigosUsados.includes(codigoLimpo);
+  const podeTestar =
+    data.leituraOk &&
+    data.credencial === "presente" &&
+    !codigoJaUsado &&
+    /^TEST[0-9A-Z]{1,16}$/.test(codigoLimpo);
 
   return (
     <div className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="text-sm font-medium">4. Teste da API de Conversões da Meta</p>
         <Badge variant={data.credencial === "presente" ? "default" : "outline"}>
-          {ESTADO_CREDENCIAL[data.credencial] ?? "Desconhecida"}
+          {data.credencial ? (ESTADO_CREDENCIAL[data.credencial] ?? "Desconhecida") : "Desconhecida"}
         </Badge>
       </div>
 
@@ -68,6 +90,12 @@ export function FalcaoMetaCapi({ allowed }: { allowed: boolean }) {
         Não representa lead nem venda, não usa dados de nenhuma pessoa e não toca nos contactos, nas
         oportunidades nem no acolhimento. A aceitação pela interface da Meta não prova que o evento
         aparece no Gestor de Eventos.
+      </p>
+
+      <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+        Aviso conforme a documentação da Meta: eventos enviados com código de teste não são
+        necessariamente descartados e podem participar em mensuração e segmentação. Por isso só é
+        permitido um único evento sintético de visita de página, sem qualquer pessoa associada.
       </p>
 
       <dl className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
@@ -90,13 +118,18 @@ export function FalcaoMetaCapi({ allowed }: { allowed: boolean }) {
       </dl>
 
       <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-        {t ? (
+        {!data.leituraOk ? (
+          "Estado indisponível: não foi possível ler o registo das tentativas. O botão de teste fica bloqueado até a leitura funcionar."
+        ) : t ? (
           <>
             Última tentativa: {ESTADO_TENTATIVA[t.status] ?? t.status} · código {t.testEventCode} ·{" "}
             {new Date(t.criadoEm).toLocaleString("pt-PT")}
             {t.eventsReceived !== null ? ` · eventos recebidos: ${t.eventsReceived}` : ""}
             {t.fbtraceId ? ` · diagnóstico ${t.fbtraceId}` : ""}
             {t.diagnostic ? ` · ${t.diagnostic}` : ""}
+            <br />
+            Identificador do evento para conferir no Gestor de Eventos:{" "}
+            <span className="font-mono break-all">{t.eventId}</span>
           </>
         ) : (
           "Ainda não houve nenhuma tentativa. Cada código de teste só pode ser usado uma vez."
@@ -114,13 +147,15 @@ export function FalcaoMetaCapi({ allowed }: { allowed: boolean }) {
             className="w-48"
           />
         </div>
-        <Button
-          disabled={pending || data.credencial !== "presente" || !/^TEST[0-9A-Z]{1,16}$/.test(codigo.trim())}
-          onClick={() => void enviar()}
-        >
+        <Button disabled={pending || !podeTestar} onClick={() => void enviar()}>
           {pending ? "A enviar…" : "Testar"}
         </Button>
       </div>
+      {codigoJaUsado && (
+        <p className="text-xs text-muted-foreground">
+          Este código já foi usado nesta conta. Gere outro no Gestor de Eventos.
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         Sem repetição automática: se o resultado ficar por confirmar, nada é reenviado e o registo
         fica marcado para revisão.

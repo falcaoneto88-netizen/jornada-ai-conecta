@@ -101,16 +101,47 @@ export function construirEventoTeste(entrada: {
   };
 }
 
-/** Remove qualquer coisa parecida com credencial e limita o tamanho. */
-export function sanitizarDiagnostico(valor: unknown): string {
-  const bruto = typeof valor === "string" ? valor : valor == null ? "" : JSON.stringify(valor);
-  return bruto
-    .replace(/access_token=[^&\s"']*/gi, "access_token=[oculto]")
-    .replace(/\b(EAA|EAB)[A-Za-z0-9]{10,}\b/g, "[oculto]")
-    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[oculto]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 200);
+/**
+ * Diagnóstico estruturado: nunca guardamos texto bruto da rede nem da Meta,
+ * só campos técnicos conhecidos. Assim nenhum valor sensível pode escapar por
+ * uma mensagem de erro.
+ */
+export const DIAGNOSTICO_REDE = "falha_de_rede_ou_tempo_limite";
+export const DIAGNOSTICO_REDIRECIONAMENTO = "redirecionamento_recusado";
+export const DIAGNOSTICO_SEM_CONTAGEM = "resposta_sem_events_received";
+export const DIAGNOSTICO_ERRO_EM_2XX = "erro_no_corpo_de_resposta_2xx";
+
+function campo(nome: string, valor: unknown): string | null {
+  if (typeof valor === "number" && Number.isFinite(valor)) return `${nome}=${valor}`;
+  if (typeof valor === "boolean") return `${nome}=${valor ? "sim" : "nao"}`;
+  return null;
+}
+
+/** Só HTTP, error.code, error_subcode e is_transient. Sem mensagem, sem corpo. */
+export function diagnosticoEstruturado(entrada: {
+  httpStatus: number;
+  erro: Record<string, unknown> | null;
+  motivo?: string;
+}): string {
+  const partes = [`http=${entrada.httpStatus}`];
+  if (entrada.motivo) partes.push(`motivo=${entrada.motivo}`);
+  if (entrada.erro) {
+    for (const [nome, chave] of [
+      ["code", "code"],
+      ["subcode", "error_subcode"],
+      ["transient", "is_transient"],
+    ] as const) {
+      const p = campo(nome, entrada.erro[chave]);
+      if (p) partes.push(p);
+    }
+  }
+  return partes.join(" ").slice(0, 200);
+}
+
+/** Redacção exata do token, para o caso de algum texto ter de ser guardado. */
+export function redigirToken(texto: string, token: string | null): string {
+  if (!token || token === "") return texto;
+  return texto.split(token).join("[oculto]");
 }
 
 export type LeituraRespostaMeta = {
@@ -129,37 +160,43 @@ export function interpretarRespostaMeta(entrada: {
   corpo: unknown;
   redirecionado?: boolean;
 }): LeituraRespostaMeta {
-  const corpo =
-    entrada.corpo && typeof entrada.corpo === "object" && !Array.isArray(entrada.corpo)
-      ? (entrada.corpo as Record<string, unknown>)
-      : null;
-  const fbtraceBruto = corpo?.["fbtrace_id"];
-  const fbtraceId =
-    typeof fbtraceBruto === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(fbtraceBruto)
-      ? fbtraceBruto
-      : null;
+  const objeto = (v: unknown): Record<string, unknown> | null =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  const corpo = objeto(entrada.corpo);
+  const erro = objeto(corpo?.["error"]);
+  const traco = (v: unknown) =>
+    typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : null;
+  const fbtraceId = traco(corpo?.["fbtrace_id"]) ?? traco(erro?.["fbtrace_id"]);
+  const diag = (motivo?: string) =>
+    diagnosticoEstruturado({
+      httpStatus: entrada.httpStatus,
+      erro,
+      ...(motivo === undefined ? {} : { motivo }),
+    });
 
   if (entrada.redirecionado === true) {
     return {
       status: "uncertain",
       eventsReceived: null,
       fbtraceId,
-      diagnostico: "Resposta redirecionada: envio recusado e resultado por confirmar.",
+      diagnostico: diag(DIAGNOSTICO_REDIRECIONAMENTO),
     };
   }
 
-  const ok = entrada.httpStatus >= 200 && entrada.httpStatus < 300;
-  if (!ok) {
-    const erro = corpo?.["error"];
-    const mensagem =
-      erro && typeof erro === "object" && !Array.isArray(erro)
-        ? ((erro as Record<string, unknown>)["message"] ?? erro)
-        : corpo ?? "";
+  // 5xx é indisponibilidade do lado da Meta: nunca uma recusa conclusiva.
+  if (entrada.httpStatus >= 500) {
+    return { status: "uncertain", eventsReceived: null, fbtraceId, diagnostico: diag() };
+  }
+  if (entrada.httpStatus < 200 || entrada.httpStatus >= 300) {
+    return { status: "rejected", eventsReceived: null, fbtraceId, diagnostico: diag() };
+  }
+  // Corpo 2xx com objeto error nunca é aceitação.
+  if (erro) {
     return {
       status: "rejected",
       eventsReceived: null,
       fbtraceId,
-      diagnostico: sanitizarDiagnostico(`HTTP ${entrada.httpStatus}: ${sanitizarDiagnostico(mensagem)}`),
+      diagnostico: diag(DIAGNOSTICO_ERRO_EM_2XX),
     };
   }
 
@@ -169,7 +206,7 @@ export function interpretarRespostaMeta(entrada: {
       status: "uncertain",
       eventsReceived: null,
       fbtraceId,
-      diagnostico: "Resposta sem events_received: resultado por confirmar na Meta.",
+      diagnostico: diag(DIAGNOSTICO_SEM_CONTAGEM),
     };
   }
   if (recebidos !== 1) {
@@ -177,13 +214,8 @@ export function interpretarRespostaMeta(entrada: {
       status: "uncertain",
       eventsReceived: recebidos,
       fbtraceId,
-      diagnostico: `A Meta indicou ${recebidos} eventos recebidos em vez de 1.`,
+      diagnostico: diag(`events_received=${recebidos}`),
     };
   }
-  return {
-    status: "api_accepted",
-    eventsReceived: 1,
-    fbtraceId,
-    diagnostico: "Pedido aceite pela API. Aceitação não é prova de visualização no Gestor de Eventos.",
-  };
+  return { status: "api_accepted", eventsReceived: 1, fbtraceId, diagnostico: diag() };
 }

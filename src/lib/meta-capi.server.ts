@@ -1,16 +1,20 @@
 /**
  * Teste controlado da API de Conversões da Meta (server-only).
  *
- * Princípios: o token nunca sai do servidor (nem prefixo, nem em logs, nem em
- * URL); o evento é sintético; a reserva no registo durável acontece ANTES do
- * pedido e nunca é libertada; não há repetição automática; aceitação da API não
- * é prova de visualização no Gestor de Eventos.
+ * Princípios: autorização explícita no servidor ANTES de tocar na credencial;
+ * o token nunca sai do servidor (nem prefixo, nem em logs, nem em URL); o
+ * evento é sintético; a reserva no registo durável acontece antes do pedido e
+ * nunca é libertada; não há repetição automática; aceitação da API não é prova
+ * de visualização no Gestor de Eventos.
  */
 import { createHash } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { FALCAO_LOCATION, FALCAO_SLUG } from "./falcao-lead.server";
+import { FALCAO_SOURCE } from "./falcao-lead.core";
 import {
+  DIAGNOSTICO_REDE,
   META_AD_ACCOUNT_ID,
   META_BUSINESS_ID,
   META_DATASET_ID,
@@ -21,12 +25,14 @@ import {
   idEventoTeste,
   interpretarRespostaMeta,
   requestIdValido,
-  sanitizarDiagnostico,
   urlEventosMeta,
   type EstadoTentativaMeta,
 } from "./meta-capi.core";
 
 export const TEMPO_LIMITE_MS = 10_000;
+
+export const RECUSA_ACESSO =
+  "Acesso restrito ao administrador da organização com a integração Experiência Falcão ligada a esta conta do GoHighLevel.";
 
 export type EstadoCredencialMeta = "ausente" | "malformada" | "presente";
 
@@ -43,6 +49,73 @@ export function estadoCredencialMeta(ler: () => string | null = tokenMeta): Esta
 }
 
 type Cliente = Pick<SupabaseClient, "rpc" | "from" | "auth">;
+export type CtxMeta = { supabase: Cliente; userId: string };
+
+export type DepsAutorizacao = {
+  /** Vínculo de confiança, lido server-only (o cliente nunca o altera). */
+  lerBinding?: (orgId: string) => Promise<string | null>;
+};
+
+export type AutorizacaoMeta =
+  | { ok: true; orgId: string; integrationId: string }
+  | { ok: false; message: string };
+
+async function bindingServerOnly(orgId: string): Promise<string | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("ghl_location_bindings")
+    .select("location_id")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  const valor = (data as { location_id?: string } | null)?.location_id;
+  return typeof valor === "string" ? valor : null;
+}
+
+/**
+ * Guard partilhado: sessão real, papel de administrador, organização da sessão,
+ * integração Experiência Falcão existente e vínculo à location autorizada.
+ * Falha fechado: nada é revelado sobre a credencial a quem não passa aqui.
+ */
+export async function autorizarMetaCapi(
+  ctx: CtxMeta,
+  deps: DepsAutorizacao = {},
+): Promise<AutorizacaoMeta> {
+  const recusa = { ok: false as const, message: RECUSA_ACESSO };
+  try {
+    const { data: sessao, error: erroSessao } = await ctx.supabase.auth.getUser();
+    const uid = sessao?.user?.id;
+    if (erroSessao || typeof uid !== "string" || uid !== ctx.userId) return recusa;
+
+    const papel = await ctx.supabase.rpc("tem_papel", { _papeis: ["administrador"] });
+    if (papel.error || papel.data !== true) return recusa;
+
+    const perfil = await ctx.supabase
+      .from("profiles")
+      .select("organization_id")
+      .eq("id", uid)
+      .maybeSingle();
+    const orgId = (perfil.data as { organization_id?: string } | null)?.organization_id;
+    if (perfil.error || typeof orgId !== "string") return recusa;
+
+    const integracao = await ctx.supabase
+      .from("site_integrations")
+      .select("id,ghl_location_id")
+      .eq("organization_id", orgId)
+      .eq("slug", FALCAO_SLUG)
+      .eq("source", FALCAO_SOURCE)
+      .maybeSingle();
+    const linha = integracao.data as { id?: string; ghl_location_id?: string } | null;
+    if (integracao.error || typeof linha?.id !== "string" || linha.ghl_location_id !== FALCAO_LOCATION)
+      return recusa;
+
+    const binding = await (deps.lerBinding ?? bindingServerOnly)(orgId);
+    if (binding !== FALCAO_LOCATION) return recusa;
+
+    return { ok: true, orgId, integrationId: linha.id };
+  } catch {
+    return recusa;
+  }
+}
 
 export type TentativaMeta = {
   criadoEm: string;
@@ -56,49 +129,74 @@ export type TentativaMeta = {
 };
 
 export type EstadoMetaCapi = {
-  credencial: EstadoCredencialMeta;
+  autorizado: boolean;
+  credencial: EstadoCredencialMeta | null;
   datasetId: string;
   businessId: string;
   adAccountId: string;
   graphVersion: string;
   eventSourceUrl: string;
   ultimaTentativa: TentativaMeta | null;
+  codigosUsados: string[];
   leituraOk: boolean;
 };
 
+const ESTADO_NEGADO: EstadoMetaCapi = {
+  autorizado: false,
+  credencial: null,
+  datasetId: META_DATASET_ID,
+  businessId: META_BUSINESS_ID,
+  adAccountId: META_AD_ACCOUNT_ID,
+  graphVersion: META_GRAPH_VERSION,
+  eventSourceUrl: META_EVENT_SOURCE_URL,
+  ultimaTentativa: null,
+  codigosUsados: [],
+  leituraOk: false,
+};
+
 export async function lerEstadoMetaCapi(
-  client: Cliente,
-  ler: () => string | null = tokenMeta,
+  ctx: CtxMeta,
+  deps: DepsAutorizacao & { lerToken?: () => string | null } = {},
 ): Promise<EstadoMetaCapi> {
-  const { data, error } = await client
+  const autorizacao = await autorizarMetaCapi(ctx, deps);
+  if (!autorizacao.ok) return ESTADO_NEGADO;
+
+  const { data, error } = await ctx.supabase
     .from("meta_capi_test_attempts")
     .select("created_at,updated_at,status,test_event_code,event_id,events_received,fbtrace_id,diagnostic")
     .eq("dataset_id", META_DATASET_ID)
     .order("created_at", { ascending: false })
-    .limit(1);
+    .limit(50);
 
-  const linha = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : undefined;
+  const linhas = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  const linha = linhas[0];
   return {
-    credencial: estadoCredencialMeta(ler),
+    autorizado: true,
+    credencial: estadoCredencialMeta(deps.lerToken ?? tokenMeta),
     datasetId: META_DATASET_ID,
     businessId: META_BUSINESS_ID,
     adAccountId: META_AD_ACCOUNT_ID,
     graphVersion: META_GRAPH_VERSION,
     eventSourceUrl: META_EVENT_SOURCE_URL,
     leituraOk: !error,
-    ultimaTentativa: linha
-      ? {
-          criadoEm: String(linha["created_at"]),
-          atualizadoEm: String(linha["updated_at"]),
-          status: linha["status"] as EstadoTentativaMeta,
-          testEventCode: String(linha["test_event_code"]),
-          eventId: String(linha["event_id"]),
-          eventsReceived:
-            typeof linha["events_received"] === "number" ? (linha["events_received"] as number) : null,
-          fbtraceId: typeof linha["fbtrace_id"] === "string" ? (linha["fbtrace_id"] as string) : null,
-          diagnostic: typeof linha["diagnostic"] === "string" ? (linha["diagnostic"] as string) : null,
-        }
-      : null,
+    codigosUsados: error ? [] : linhas.map((l) => String(l["test_event_code"])),
+    ultimaTentativa:
+      !error && linha
+        ? {
+            criadoEm: String(linha["created_at"]),
+            atualizadoEm: String(linha["updated_at"]),
+            status: linha["status"] as EstadoTentativaMeta,
+            testEventCode: String(linha["test_event_code"]),
+            eventId: String(linha["event_id"]),
+            eventsReceived:
+              typeof linha["events_received"] === "number"
+                ? (linha["events_received"] as number)
+                : null,
+            fbtraceId: typeof linha["fbtrace_id"] === "string" ? (linha["fbtrace_id"] as string) : null,
+            diagnostic:
+              typeof linha["diagnostic"] === "string" ? (linha["diagnostic"] as string) : null,
+          }
+        : null,
   };
 }
 
@@ -107,9 +205,17 @@ export type ResultadoTesteMeta = {
   estado: EstadoTentativaMeta | "nao_iniciado";
   message: string;
   fbtraceId: string | null;
+  eventId: string | null;
 };
 
-export type DepsTesteMeta = {
+export type ReciboFinalizacao = {
+  persisted?: boolean;
+  attempt_id?: string;
+  status?: string;
+  events_received?: number | null;
+} | null;
+
+export type DepsTesteMeta = DepsAutorizacao & {
   lerToken?: () => string | null;
   /** Um único pedido, sem repetição automática. */
   enviar?: (url: string, corpo: URLSearchParams) => Promise<{
@@ -124,7 +230,7 @@ export type DepsTesteMeta = {
     eventsReceived: number | null;
     fbtraceId: string | null;
     diagnostic: string;
-  }) => Promise<boolean>;
+  }) => Promise<ReciboFinalizacao>;
   agora?: () => Date;
   novoRequestId?: () => string;
   hash?: (valor: string) => string;
@@ -164,7 +270,7 @@ async function finalizarReal(entrada: {
   eventsReceived: number | null;
   fbtraceId: string | null;
   diagnostic: string;
-}): Promise<boolean> {
+}): Promise<ReciboFinalizacao> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   // Os tipos gerados não exprimem parâmetros anuláveis; o SQL aceita NULL.
   const argumentos = {
@@ -173,9 +279,28 @@ async function finalizarReal(entrada: {
     _events_received: entrada.eventsReceived,
     _fbtrace: entrada.fbtraceId,
     _diagnostic: entrada.diagnostic,
-  } as unknown as { _attempt: string; _status: string; _events_received: number; _fbtrace: string; _diagnostic: string };
+  } as unknown as {
+    _attempt: string;
+    _status: string;
+    _events_received: number;
+    _fbtrace: string;
+    _diagnostic: string;
+  };
   const { data, error } = await supabaseAdmin.rpc("meta_capi_test_finish", argumentos);
-  return !error && (data as { persisted?: boolean } | null)?.persisted === true;
+  if (error) return null;
+  return (data ?? null) as ReciboFinalizacao;
+}
+
+/** O recibo tem de bater certo com o que o servidor mandou gravar. */
+function reciboConfere(
+  recibo: ReciboFinalizacao,
+  esperado: { attemptId: string; status: EstadoTentativaMeta; eventsReceived: number | null },
+): boolean {
+  if (!recibo || recibo.persisted !== true) return false;
+  if (recibo.attempt_id !== esperado.attemptId) return false;
+  if (recibo.status !== esperado.status) return false;
+  const recebidos = recibo.events_received ?? null;
+  return recebidos === esperado.eventsReceived;
 }
 
 /**
@@ -183,7 +308,7 @@ async function finalizarReal(entrada: {
  * integração existente pode chamar; a reserva é atómica e não reutilizável.
  */
 export async function testarMetaCapi(
-  client: Cliente,
+  ctx: CtxMeta,
   entrada: { confirm: boolean; testEventCode: string; requestId?: string },
   deps: DepsTesteMeta = {},
 ): Promise<ResultadoTesteMeta> {
@@ -192,7 +317,12 @@ export async function testarMetaCapi(
     estado: "nao_iniciado",
     message,
     fbtraceId: null,
+    eventId: null,
   });
+
+  // 1) Autorização explícita, antes de qualquer leitura da credencial.
+  const autorizacao = await autorizarMetaCapi(ctx, deps);
+  if (!autorizacao.ok) return recusa(autorizacao.message);
 
   if (entrada.confirm !== true) return recusa("Confirme o envio do evento de teste.");
   if (!codigoTesteValido(entrada.testEventCode))
@@ -214,7 +344,7 @@ export async function testarMetaCapi(
   if (!requestIdValido(requestId)) return recusa("Identificador de pedido inválido.");
   const eventId = idEventoTeste(requestId);
 
-  const reserva = await client.rpc("meta_capi_test_reserve", {
+  const reserva = await ctx.supabase.rpc("meta_capi_test_reserve", {
     _dataset: META_DATASET_ID,
     _test_code: entrada.testEventCode,
     _request: requestId,
@@ -246,47 +376,58 @@ export async function testarMetaCapi(
   try {
     const resposta = await (deps.enviar ?? enviarReal)(urlEventosMeta(), corpo);
     leitura = interpretarRespostaMeta(resposta);
-  } catch (erro) {
-    // Sem repetição: o desfecho fica incerto e a reserva não é libertada.
+  } catch {
+    // Sem repetição e sem texto bruto: diagnóstico estático, desfecho incerto.
     leitura = {
       status: "uncertain",
       eventsReceived: null,
       fbtraceId: null,
-      diagnostico: sanitizarDiagnostico(
-        `Falha de rede ou tempo limite: ${erro instanceof Error ? erro.message : "desconhecida"}`,
-      ),
+      diagnostico: DIAGNOSTICO_REDE,
     };
   }
 
-  const persistido = await (deps.finalizar ?? finalizarReal)({
-    attemptId,
-    status: leitura.status,
-    eventsReceived: leitura.eventsReceived,
-    fbtraceId: leitura.fbtraceId,
-    diagnostic: leitura.diagnostico,
-  });
+  let recibo: ReciboFinalizacao = null;
+  try {
+    recibo = await (deps.finalizar ?? finalizarReal)({
+      attemptId,
+      status: leitura.status,
+      eventsReceived: leitura.eventsReceived,
+      fbtraceId: leitura.fbtraceId,
+      diagnostic: leitura.diagnostico,
+    });
+  } catch {
+    recibo = null;
+  }
 
-  if (!persistido)
+  if (
+    !reciboConfere(recibo, {
+      attemptId,
+      status: leitura.status,
+      eventsReceived: leitura.eventsReceived,
+    })
+  )
     return {
       ok: false,
       estado: "uncertain",
       message:
-        "O pedido saiu, mas não foi possível gravar o resultado. Trate como por confirmar e reveja no Gestor de Eventos antes de repetir.",
+        "O pedido saiu, mas o resultado não ficou gravado de forma verificável. Não repita: consulte o estado desta tentativa e confirme no Gestor de Eventos da Meta.",
       fbtraceId: leitura.fbtraceId,
+      eventId,
     };
 
   const mensagens: Record<EstadoTentativaMeta, string> = {
     in_progress: "Tentativa em curso.",
     api_accepted:
       "A API aceitou 1 evento de teste sintético. Aceitação não confirma visualização no Gestor de Eventos.",
-    rejected: `A Meta recusou o evento de teste. ${leitura.diagnostico}`,
-    uncertain: `Resultado por confirmar. ${leitura.diagnostico}`,
+    rejected: `A Meta recusou o evento de teste (${leitura.diagnostico}).`,
+    uncertain: `Resultado por confirmar (${leitura.diagnostico}). Não repita: verifique no Gestor de Eventos.`,
   };
   return {
     ok: leitura.status === "api_accepted",
     estado: leitura.status,
     message: mensagens[leitura.status],
     fbtraceId: leitura.fbtraceId,
+    eventId,
   };
 }
 
