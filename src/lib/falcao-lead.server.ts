@@ -11,6 +11,8 @@ export const FALCAO_LOCATION = "ok2UHC2QMZsd8UHsAgEa";
 export const FALCAO_PIPELINE = "2QGyurvcmwhNhRgq0jCq";
 export const FALCAO_STAGE_GHL = "c23ea507-33f5-41b6-933b-fd532ccbb773";
 export const FALCAO_SLUG = "experiencia-falcao";
+/** Origem esperada da integração: filtra filas e reservas. */
+export const FALCAO_SOURCE_INTEGRACAO = "experiencia-falcao";
 export const FALCAO_STAGE_LOCAL = "novo_lead";
 export const FALCAO_SITE_URL = "https://experiencia-falcao-teste.falcaoneto88.chatgpt.site";
 
