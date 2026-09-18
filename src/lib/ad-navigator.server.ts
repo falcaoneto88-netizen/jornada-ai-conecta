@@ -136,9 +136,19 @@ export async function lerEstadoAdNavigator(
  * Gera o código de uso único. O valor em claro é devolvido UMA vez para o
  * administrador copiar; no servidor fica só o SHA256.
  */
+export type DetalhePareamento = {
+  pairing_id: string;
+  organization_id: string;
+  organization_name: string | null;
+  location_id: string;
+  pipeline_id: string;
+  scope: string;
+  expires_at: string;
+};
+
 export async function criarPareamentoAdNavigator(
   supabase: ClienteSessao,
-): Promise<{ ok: true; code: string; detalhe: Record<string, unknown> } | { ok: false; message: string }> {
+): Promise<{ ok: true; code: string; detalhe: DetalhePareamento } | { ok: false; message: string }> {
   const code = gerarCodigoPareamento();
   const { data, error } = await supabase.rpc("ad_navigator_create_pairing", {
     _code_sha256: sha256hex(code),
@@ -152,15 +162,17 @@ export async function criarPareamentoAdNavigator(
         "Não foi possível gerar o código. Confirme que é administrador desta conta e que a ligação ao GoHighLevel está validada.",
     };
   }
-  return { ok: true, code, detalhe: data as Record<string, unknown> };
+  return { ok: true, code, detalhe: data as unknown as DetalhePareamento };
 }
+
+export type DetalheRevogacao = { pairings_revoked: number; grants_revoked: number };
 
 export async function revogarAdNavigator(
   supabase: ClienteSessao,
-): Promise<{ ok: true; detalhe: Record<string, unknown> } | { ok: false; message: string }> {
+): Promise<{ ok: true; detalhe: DetalheRevogacao } | { ok: false; message: string }> {
   const { data, error } = await supabase.rpc("ad_navigator_revoke_access", { _confirm: true });
   if (error || data === null || typeof data !== "object") {
     return { ok: false, message: "Não foi possível revogar o acesso." };
   }
-  return { ok: true, detalhe: data as Record<string, unknown> };
+  return { ok: true, detalhe: data as unknown as DetalheRevogacao };
 }

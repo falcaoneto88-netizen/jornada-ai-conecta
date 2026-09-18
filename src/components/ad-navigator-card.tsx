@@ -66,7 +66,9 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
   async function gerarCodigo() {
     setPendente(true);
     try {
-      const r = await gerar({ data: { confirm: true } });
+      const r = (await gerar({ data: { confirm: true } })) as
+        | { ok: true; code: string }
+        | { ok: false; message: string };
       if (r.ok) {
         setCodigo(r.code);
         toast.success("Código gerado. Copie agora: não volta a ser mostrado.");
@@ -84,7 +86,9 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
   async function revogarTudo() {
     setPendente(true);
     try {
-      const r = await revogar({ data: { confirm: true } });
+      const r = (await revogar({ data: { confirm: true } })) as
+        | { ok: true }
+        | { ok: false; message: string };
       if (r.ok) {
         setCodigo(null);
         toast.success("Acesso revogado.");
