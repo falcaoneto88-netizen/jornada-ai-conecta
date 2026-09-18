@@ -85,20 +85,39 @@ export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
   };
 }
 
+/** Identificador do contacto da oportunidade: aceita forma direta ou aninhada.
+ * `conflito` significa que as duas formas divergem — nunca se escolhe uma.
+ */
+export function contactoDaOportunidade(
+  o: Record<string, unknown>,
+): { ok: true; id: string | null } | { ok: false } {
+  const direto = texto(o["contactId"] ?? o["contact_id"]);
+  const aninhadoBruto = o["contact"];
+  const aninhado =
+    aninhadoBruto && typeof aninhadoBruto === "object" && !Array.isArray(aninhadoBruto)
+      ? texto((aninhadoBruto as Record<string, unknown>)["id"])
+      : null;
+  if (direto && aninhado && direto !== aninhado) return { ok: false };
+  return { ok: true, id: direto ?? aninhado };
+}
+
 export function oportunidadeDaApi(bruto: unknown): OportunidadeRemota | null {
   if (!bruto || typeof bruto !== "object") return null;
   const o = bruto as Record<string, unknown>;
   const id = texto(o["id"]);
   if (!id) return null;
+  const contacto = contactoDaOportunidade(o);
+  if (!contacto.ok) return null;
   return {
     id,
     name: texto(o["name"]),
     pipelineId: texto(o["pipelineId"] ?? o["pipeline_id"]),
     stageId: texto(o["pipelineStageId"] ?? o["stageId"] ?? o["pipeline_stage_id"]),
     status: texto(o["status"]),
-    contactId: texto(o["contactId"] ?? o["contact_id"]),
+    contactId: contacto.id,
   };
 }
+
 
 function falha<T>(res: { code: string; message: string }): ResultadoRemotoApi<T> {
   return { ok: false, code: res.code, message: res.message };
