@@ -71,6 +71,13 @@
       "when": 1789742353465,
       "tag": "0009_ad_navigator_bridge_v1_1_definitivo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789745504451,
+      "tag": "0010_ad_navigator_locks_v1_2",
+      "breakpoints": true
     }
   ]
 }
