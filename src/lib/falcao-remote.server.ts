@@ -85,20 +85,39 @@ export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
   };
 }
 
+/** Identificador do contacto da oportunidade: aceita forma direta ou aninhada.
+ * `conflito` significa que as duas formas divergem — nunca se escolhe uma.
+ */
+export function contactoDaOportunidade(
+  o: Record<string, unknown>,
+): { ok: true; id: string | null } | { ok: false } {
+  const direto = texto(o["contactId"] ?? o["contact_id"]);
+  const aninhadoBruto = o["contact"];
+  const aninhado =
+    aninhadoBruto && typeof aninhadoBruto === "object" && !Array.isArray(aninhadoBruto)
+      ? texto((aninhadoBruto as Record<string, unknown>)["id"])
+      : null;
+  if (direto && aninhado && direto !== aninhado) return { ok: false };
+  return { ok: true, id: direto ?? aninhado };
+}
+
 export function oportunidadeDaApi(bruto: unknown): OportunidadeRemota | null {
   if (!bruto || typeof bruto !== "object") return null;
   const o = bruto as Record<string, unknown>;
   const id = texto(o["id"]);
   if (!id) return null;
+  const contacto = contactoDaOportunidade(o);
+  if (!contacto.ok) return null;
   return {
     id,
     name: texto(o["name"]),
     pipelineId: texto(o["pipelineId"] ?? o["pipeline_id"]),
     stageId: texto(o["pipelineStageId"] ?? o["stageId"] ?? o["pipeline_stage_id"]),
     status: texto(o["status"]),
-    contactId: texto(o["contactId"] ?? o["contact_id"]),
+    contactId: contacto.id,
   };
 }
+
 
 function falha<T>(res: { code: string; message: string }): ResultadoRemotoApi<T> {
   return { ok: false, code: res.code, message: res.message };
@@ -200,16 +219,19 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
         return { ok: false, code: "malformed_response", message: "Resposta sem lista." };
       }
       const meta = res.data?.meta;
-      if (!meta || typeof meta !== "object" || Array.isArray(meta) || typeof meta["total"] !== "number") {
+      if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
         return { ok: false, code: "malformed_response", message: "Paginação não comprovada." };
       }
       const total = meta["total"];
-      if (
-        total !== lista.length ||
-        lista.length >= 100 ||
-        texto(meta["nextPageUrl"]) ||
-        texto(meta["nextPage"])
-      ) {
+      if (typeof total !== "number" || !Number.isInteger(total) || total < 0) {
+        return { ok: false, code: "malformed_response", message: "Total não comprovado." };
+      }
+      // `nextPageUrl` é informativa e vem sempre; a prova de fim é `nextPage` vazio.
+      const proxima = meta["nextPage"];
+      const temProxima =
+        proxima != null &&
+        !(typeof proxima === "string" && proxima.trim() === "");
+      if (total !== lista.length || lista.length >= 100 || temProxima) {
         // Paginação incompleta: não é possível concluir que não existe oportunidade.
         return { ok: false, code: "malformed_response", message: "Listagem truncada." };
       }
@@ -217,7 +239,26 @@ export function criarDepsGhl(cfg: GhlConfig, rpc: DepsRemoto["concluir"]): DepsR
       if (mapeadas.some((o) => o === null)) {
         return { ok: false, code: "malformed_response", message: "Oportunidade sem campos." };
       }
-      return { ok: true, data: mapeadas as OportunidadeRemota[] };
+      const validas = mapeadas as OportunidadeRemota[];
+      const locaisDivergentes = lista.some((bruto) => {
+        const l = texto((bruto as Record<string, unknown>)["locationId"]);
+        return l !== null && l !== locationId;
+      });
+      if (locaisDivergentes) {
+        return { ok: false, code: "malformed_response", message: "Oportunidade de outra location." };
+      }
+      if (new Set(validas.map((o) => o.id)).size !== validas.length) {
+        return { ok: false, code: "malformed_response", message: "Identificadores repetidos." };
+      }
+      if (
+        validas.some(
+          (o) => o.contactId !== ghlContactId || !o.pipelineId || !o.stageId || !o.status,
+        )
+      ) {
+        return { ok: false, code: "malformed_response", message: "Oportunidade sem dados reais." };
+      }
+      return { ok: true, data: validas };
+
     },
     async criarOportunidade({ locationId, pipelineId, stageId, ghlContactId, nome }) {
       const res = await ghlFetch<{ opportunity?: unknown }>(cfg, "opportunities/", {
