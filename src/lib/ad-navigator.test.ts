@@ -182,7 +182,10 @@ describe("resumo", () => {
       ["contagem acima do seguro", comContagens({ opportunities: 1e18 })],
       ["texto não numérico", comContagens({ opportunities: "três" as unknown as number })],
       ["estados incompletos", comContagens({ by_status: { open: 3 } as never })],
-      ["etapa fora da allowlist", comContagens({ by_stage: { "Harmonização VIP": 3 } })],
+      [
+        "etapa fora da allowlist",
+        comContagens({ by_stage: { "Harmonização VIP": 3 } as unknown as Bruto["counts"]["by_stage"] }),
+      ],
       ["soma de estados diferente do total", comContagens({ opportunities: 4 })],
       [
         "soma de etapas diferente do total",
