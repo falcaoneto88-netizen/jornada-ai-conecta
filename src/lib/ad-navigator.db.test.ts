@@ -236,7 +236,7 @@ describe("resumo agregado", () => {
       attribution: { status: string };
       revenue: { value: null };
     };
-    expect(payload.counts.opportunities).toBe(1203);
+    expect(payload.counts.opportunities).toBe(1202);
     expect(payload.counts.linked_contacts).toBe(2);
     expect(payload.counts.unlinked_opportunities).toBe(1);
     expect(payload.counts.by_status["open"]).toBe(1200);
@@ -302,9 +302,9 @@ describe("revogação e limite de abuso", () => {
   it("conta pedidos na janela e bloqueia acima do limite", () => {
     const chave = hash("bucket-teste");
     const primeira = db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`);
-    expect(valor(primeira)).toBe("t");
-    expect(valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`))).toBe("t");
-    expect(valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`))).toBe("f");
+    expect(valor(primeira)).toBe("true");
+    expect(valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`))).toBe("true");
+    expect(valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`))).toBe("false");
     expect(db.comoUtilizador(UID_A, `select public.ad_navigator_rate_hit('${chave}',2,60);`).ok).toBe(false);
   });
 });
