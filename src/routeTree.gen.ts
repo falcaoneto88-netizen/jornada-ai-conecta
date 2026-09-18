@@ -21,10 +21,13 @@ import { Route as JornadaRouteImport } from './routes/jornada'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ModelosRouteImport } from './routes/modelos'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as ApiVersionRouteImport } from './routes/api/version'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicBioreportEventRouteImport } from './routes/api/public/bioreport-event'
 import { Route as ApiPublicFalcaoLeadRouteImport } from './routes/api/public/falcao-lead'
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
+import { Route as ApiAdNavigatorV1ExchangeRouteImport } from './routes/api/ad-navigator/v1/exchange'
+import { Route as ApiAdNavigatorV1SummaryRouteImport } from './routes/api/ad-navigator/v1/summary'
 import { Route as ApiPublicHooksSincronizarAgendaRouteImport } from './routes/api/public/hooks/sincronizar-agenda'
 
 const IndexRoute = IndexRouteImport.update({
@@ -88,6 +91,11 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiVersionRoute = ApiVersionRouteImport.update({
+  id: '/api/version',
+  path: '/api/version',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   id: '/.lovable/oauth/consent',
   path: '/.lovable/oauth/consent',
@@ -106,6 +114,17 @@ const ApiPublicFalcaoLeadRoute = ApiPublicFalcaoLeadRouteImport.update({
 const ApiPublicGhlWebhookRoute = ApiPublicGhlWebhookRouteImport.update({
   id: '/api/public/ghl-webhook',
   path: '/api/public/ghl-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdNavigatorV1ExchangeRoute =
+  ApiAdNavigatorV1ExchangeRouteImport.update({
+    id: '/api/ad-navigator/v1/exchange',
+    path: '/api/ad-navigator/v1/exchange',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAdNavigatorV1SummaryRoute = ApiAdNavigatorV1SummaryRouteImport.update({
+  id: '/api/ad-navigator/v1/summary',
+  path: '/api/ad-navigator/v1/summary',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicHooksSincronizarAgendaRoute =
@@ -128,10 +147,13 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
+  '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
+  '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
 export interface FileRoutesByTo {
@@ -147,10 +169,13 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
+  '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
+  '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
 export interface FileRoutesById {
@@ -167,10 +192,13 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
+  '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
+  '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
 }
 export interface FileRouteTypes {
@@ -188,10 +216,13 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/modelos'
     | '/.well-known/oauth-protected-resource'
+    | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
     | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
+    | '/api/ad-navigator/v1/exchange'
+    | '/api/ad-navigator/v1/summary'
     | '/api/public/hooks/sincronizar-agenda'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -207,10 +238,13 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/modelos'
     | '/.well-known/oauth-protected-resource'
+    | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
     | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
+    | '/api/ad-navigator/v1/exchange'
+    | '/api/ad-navigator/v1/summary'
     | '/api/public/hooks/sincronizar-agenda'
   id:
     | '__root__'
@@ -226,10 +260,13 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/modelos'
     | '/.well-known/oauth-protected-resource'
+    | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
     | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
+    | '/api/ad-navigator/v1/exchange'
+    | '/api/ad-navigator/v1/summary'
     | '/api/public/hooks/sincronizar-agenda'
   fileRoutesById: FileRoutesById
 }
@@ -246,10 +283,13 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   ModelosRoute: typeof ModelosRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  ApiVersionRoute: typeof ApiVersionRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicBioreportEventRoute: typeof ApiPublicBioreportEventRoute
   ApiPublicFalcaoLeadRoute: typeof ApiPublicFalcaoLeadRoute
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
+  ApiAdNavigatorV1ExchangeRoute: typeof ApiAdNavigatorV1ExchangeRoute
+  ApiAdNavigatorV1SummaryRoute: typeof ApiAdNavigatorV1SummaryRoute
   ApiPublicHooksSincronizarAgendaRoute: typeof ApiPublicHooksSincronizarAgendaRoute
 }
 
@@ -339,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/version': {
+      id: '/api/version'
+      path: '/api/version'
+      fullPath: '/api/version'
+      preLoaderRoute: typeof ApiVersionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/.lovable/oauth/consent': {
       id: '/.lovable/oauth/consent'
       path: '/.lovable/oauth/consent'
@@ -367,6 +414,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGhlWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ad-navigator/v1/exchange': {
+      id: '/api/ad-navigator/v1/exchange'
+      path: '/api/ad-navigator/v1/exchange'
+      fullPath: '/api/ad-navigator/v1/exchange'
+      preLoaderRoute: typeof ApiAdNavigatorV1ExchangeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ad-navigator/v1/summary': {
+      id: '/api/ad-navigator/v1/summary'
+      path: '/api/ad-navigator/v1/summary'
+      fullPath: '/api/ad-navigator/v1/summary'
+      preLoaderRoute: typeof ApiAdNavigatorV1SummaryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/sincronizar-agenda': {
       id: '/api/public/hooks/sincronizar-agenda'
       path: '/api/public/hooks/sincronizar-agenda'
@@ -391,10 +452,13 @@ const rootRouteChildren: RootRouteChildren = {
   ModelosRoute: ModelosRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  ApiVersionRoute: ApiVersionRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicBioreportEventRoute: ApiPublicBioreportEventRoute,
   ApiPublicFalcaoLeadRoute: ApiPublicFalcaoLeadRoute,
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
+  ApiAdNavigatorV1ExchangeRoute: ApiAdNavigatorV1ExchangeRoute,
+  ApiAdNavigatorV1SummaryRoute: ApiAdNavigatorV1SummaryRoute,
   ApiPublicHooksSincronizarAgendaRoute: ApiPublicHooksSincronizarAgendaRoute,
 }
 export const routeTree = rootRouteImport
