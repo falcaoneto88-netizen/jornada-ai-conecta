@@ -217,7 +217,107 @@ describe("adaptador HTTP fail-closed", () => {
     expect(r).toMatchObject({ ok: false, code: "malformed_response" });
     fetchMock.mockRestore();
   });
+
+  describe("paginação e identidade das oportunidades", () => {
+    const oppBase = {
+      id: "o1",
+      name: "Lead",
+      pipelineId: "pipe",
+      pipelineStageId: "stage",
+      status: "open",
+      contactId: "c1",
+    };
+    const ler = () =>
+      criarDepsGhl(cfg, async () => ({ ok: true })).oportunidades({
+        locationId: "loc",
+        ghlContactId: "c1",
+      });
+
+    it("aceita nextPageUrl informativa quando nextPage está vazio e o total bate", async () => {
+      const fetchMock = resposta({
+        opportunities: [oppBase],
+        meta: { total: 1, nextPageUrl: "https://services.leadconnectorhq.com/x", nextPage: "", currentPage: 1 },
+      });
+      expect(await ler()).toMatchObject({ ok: true, data: [{ id: "o1", contactId: "c1" }] });
+      fetchMock.mockRestore();
+    });
+
+    it("bloqueia total incoerente com a lista", async () => {
+      const fetchMock = resposta({ opportunities: [oppBase], meta: { total: 2, nextPage: "" } });
+      expect(await ler()).toMatchObject({ ok: false, code: "malformed_response" });
+      fetchMock.mockRestore();
+    });
+
+    it("bloqueia nextPage preenchido, em número ou em texto", async () => {
+      for (const nextPage of [2, "2"]) {
+        const fetchMock = resposta({ opportunities: [oppBase], meta: { total: 1, nextPage } });
+        expect(await ler()).toMatchObject({ ok: false, code: "malformed_response" });
+        fetchMock.mockRestore();
+      }
+    });
+
+    it("bloqueia contacto divergente, ausente ou funil sem dados", async () => {
+      const casos = [
+        { ...oppBase, contactId: "outro" },
+        { ...oppBase, contactId: undefined },
+        { ...oppBase, pipelineId: undefined },
+        { ...oppBase, pipelineStageId: undefined },
+        { ...oppBase, status: "" },
+        { ...oppBase, locationId: "outra" },
+      ];
+      for (const caso of casos) {
+        const fetchMock = resposta({ opportunities: [caso], meta: { total: 1, nextPage: "" } });
+        expect(await ler()).toMatchObject({ ok: false, code: "malformed_response" });
+        fetchMock.mockRestore();
+      }
+    });
+
+    it("aceita contacto aninhado mas bloqueia conflito entre as duas formas", async () => {
+      const aninhado = { ...oppBase, contactId: undefined, contact: { id: "c1" } };
+      let fetchMock = resposta({ opportunities: [aninhado], meta: { total: 1, nextPage: "" } });
+      expect(await ler()).toMatchObject({ ok: true, data: [{ id: "o1", contactId: "c1" }] });
+      fetchMock.mockRestore();
+
+      fetchMock = resposta({
+        opportunities: [{ ...oppBase, contact: { id: "outro" } }],
+        meta: { total: 1, nextPage: "" },
+      });
+      expect(await ler()).toMatchObject({ ok: false, code: "malformed_response" });
+      fetchMock.mockRestore();
+    });
+
+    it("bloqueia identificadores repetidos na mesma página", async () => {
+      const fetchMock = resposta({
+        opportunities: [oppBase, { ...oppBase }],
+        meta: { total: 2, nextPage: "" },
+      });
+      expect(await ler()).toMatchObject({ ok: false, code: "malformed_response" });
+      fetchMock.mockRestore();
+    });
+
+    it("preserva a oportunidade existente do funil sem criar outra", async () => {
+      const fetchMock = resposta({
+        opportunities: [oppBase],
+        meta: { total: 1, nextPageUrl: "https://services.leadconnectorhq.com/x", nextPage: "" },
+      });
+      const lista = await ler();
+      fetchMock.mockRestore();
+      expect(lista.ok).toBe(true);
+      if (!lista.ok) return;
+      const criarOportunidade = vi.fn(async () => ({ ok: true as const, data: oportunidade({ id: "o-nova" }) }));
+      const { deps: d, concluir } = deps({
+        criarContacto: async () => ({ ok: true, data: { id: "c1" } }),
+        oportunidades: async () => ({ ok: true, data: lista.data }),
+        criarOportunidade,
+      });
+      const r = await processarSubmissaoRemota(pedido, d);
+      expect(criarOportunidade).not.toHaveBeenCalled();
+      expect(r).toMatchObject({ estado: "confirmado", motivo: "oportunidade_existente_preservada", ghlOpportunityId: "o1" });
+      expect(concluir).toHaveBeenCalledTimes(1);
+    });
+  });
 });
+
 
 describe("processamento remoto de um recibo", () => {
   it("cria contacto e oportunidade no funil fixo", async () => {
