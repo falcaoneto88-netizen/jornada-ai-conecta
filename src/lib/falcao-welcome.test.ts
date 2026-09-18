@@ -158,7 +158,7 @@ describe("adaptador SMS do acolhimento", () => {
 
   it("bloqueia DND ausente ou desconhecido e preserva type SMS", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify({ contact: { id: "ghlC1", locationId: "loc", phone: "+351900000000", dnd: false } }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ total: 1, contacts: [{ id: "ghlC1", locationId: "loc", phone: "+351900000000", dnd: false }] }), { status: 200, headers: { "content-type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ messageId: "m1", status: "accepted" }), { status: 200, headers: { "content-type": "application/json" } }));
     const adaptador = criarDepsAcolhimento(cfg, async () => ({ ok: true }));
     expect(await adaptador.estadoContacto("ghlC1")).toMatchObject({ ok: false, code: "malformed_response" });

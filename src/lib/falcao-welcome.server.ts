@@ -18,14 +18,15 @@ type Ctx = Parameters<typeof resolverAcesso>[0];
 const LIMITE_LOTE = 5;
 
 type ContactoApi = {
-  contact?: {
+  total?: number;
+  contacts?: {
     id?: string;
     locationId?: string;
     phone?: string;
     email?: string;
     dnd?: boolean;
     dndSettings?: unknown;
-  };
+  }[];
 };
 
 function falha<T>(res: { code: string; message: string }): ResultadoApi<T> {
@@ -38,13 +39,28 @@ export function criarDepsAcolhimento(
 ): DepsAcolhimento {
   return {
     async estadoContacto(ghlContactId) {
-      const res = await ghlFetch<ContactoApi>(cfg, `contacts/${encodeURIComponent(ghlContactId)}`);
+      // O GET /contacts/:id omite o DND em contactos recém-criados. A pesquisa
+      // por ID exato devolve o estado explícito; ausência nunca é permissão.
+      const res = await ghlFetch<ContactoApi>(cfg, "contacts/search", {
+        method: "POST",
+        body: {
+          locationId: cfg.locationId,
+          page: 1,
+          pageLimit: 2,
+          filters: [{ field: "id", operator: "eq", value: ghlContactId }],
+        },
+      });
       if (!res.ok) return falha(res);
-      const c = res.data.contact;
+      const rows = res.data.contacts;
+      if (res.data.total !== 1 || !Array.isArray(rows) || rows.length !== 1) {
+        return { ok: false, code: "malformed_response", message: "Contacto não confirmado de forma única." };
+      }
+      const c = rows[0];
       // Campo em falta nunca significa "permitido": a resposta é malformada.
-      if (!c?.id || !c.locationId || typeof c.dnd !== "boolean") {
+      if (c?.id !== ghlContactId || c.locationId !== cfg.locationId || typeof c.dnd !== "boolean") {
         return { ok: false, code: "malformed_response", message: "Contacto sem campos exigidos." };
       }
+
        if (!c.dndSettings || typeof c.dndSettings !== "object" || Array.isArray(c.dndSettings)) {
          return { ok: false, code: "malformed_response", message: "Estado de bloqueio desconhecido." };
        }
