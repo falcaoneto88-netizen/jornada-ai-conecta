@@ -93,14 +93,14 @@ describe("validação exata do contacto remoto", () => {
 });
 
 describe("leitura estrita da API", () => {
-  it("recusa contacto sem location ou sem DND explícito", () => {
+  it("exige location e preserva DND omitido como desconhecido", () => {
     expect(contactoDaApi({ id: "a", dnd: false })).toBeNull();
-    expect(contactoDaApi({ id: "a", locationId: "loc" })).toBeNull();
-    expect(contactoDaApi({ id: "a", locationId: "loc", dnd: false })).toBeNull();
+    expect(contactoDaApi({ id: "a", locationId: "loc" })).toMatchObject({ dnd: null, canaisBloqueados: null });
+    expect(contactoDaApi({ id: "a", locationId: "loc", dnd: false })).toMatchObject({ dnd: false, canaisBloqueados: null });
     expect(contactoDaApi({ id: "a", locationId: "loc", dnd: false, dndSettings: {} })).not.toBeNull();
   });
 
-  it("recusa DND ausente, malformado ou com estado desconhecido", () => {
+  it("recusa DND malformado ou com estado desconhecido", () => {
     expect(contactoDaApi({ id: "a", locationId: "loc", dnd: false, dndSettings: [] })).toBeNull();
     expect(contactoDaApi({ id: "a", locationId: "loc", dnd: false, dndSettings: { SMS: {} } })).toBeNull();
     expect(contactoDaApi({ id: "a", locationId: "loc", dnd: false, dndSettings: { SMS: { status: "misterioso" } } })).toBeNull();
@@ -186,11 +186,11 @@ describe("adaptador HTTP fail-closed", () => {
   });
 
 
-  it("recusa contacto com DND incompleto na resposta real do adaptador", async () => {
+  it("lê identidade com DND incompleto sem presumir autorização de mensagens", async () => {
     const fetchMock = resposta({ contact: { id: "c1", locationId: "loc", phone: "+351900000000", dnd: false } });
     const depsGhl = criarDepsGhl(cfg, async () => ({ ok: true }));
     const r = await depsGhl.lerContacto({ locationId: "loc", ghlContactId: "c1" });
-    expect(r).toMatchObject({ ok: false, code: "malformed_response" });
+    expect(r).toMatchObject({ ok: true, data: { id: "c1", dnd: false, canaisBloqueados: null } });
     fetchMock.mockRestore();
   });
 

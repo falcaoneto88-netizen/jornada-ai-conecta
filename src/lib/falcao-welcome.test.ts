@@ -209,3 +209,17 @@ describe("validação do recibo do acolhimento", () => {
     ).toBe(true);
   });
 });
+
+
+it("não envia mensagens com a resposta real sem DND de um contacto novo", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+    contact: { id: "ghlC1", locationId: "loc", phone: pedido.phone_normalized },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  const adaptador = criarDepsAcolhimento({ baseUrl: "https://services.leadconnectorhq.com", version: "2021-07-28", token: "teste", locationId: "loc" }, async () => ({ ok: true }));
+  const enviar = vi.fn();
+  const resultado = await processarAcolhimento(pedido, { ...adaptador, enviar });
+  expect(resultado.estado).toBe("bloqueado");
+  expect(enviar).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  fetchMock.mockRestore();
+});
