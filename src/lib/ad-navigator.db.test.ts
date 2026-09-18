@@ -205,11 +205,11 @@ describe("resumo agregado", () => {
       insert into public.contacts (organization_id, full_name, is_demo)
         values ('${orgA}','Ficha tecnica A', false), ('${orgA}','Ficha tecnica B', false);
       insert into public.opportunities (organization_id, contact_id, name, pipeline_id, stage_key, status, is_demo)
-        select '${orgA}', (select id from public.contacts where organization_id='${orgA}' order by created_at limit 1),
+        select '${orgA}', (select id from public.contacts where organization_id='${orgA}' and full_name='Ficha tecnica A' limit 1),
                'op-'||g, '${PIPELINE}', 'novo_lead', 'aberta', false
         from generate_series(1,1200) g;
       insert into public.opportunities (organization_id, contact_id, name, pipeline_id, stage_key, status, is_demo)
-        select '${orgA}', (select id from public.contacts where organization_id='${orgA}' order by created_at desc limit 1),
+        select '${orgA}', (select id from public.contacts where organization_id='${orgA}' and full_name='Ficha tecnica B' limit 1),
                'op-ganha', '${PIPELINE}', 'consulta_paga', 'won', false;
       insert into public.opportunities (organization_id, contact_id, name, pipeline_id, stage_key, status, is_demo)
         values ('${orgA}', null, 'op-solta', '${PIPELINE}', 'etapa_inexistente', 'zzz', false);
