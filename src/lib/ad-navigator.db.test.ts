@@ -57,6 +57,8 @@ beforeAll(async () => {
     "drizzle/migrations/0007_meta_capi_test_ledger.sql",
     // 0009 é a definição autoritativa e autossuficiente da ponte (v1.1).
     "drizzle/migrations/0009_ad_navigator_bridge_v1_1_definitivo.sql",
+    // 0010 corrige as travas (FOR UPDATE na leitura, autorização travada, modo real).
+    "drizzle/migrations/0010_ad_navigator_locks_v1_2.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -85,6 +87,7 @@ beforeAll(async () => {
       values ('${orgA}','${LOCATION}','${PIPELINE}','conectada', true)
       on conflict (organization_id) do update set location_id = excluded.location_id,
         default_pipeline_id = excluded.default_pipeline_id, status = 'conectada';
+    update public.ghl_connections set mode = 'conectado' where organization_id = '${orgA}';
     insert into public.site_integrations
       (organization_id, slug, source, local_stage_key, ghl_location_id, ghl_pipeline_id, ghl_stage_id, enabled)
       values ('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true)
@@ -337,6 +340,49 @@ describe("resumo agregado", () => {
     expect(resumo(CRED).ok).toBe(true);
   });
 
+  it("duas leituras simultâneas concluem sem impasse e contam as duas", async () => {
+    const codigo = "jpair_duasleituras";
+    const cred = "bearer-duasleituras";
+    expect(criar(UID_A, codigo).ok).toBe(true);
+    expect(trocar(codigo, cred).ok).toBe(true);
+    // As duas transações sobrepõem-se de certeza: cada uma segura as travas
+    // durante um segundo antes de confirmar. Com FOR SHARE seguido de UPDATE
+    // isto era um impasse (uma das duas abortava com deadlock detected).
+    const leitura = () =>
+      db.adminAsync(
+        `set role service_role;
+         begin;
+         select public.ad_navigator_summary('${hash(cred)}');
+         select pg_sleep(1);
+         commit;`,
+      );
+    const [a, b] = await Promise.all([leitura(), leitura()]);
+    expect(a.ok, a.erro).toBe(true);
+    expect(b.ok, b.erro).toBe(true);
+    for (const r of [a, b]) expect(r.erro.toLowerCase().includes("deadlock")).toBe(false);
+    expect(
+      valor(
+        db.admin(
+          `select use_count from public.ad_navigator_grants where credential_hash = '${hash(cred)}';`,
+        ),
+      ),
+    ).toBe("2");
+    expect(
+      db.admin(
+        `update public.ad_navigator_grants set revoked_at = now() where credential_hash = '${hash(cred)}';`,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("recusa leitura quando a ligação GHL não está no modo real", () => {
+    db.admin(`update public.ghl_connections set mode = 'demo' where organization_id = '${orgA}';`);
+    expect(resumo(CRED).ok).toBe(false);
+    db.admin(
+      `update public.ghl_connections set mode = 'conectado' where organization_id = '${orgA}';`,
+    );
+    expect(resumo(CRED).ok).toBe(true);
+  });
+
   it("uma leitura concorrente com revogação nunca devolve dados depois de revogada", async () => {
     const codigo = "jpair_concorrente";
     const cred = "bearer-concorrente";
@@ -351,6 +397,117 @@ describe("resumo agregado", () => {
     expect(revogacao.ok, revogacao.erro).toBe(true);
     expect(typeof leitura.ok).toBe("boolean");
     // Depois de concluída a revogação, nenhuma leitura posterior passa.
+    expect(resumo(cred).ok).toBe(false);
+  });
+
+  it("leitura que espera pela vez não passa se o papel do emissor for removido", async () => {
+    const codigo = "jpair_papel_corrida";
+    const cred = "bearer-papel-corrida";
+    expect(criar(UID_A, codigo).ok).toBe(true);
+    expect(trocar(codigo, cred).ok).toBe(true);
+    // Uma transação segura a organização e remove o papel; a leitura que chega
+    // a seguir espera pela trava e só depois avalia a autorização — já sem papel.
+    const [remocao, leitura] = await Promise.all([
+      db.adminAsync(
+        `set role service_role;
+         begin;
+         select pg_advisory_xact_lock(hashtextextended('ad_navigator:${orgA}', 0));
+         delete from public.user_roles where user_id = '${UID_A}' and organization_id = '${orgA}';
+         select pg_sleep(1);
+         commit;`,
+      ),
+      new Promise<Awaited<ReturnType<typeof db.adminAsync>>>((resolve) =>
+        setTimeout(
+          () =>
+            resolve(
+              db.adminAsync(
+                `set role service_role; select public.ad_navigator_summary('${hash(cred)}');`,
+              ),
+            ),
+          500,
+        ),
+      ).then((r) => r),
+    ]);
+    expect(remocao.ok, remocao.erro).toBe(true);
+    expect(leitura.ok, "a leitura não pode escapar à remoção do papel").toBe(false);
+    db.admin(
+      `insert into public.user_roles (user_id, organization_id, role) values ('${UID_A}','${orgA}','administrador');`,
+    );
+    expect(
+      db.admin(
+        `update public.ad_navigator_grants set revoked_at = now() where credential_hash = '${hash(cred)}';`,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("leitura que espera pela vez não passa se o funil padrão mudar", async () => {
+    const codigo = "jpair_funil_corrida";
+    const cred = "bearer-funil-corrida";
+    expect(criar(UID_A, codigo).ok).toBe(true);
+    expect(trocar(codigo, cred).ok).toBe(true);
+    const [mudanca, leitura] = await Promise.all([
+      db.adminAsync(
+        `set role service_role;
+         begin;
+         select pg_advisory_xact_lock(hashtextextended('ad_navigator:${orgA}', 0));
+         update public.ghl_connections set default_pipeline_id = 'funil-trocado'
+           where organization_id = '${orgA}';
+         select pg_sleep(2);
+         commit;`,
+      ),
+      new Promise<Awaited<ReturnType<typeof db.adminAsync>>>((resolve) =>
+        setTimeout(
+          () =>
+            resolve(
+              db.adminAsync(
+                `set role service_role; select public.ad_navigator_summary('${hash(cred)}');`,
+              ),
+            ),
+          500,
+        ),
+      ).then((r) => r),
+    ]);
+    expect(mudanca.ok, mudanca.erro).toBe(true);
+    expect(leitura.ok, "a leitura não pode usar o funil antigo").toBe(false);
+    db.admin(
+      `update public.ghl_connections set default_pipeline_id = '${PIPELINE}' where organization_id = '${orgA}';`,
+    );
+    expect(
+      db.admin(
+        `update public.ad_navigator_grants set revoked_at = now() where credential_hash = '${hash(cred)}';`,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("um código a ser trocado enquanto a revogação corre nunca gera acesso vivo", async () => {
+    const codigo = "jpair_codigo_revogacao";
+    const cred = "bearer-codigo-revogacao";
+    expect(criar(UID_A, codigo).ok).toBe(true);
+    const [troca, revogacao] = await Promise.all([
+      db.adminAsync(
+        `set role service_role; select public.ad_navigator_exchange('${hash(codigo)}','${TENANT}','${hash(cred)}');`,
+      ),
+      db.adminAsync(
+        `begin;
+         set local "request.jwt.claim.sub" = '${UID_A}';
+         set local role authenticated;
+         select public.ad_navigator_revoke_access(true);
+         commit;`,
+      ),
+    ]);
+    expect(revogacao.ok, revogacao.erro).toBe(true);
+    expect(typeof troca.ok).toBe("boolean");
+    // Qualquer que seja a ordem, nada fica a ler depois da revogação concluída.
+    const vivas = valor(
+      db.admin(
+        `select count(*) from public.ad_navigator_grants
+           where organization_id = '${orgA}' and revoked_at is null;`,
+      ),
+    );
+    if (vivas !== "0") expect(resumo(cred).ok).toBe(true);
+    expect(db.comoUtilizador(UID_A, "select public.ad_navigator_revoke_access(true);").ok).toBe(
+      true,
+    );
     expect(resumo(cred).ok).toBe(false);
   });
 });

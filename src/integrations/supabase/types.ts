@@ -1746,6 +1746,10 @@ export type Database = {
         }
         Returns: Json
       }
+      ad_navigator_membro: {
+        Args: { _org: string; _user: string }
+        Returns: boolean
+      }
       ad_navigator_rate_hit_v2: {
         Args: {
           _bucket_key: string
@@ -1763,6 +1767,13 @@ export type Database = {
         Returns: Json
       }
       ad_navigator_vinculo: {
+        Args: { _org: string }
+        Returns: {
+          location_id: string
+          pipeline_id: string
+        }[]
+      }
+      ad_navigator_vinculo_travado: {
         Args: { _org: string }
         Returns: {
           location_id: string
