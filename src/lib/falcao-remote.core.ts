@@ -19,9 +19,10 @@ export type ContactoRemoto = {
   locationId: string;
   phone: string | null;
   email: string | null;
-  dnd: boolean;
+  /** Ausente na API significa desconhecido; nunca consentimento para mensagens. */
+  dnd: boolean | null;
   /** Canais com bloqueio explícito (SMS/WhatsApp/Call/e-mail). */
-  canaisBloqueados: string[];
+  canaisBloqueados: string[] | null;
 };
 
 export type OportunidadeRemota = {
@@ -129,7 +130,7 @@ export function validarContacto(
     return { ok: false, motivo: "email_divergente" };
   }
   if (contacto.dnd) return { ok: false, motivo: "contacto_com_dnd" };
-  if (contacto.canaisBloqueados.length > 0) return { ok: false, motivo: "canal_bloqueado" };
+  if ((contacto.canaisBloqueados?.length ?? 0) > 0) return { ok: false, motivo: "canal_bloqueado" };
   return { ok: true };
 }
 

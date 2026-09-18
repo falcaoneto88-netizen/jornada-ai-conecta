@@ -49,12 +49,20 @@ export const Route = createFileRoute("/api/public/falcao-lead")({
             compararAssinatura: compararHex,
           },
         );
-        if (status === 201 && typeof (body as { receiptId?: unknown }).receiptId === "string") {
-          // Recibo novo e persistido: tenta processar só este recibo. Tudo
+        if (
+          (status === 201 || (status === 200 && (body as { ghlState?: unknown }).ghlState === "pendente")) &&
+          typeof (body as { receiptId?: unknown }).receiptId === "string"
+        ) {
+          // Recibo persistido novo ou ainda pendente: tenta processar só este recibo.
+          // Reenvio assinado não retoma estados incertos/bloqueados; o claim serializa. Tudo
           // continua fechado — se a integração, a escrita ou o canal estiverem
           // desligados, não acontece nada. A resposta nunca depende disto.
           const { executarReciboFalcao } = await import("@/lib/falcao-auto.server");
-          await executarReciboFalcao((body as { receiptId: string }).receiptId);
+          const resultado = await executarReciboFalcao((body as { receiptId: string }).receiptId);
+          // Só anunciar sincronização quando a API e a persistência a confirmam.
+          if (resultado.remoto?.estado === "confirmado") {
+            (body as { ghlState: string }).ghlState = "confirmado";
+          }
         }
         return Response.json(body, { status, headers: semCache });
 
