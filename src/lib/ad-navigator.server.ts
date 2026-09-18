@@ -1,0 +1,175 @@
+/**
+ * Ponte Jornada -> Ad Navigator (v1) — camada server-only.
+ *
+ * O código de pareamento e o bearer do recetor NUNCA são persistidos nem
+ * registados: guardamos apenas SHA256. Erros para fora são sanitizados.
+ */
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import {
+  AD_NAV_CODE_PREFIX,
+  AD_NAV_CODE_TTL_SEGUNDOS,
+  HEX64,
+  montarResposta,
+  normalizarResumo,
+  type RespostaResumo,
+} from "./ad-navigator.core";
+
+export const AD_NAV_RATE_LIMITE = 30;
+export const AD_NAV_RATE_JANELA_SEGUNDOS = 60;
+
+export function sha256hex(valor: string): string {
+  return createHash("sha256").update(valor, "utf8").digest("hex");
+}
+
+/** Código de uso único: 32 bytes aleatórios em base64url, com prefixo. */
+export function gerarCodigoPareamento(): string {
+  return `${AD_NAV_CODE_PREFIX}${randomBytes(32).toString("base64url")}`;
+}
+
+export function compararHex(a: string, b: string): boolean {
+  if (!HEX64.test(a) || !HEX64.test(b)) return false;
+  return timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+}
+
+type ClienteRpc = Pick<SupabaseClient, "rpc">;
+
+async function admin(): Promise<ClienteRpc> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin as unknown as ClienteRpc;
+}
+
+/** Limite de abuso persistente, com chave derivada — sem IP e sem PII. */
+export async function limitePermitido(chaveBruta: string, cliente?: ClienteRpc): Promise<boolean> {
+  const c = cliente ?? (await admin());
+  const { data, error } = await c.rpc("ad_navigator_rate_hit", {
+    _bucket_key: sha256hex(chaveBruta),
+    _limit: AD_NAV_RATE_LIMITE,
+    _window_seconds: AD_NAV_RATE_JANELA_SEGUNDOS,
+  });
+  if (error) return false;
+  return data === true;
+}
+
+export type ResultadoTroca =
+  { ok: true; body: Record<string, unknown> } | { ok: false; status: number; erro: string };
+
+export async function trocarCodigo(
+  pedido: { code: string; receiver_tenant_id: string; credential_hash: string },
+  cliente?: ClienteRpc,
+): Promise<ResultadoTroca> {
+  const c = cliente ?? (await admin());
+  const { data, error } = await c.rpc("ad_navigator_exchange", {
+    _code_sha256: sha256hex(pedido.code),
+    _receiver_tenant_id: pedido.receiver_tenant_id,
+    _credential_hash: pedido.credential_hash,
+  });
+  if (error || data === null || typeof data !== "object") {
+    // Sem detalhe do servidor: qualquer recusa é indistinguível do exterior.
+    return { ok: false, status: 400, erro: "pareamento_invalido" };
+  }
+  return { ok: true, body: data as Record<string, unknown> };
+}
+
+export type ResultadoResumo =
+  { ok: true; body: RespostaResumo } | { ok: false; status: number; erro: string };
+
+export async function lerResumo(
+  bearer: string,
+  cliente?: ClienteRpc,
+  agora: Date = new Date(),
+): Promise<ResultadoResumo> {
+  const c = cliente ?? (await admin());
+  // Só o hash é procurado no servidor; o bearer nunca é escrito em lado nenhum.
+  const { data, error } = await c.rpc("ad_navigator_summary", {
+    _credential_hash: sha256hex(bearer),
+  });
+  if (error || data === null || typeof data !== "object") {
+    return { ok: false, status: 401, erro: "credencial_invalida" };
+  }
+  const resumo = normalizarResumo(data);
+  if (!resumo) return { ok: false, status: 500, erro: "resumo_indisponivel" };
+  return { ok: true, body: montarResposta(resumo, sha256hex, agora) };
+}
+
+type ClienteSessao = Pick<SupabaseClient, "rpc">;
+
+export type EstadoAdNavigator = {
+  organization_id: string;
+  organization_name: string | null;
+  location_id: string | null;
+  pipeline_id: string | null;
+  binding_ok: boolean;
+  connection_ok: boolean;
+  scope: string;
+  pending_pairing: { pairing_id: string; expires_at: string; created_at: string } | null;
+  grants: Array<{
+    grant_id: string;
+    receiver_tenant_id: string;
+    created_at: string;
+    expires_at: string;
+    revoked_at: string | null;
+    last_used_at: string | null;
+    use_count: number;
+    scope: string;
+  }>;
+};
+
+export async function lerEstadoAdNavigator(
+  supabase: ClienteSessao,
+): Promise<{ ok: true; estado: EstadoAdNavigator } | { ok: false; message: string }> {
+  const { data, error } = await supabase.rpc("ad_navigator_state");
+  if (error || data === null || typeof data !== "object") {
+    return { ok: false, message: "Estado indisponível." };
+  }
+  return { ok: true, estado: data as unknown as EstadoAdNavigator };
+}
+
+/**
+ * Gera o código de uso único. O valor em claro é devolvido UMA vez para o
+ * administrador copiar; no servidor fica só o SHA256.
+ */
+export type DetalhePareamento = {
+  pairing_id: string;
+  organization_id: string;
+  organization_name: string | null;
+  location_id: string;
+  pipeline_id: string;
+  scope: string;
+  expires_at: string;
+};
+
+export async function criarPareamentoAdNavigator(
+  supabase: ClienteSessao,
+): Promise<
+  { ok: true; code: string; detalhe: DetalhePareamento } | { ok: false; message: string }
+> {
+  const code = gerarCodigoPareamento();
+  const { data, error } = await supabase.rpc("ad_navigator_create_pairing", {
+    _code_sha256: sha256hex(code),
+    _ttl_seconds: AD_NAV_CODE_TTL_SEGUNDOS,
+    _confirm: true,
+  });
+  if (error || data === null || typeof data !== "object") {
+    return {
+      ok: false,
+      message:
+        "Não foi possível gerar o código. Confirme que é administrador desta conta e que a ligação ao GoHighLevel está validada.",
+    };
+  }
+  return { ok: true, code, detalhe: data as unknown as DetalhePareamento };
+}
+
+export type DetalheRevogacao = { pairings_revoked: number; grants_revoked: number };
+
+export async function revogarAdNavigator(
+  supabase: ClienteSessao,
+): Promise<{ ok: true; detalhe: DetalheRevogacao } | { ok: false; message: string }> {
+  const { data, error } = await supabase.rpc("ad_navigator_revoke_access", { _confirm: true });
+  if (error || data === null || typeof data !== "object") {
+    return { ok: false, message: "Não foi possível revogar o acesso." };
+  }
+  return { ok: true, detalhe: data as unknown as DetalheRevogacao };
+}
