@@ -68,3 +68,7 @@
 - [x] IDs externos incertos ficam apenas no recibo de reconciliação
 - [x] `type: SMS` preservado para o provedor ZaptosWPP predefinido
 - [ ] Integração, escrita remota e acolhimento continuam desligados até revisão
+
+## Ponte Ad Navigator (v1)
+- Migração `drizzle/migrations/0009_ad_navigator_bridge_v1.sql` por aplicar na base real (aguarda revisão do diff).
+- Ponte por publicar; só declarar ligada após troca real + leitura autenticada do resumo + persistência confirmada no Ad Navigator.
