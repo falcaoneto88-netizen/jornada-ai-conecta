@@ -308,17 +308,17 @@ describe("resumo agregado", () => {
   });
 
   it("lê pelo vínculo GHL mesmo sem qualquer integração de site", () => {
-    const guardado = db.admin(
-      `create temp table site_backup as select * from public.site_integrations where organization_id = '${orgA}';
-       delete from public.site_integrations where organization_id = '${orgA}';`,
+    const apagado = db.admin(
+      `delete from public.site_integrations where organization_id = '${orgA}';`,
     );
-    expect(guardado.ok, guardado.erro).toBe(true);
+    expect(apagado.ok, apagado.erro).toBe(true);
     expect(resumo(CRED).ok, "o resumo não pode depender do site").toBe(true);
-    expect(
-      db.admin(
-        `insert into public.site_integrations select * from site_backup; drop table site_backup;`,
-      ).ok,
-    ).toBe(true);
+    const reposto = db.admin(`
+      insert into public.site_integrations
+        (organization_id, slug, source, local_stage_key, ghl_location_id, ghl_pipeline_id, ghl_stage_id, enabled)
+        values ('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true);
+    `);
+    expect(reposto.ok, reposto.erro).toBe(true);
   });
 
   it("recusa leitura de organização marcada como demonstração", () => {
