@@ -55,7 +55,7 @@ beforeAll(async () => {
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
     "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
     "drizzle/migrations/0007_meta_capi_test_ledger.sql",
-    "drizzle/migrations/0009_ad_navigator_bridge_v1.sql",
+    "drizzle/migrations/0008_ad_navigator_bridge_v1_1.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -75,13 +75,15 @@ beforeAll(async () => {
 
   const preparacao = db.admin(`
     update public.profiles set organization_id = '${orgA}' where id = '${UID_V}';
+    update public.organizations set is_demo = false where id in ('${orgA}','${orgB}');
     delete from public.user_roles where user_id = '${UID_V}';
     insert into public.user_roles (user_id, organization_id, role) values ('${UID_V}','${orgA}','visualizador');
     insert into public.ghl_location_bindings (location_id, organization_id) values ('${LOCATION}','${orgA}')
       on conflict (location_id) do update set organization_id = excluded.organization_id;
-    insert into public.ghl_connections (organization_id, location_id, status, write_enabled)
-      values ('${orgA}','${LOCATION}','conectada', true)
-      on conflict (organization_id) do update set location_id = excluded.location_id, status = 'conectada';
+    insert into public.ghl_connections (organization_id, location_id, default_pipeline_id, status, write_enabled)
+      values ('${orgA}','${LOCATION}','${PIPELINE}','conectada', true)
+      on conflict (organization_id) do update set location_id = excluded.location_id,
+        default_pipeline_id = excluded.default_pipeline_id, status = 'conectada';
     insert into public.site_integrations
       (organization_id, slug, source, local_stage_key, ghl_location_id, ghl_pipeline_id, ghl_stage_id, enabled)
       values ('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true)
@@ -287,15 +289,70 @@ describe("resumo agregado", () => {
     expect(resumo(CRED).ok).toBe(true);
   });
 
-  it("recusa leitura quando o vínculo é alterado", () => {
+  it("recusa leitura quando o funil padrão da ligação GHL muda, mesmo com o site intacto", () => {
     db.admin(
-      `update public.site_integrations set ghl_pipeline_id = 'outro' where organization_id = '${orgA}';`,
+      `update public.ghl_connections set default_pipeline_id = 'outro-funil-ghl' where organization_id = '${orgA}';`,
     );
+    const siteAntes = valor(
+      db.admin(
+        `select ghl_pipeline_id from public.site_integrations where organization_id = '${orgA}';`,
+      ),
+    );
+    expect(siteAntes).toBe(PIPELINE); // o site continua a apontar para o funil antigo
     expect(resumo(CRED).ok).toBe(false);
     db.admin(
-      `update public.site_integrations set ghl_pipeline_id = '${PIPELINE}' where organization_id = '${orgA}';`,
+      `update public.ghl_connections set default_pipeline_id = '${PIPELINE}' where organization_id = '${orgA}';`,
     );
     expect(resumo(CRED).ok).toBe(true);
+  });
+
+  it("lê pelo vínculo GHL mesmo sem qualquer integração de site", () => {
+    const guardado = db.admin(
+      `create temp table site_backup as select * from public.site_integrations where organization_id = '${orgA}';
+       delete from public.site_integrations where organization_id = '${orgA}';`,
+    );
+    expect(guardado.ok, guardado.erro).toBe(true);
+    expect(resumo(CRED).ok, "o resumo não pode depender do site").toBe(true);
+    expect(
+      db.admin(
+        `insert into public.site_integrations select * from site_backup; drop table site_backup;`,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("recusa leitura de organização marcada como demonstração", () => {
+    db.admin(`update public.organizations set is_demo = true where id = '${orgA}';`);
+    expect(resumo(CRED).ok).toBe(false);
+    db.admin(`update public.organizations set is_demo = false where id = '${orgA}';`);
+    expect(resumo(CRED).ok).toBe(true);
+  });
+
+  it("recusa leitura quando o emissor deixa de pertencer à organização", () => {
+    db.admin(`delete from public.user_roles where user_id = '${UID_A}';`);
+    expect(resumo(CRED).ok).toBe(false);
+    db.admin(
+      `insert into public.user_roles (user_id, organization_id, role) values ('${UID_A}','${orgA}','administrador');`,
+    );
+    expect(resumo(CRED).ok).toBe(true);
+  });
+
+  it("uma leitura concorrente com revogação nunca devolve dados depois de revogada", async () => {
+    const codigo = "jpair_concorrente";
+    const cred = "bearer-concorrente";
+    expect(criar(UID_A, codigo).ok).toBe(true);
+    expect(trocar(codigo, cred).ok).toBe(true);
+    const [leitura, revogacao] = await Promise.all([
+      db.adminAsync(
+        `set role service_role; select public.ad_navigator_summary('${hash(cred)}');`,
+      ),
+      db.adminAsync(
+        `set role service_role; update public.ad_navigator_grants set revoked_at = now() where credential_hash = '${hash(cred)}';`,
+      ),
+    ]);
+    expect(revogacao.ok, revogacao.erro).toBe(true);
+    expect(typeof leitura.ok).toBe("boolean");
+    // Depois de concluída a revogação, nenhuma leitura posterior passa.
+    expect(resumo(cred).ok).toBe(false);
   });
 });
 
@@ -321,18 +378,38 @@ describe("revogação e limite de abuso", () => {
     );
   });
 
-  it("conta pedidos na janela e bloqueia acima do limite", () => {
+  const bater = (chave: string, limite = 2, teto = 1000, rota = "summary") =>
+    db.comoServico(
+      `select public.ad_navigator_rate_hit_v2('${rota}','${chave}',${limite},${teto},60)::text;`,
+    );
+
+  it("conta pedidos na janela e bloqueia acima do limite do balde", () => {
     const chave = hash("bucket-teste");
-    const primeira = db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`);
-    expect(valor(primeira)).toBe("true");
+    expect(valor(bater(chave))).toBe("true");
+    expect(valor(bater(chave))).toBe("true");
+    expect(valor(bater(chave))).toBe("false");
     expect(
-      valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`)),
-    ).toBe("true");
-    expect(
-      valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`)),
-    ).toBe("false");
-    expect(
-      db.comoUtilizador(UID_A, `select public.ad_navigator_rate_hit('${chave}',2,60);`).ok,
+      db.comoUtilizador(
+        UID_A,
+        `select public.ad_navigator_rate_hit_v2('summary','${chave}',2,1000,60);`,
+      ).ok,
     ).toBe(false);
+  });
+
+  it("o teto da rota trava chaves aleatórias antes de criar baldes", () => {
+    const antes = Number(
+      valor(db.admin("select count(*) from public.ad_navigator_rate_limits;")) ?? "0",
+    );
+    let permitidos = 0;
+    for (let i = 0; i < 12; i += 1) {
+      if (valor(bater(hash(`aleatoria-${i}`), 30, 5, "exchange")) === "true") permitidos += 1;
+    }
+    expect(permitidos).toBe(5);
+    const depois = Number(
+      valor(db.admin("select count(*) from public.ad_navigator_rate_limits;")) ?? "0",
+    );
+    // Só os pedidos dentro do teto chegam a criar balde: a tabela não cresce
+    // à velocidade das chaves inventadas pelo atacante.
+    expect(depois - antes).toBe(5);
   });
 });

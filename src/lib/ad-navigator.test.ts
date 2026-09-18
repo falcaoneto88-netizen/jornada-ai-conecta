@@ -1,6 +1,7 @@
 /**
  * Contrato da ponte Ad Navigator v1: esquema estrito, ausência de PII,
- * allowlist de etapas e estabilidade do snapshot_id.
+ * allowlist de etapas, recusa de payloads inválidos e estabilidade do
+ * snapshot_id.
  */
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -8,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   AD_NAV_SCOPE,
   calcularSnapshotId,
+  ehTokenAdNav,
   jsonEstavel,
   mapearEstado,
   mapearEtapa,
@@ -18,7 +20,8 @@ import {
 
 const digest = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
 
-const CODE = `jpair_${"a".repeat(43)}`;
+const TOKEN = "A".repeat(43);
+const CODE = `jpair_${TOKEN}`;
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const HASH = "b".repeat(64);
 
@@ -42,19 +45,25 @@ const brutoSql = {
     linked_contacts: 2,
     unlinked_opportunities: 1,
     by_status: { open: 2, won: 1, lost: 0, abandoned: 0, unknown: 0 },
-    by_stage: { novo_lead: 2, "Harmonização VIP": 1 },
+    by_stage: { novo_lead: 2, unknown: 1 },
   },
   attribution: { status: "unavailable", reason: "campaign_link_not_available" },
   revenue: { value: null, reason: "financial_source_not_connected" },
 };
 
+type Bruto = typeof brutoSql;
+const comContagens = (p: Partial<Bruto["counts"]>): unknown => ({
+  ...brutoSql,
+  counts: { ...brutoSql.counts, ...p },
+});
+
 describe("pedido de troca", () => {
-  it("aceita apenas o esquema estrito", () => {
+  it("aceita apenas o esquema e o formato exatos", () => {
     const r = validarPedidoTroca({ code: CODE, receiver_tenant_id: TENANT, credential_hash: HASH });
     expect(r.ok).toBe(true);
   });
 
-  it("recusa campos extra, tipos errados e valores malformados", () => {
+  it("recusa campos extra, tipos errados e códigos fora do formato", () => {
     const casos: unknown[] = [
       null,
       [],
@@ -62,12 +71,23 @@ describe("pedido de troca", () => {
       { code: CODE, receiver_tenant_id: TENANT },
       { code: CODE, receiver_tenant_id: TENANT, credential_hash: HASH, organization_id: TENANT },
       { code: "semprefixo", receiver_tenant_id: TENANT, credential_hash: HASH },
+      { code: `jpair_${"A".repeat(42)}`, receiver_tenant_id: TENANT, credential_hash: HASH },
+      { code: `jpair_${"A".repeat(44)}`, receiver_tenant_id: TENANT, credential_hash: HASH },
+      { code: `jpair_${"A".repeat(42)}+`, receiver_tenant_id: TENANT, credential_hash: HASH },
       { code: CODE, receiver_tenant_id: "nao-uuid", credential_hash: HASH },
       { code: CODE, receiver_tenant_id: TENANT, credential_hash: HASH.toUpperCase() },
       { code: CODE, receiver_tenant_id: TENANT, credential_hash: "b".repeat(63) },
       { code: CODE, receiver_tenant_id: TENANT, credential_hash: 1 },
     ];
     for (const caso of casos) expect(validarPedidoTroca(caso).ok, JSON.stringify(caso)).toBe(false);
+  });
+
+  it("aceita como token apenas 43 caracteres base64url", () => {
+    expect(ehTokenAdNav(TOKEN)).toBe(true);
+    expect(ehTokenAdNav("A".repeat(42))).toBe(false);
+    expect(ehTokenAdNav(`${"A".repeat(42)}=`)).toBe(false);
+    expect(ehTokenAdNav(CODE)).toBe(false);
+    expect(ehTokenAdNav(null)).toBe(false);
   });
 });
 
@@ -115,12 +135,18 @@ describe("resumo", () => {
     expect(resumo.attribution.status).toBe("unavailable");
   });
 
-  it("soma etapas desconhecidas em unknown", () => {
-    const resumo = normalizarResumo(brutoSql)!;
-    expect(resumo.counts.by_stage).toEqual({ novo_lead: 2, unknown: 1 });
+  it("aceita contagens como texto de bigint sem perda de precisão", () => {
+    const resumo = normalizarResumo(
+      comContagens({
+        opportunities: "3" as unknown as number,
+        linked_contacts: "2" as unknown as number,
+        unlinked_opportunities: "1" as unknown as number,
+      }),
+    )!;
+    expect(resumo.counts.opportunities).toBe(3);
   });
 
-  it("tolera zeros locais sem inventar totais externos", () => {
+  it("aceita um funil ainda vazio, desde que coerente", () => {
     const vazio = normalizarResumo({
       ...brutoSql,
       coverage: { ...brutoSql.coverage, last_synced_at: null, latest_record_at: null },
@@ -128,20 +154,60 @@ describe("resumo", () => {
         opportunities: 0,
         linked_contacts: 0,
         unlinked_opportunities: 0,
-        by_status: {},
+        by_status: { open: 0, won: 0, lost: 0, abandoned: 0, unknown: 0 },
         by_stage: {},
       },
     })!;
     expect(vazio.counts.opportunities).toBe(0);
-    expect(vazio.counts.by_status).toEqual({ open: 0, won: 0, lost: 0, abandoned: 0, unknown: 0 });
     expect(vazio.counts.by_stage).toEqual({});
     expect(vazio.coverage.last_synced_at).toBeNull();
-    expect(vazio.coverage.upstream_complete).toBe(false);
   });
 
-  it("recusa resumo sem identificadores obrigatórios", () => {
-    expect(normalizarResumo({ ...brutoSql, grant_id: null })).toBeNull();
-    expect(normalizarResumo(null)).toBeNull();
+  it("recusa payloads inválidos em vez de inventar zeros", () => {
+    const casos: Array<[string, unknown]> = [
+      ["nulo", null],
+      ["texto", "resumo"],
+      ["campo extra", { ...brutoSql, extra: 1 }],
+      ["campo desconhecido nas contagens", comContagens({ total: 3 } as never)],
+      ["schema inesperado", { ...brutoSql, schema_version: 2 }],
+      ["scope inesperado", { ...brutoSql, scope: "tudo:read" }],
+      ["source inesperada", { ...brutoSql, source: "outro" }],
+      ["grant_id inválido", { ...brutoSql, grant_id: "nao-uuid" }],
+      ["organização inválida", { ...brutoSql, organization_id: null }],
+      ["funil vazio", { ...brutoSql, pipeline_id: "  " }],
+      ["contagem ausente", comContagens({ opportunities: undefined as never })],
+      ["contagem nula", comContagens({ opportunities: null as never })],
+      ["contagem negativa", comContagens({ opportunities: -1 })],
+      ["contagem fracionada", comContagens({ opportunities: 2.5 })],
+      ["contagem acima do seguro", comContagens({ opportunities: 1e18 })],
+      ["texto não numérico", comContagens({ opportunities: "três" as unknown as number })],
+      ["estados incompletos", comContagens({ by_status: { open: 3 } as never })],
+      [
+        "etapa fora da allowlist",
+        comContagens({ by_stage: { "Harmonização VIP": 3 } as unknown as Bruto["counts"]["by_stage"] }),
+      ],
+      ["soma de estados diferente do total", comContagens({ opportunities: 4 })],
+      [
+        "soma de etapas diferente do total",
+        comContagens({ by_stage: { novo_lead: 1, unknown: 1 } }),
+      ],
+      ["soltos acima do total", comContagens({ unlinked_opportunities: 4 })],
+      ["ligados acima dos possíveis", comContagens({ linked_contacts: 3 })],
+      [
+        "cobertura completa declarada",
+        { ...brutoSql, coverage: { ...brutoSql.coverage, upstream_complete: true } },
+      ],
+      [
+        "data inválida",
+        { ...brutoSql, coverage: { ...brutoSql.coverage, latest_record_at: "ontem" } },
+      ],
+      ["receita preenchida", { ...brutoSql, revenue: { value: 10, reason: "x" } }],
+      [
+        "atribuição inesperada",
+        { ...brutoSql, attribution: { status: "available", reason: "campaign_link_not_available" } },
+      ],
+    ];
+    for (const [nome, caso] of casos) expect(normalizarResumo(caso), nome).toBeNull();
   });
 });
 

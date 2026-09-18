@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { ehTokenAdNav } from "@/lib/ad-navigator.core";
+
 const cabecalhos = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } as const;
 
 const recusa = (status: number, erro: string) =>
@@ -8,6 +10,8 @@ const recusa = (status: number, erro: string) =>
 /**
  * Indicadores comerciais agregados da organização/funil vinculados à concessão.
  * Sem query nem corpo: a organização vem sempre do bearer, validado server-side.
+ * Nenhum outro cabeçalho é lido — não há forma de contornar o limite ou a
+ * autorização com cabeçalhos forjados.
  */
 export const Route = createFileRoute("/api/ad-navigator/v1/summary")({
   server: {
@@ -19,10 +23,11 @@ export const Route = createFileRoute("/api/ad-navigator/v1/summary")({
         const autorizacao = request.headers.get("authorization") ?? "";
         if (!autorizacao.startsWith("Bearer ")) return recusa(401, "credencial_invalida");
         const bearer = autorizacao.slice(7).trim();
-        if (bearer.length < 20 || bearer.length > 256) return recusa(401, "credencial_invalida");
+        // Formato exato do token emitido: 32 bytes em base64url (43 caracteres).
+        if (!ehTokenAdNav(bearer)) return recusa(401, "credencial_invalida");
 
-        const { lerResumo, limitePermitido, sha256hex } = await import("@/lib/ad-navigator.server");
-        if (!(await limitePermitido(`summary:${sha256hex(bearer)}`))) {
+        const { lerResumo, limitePermitido } = await import("@/lib/ad-navigator.server");
+        if (!(await limitePermitido("summary", bearer))) {
           return recusa(429, "demasiados_pedidos");
         }
         const r = await lerResumo(bearer);
