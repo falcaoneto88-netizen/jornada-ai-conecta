@@ -55,7 +55,8 @@ beforeAll(async () => {
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
     "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
     "drizzle/migrations/0007_meta_capi_test_ledger.sql",
-    "drizzle/migrations/0008_ad_navigator_bridge_v1_1.sql",
+    // 0009 é a definição autoritativa e autossuficiente da ponte (v1.1).
+    "drizzle/migrations/0009_ad_navigator_bridge_v1_1_definitivo.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
