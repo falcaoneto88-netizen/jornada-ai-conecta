@@ -55,7 +55,8 @@ beforeAll(async () => {
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
     "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
     "drizzle/migrations/0007_meta_capi_test_ledger.sql",
-    "drizzle/migrations/0008_ad_navigator_bridge_v1_1.sql",
+    // 0009 é a definição autoritativa e autossuficiente da ponte (v1.1).
+    "drizzle/migrations/0009_ad_navigator_bridge_v1_1_definitivo.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -307,17 +308,17 @@ describe("resumo agregado", () => {
   });
 
   it("lê pelo vínculo GHL mesmo sem qualquer integração de site", () => {
-    const guardado = db.admin(
-      `create temp table site_backup as select * from public.site_integrations where organization_id = '${orgA}';
-       delete from public.site_integrations where organization_id = '${orgA}';`,
+    const apagado = db.admin(
+      `delete from public.site_integrations where organization_id = '${orgA}';`,
     );
-    expect(guardado.ok, guardado.erro).toBe(true);
+    expect(apagado.ok, apagado.erro).toBe(true);
     expect(resumo(CRED).ok, "o resumo não pode depender do site").toBe(true);
-    expect(
-      db.admin(
-        `insert into public.site_integrations select * from site_backup; drop table site_backup;`,
-      ).ok,
-    ).toBe(true);
+    const reposto = db.admin(`
+      insert into public.site_integrations
+        (organization_id, slug, source, local_stage_key, ghl_location_id, ghl_pipeline_id, ghl_stage_id, enabled)
+        values ('${orgA}','experiencia-falcao','experiencia-falcao','novo_lead','${LOCATION}','${PIPELINE}','${STAGE}',true);
+    `);
+    expect(reposto.ok, reposto.erro).toBe(true);
   });
 
   it("recusa leitura de organização marcada como demonstração", () => {
@@ -342,9 +343,7 @@ describe("resumo agregado", () => {
     expect(criar(UID_A, codigo).ok).toBe(true);
     expect(trocar(codigo, cred).ok).toBe(true);
     const [leitura, revogacao] = await Promise.all([
-      db.adminAsync(
-        `set role service_role; select public.ad_navigator_summary('${hash(cred)}');`,
-      ),
+      db.adminAsync(`set role service_role; select public.ad_navigator_summary('${hash(cred)}');`),
       db.adminAsync(
         `set role service_role; update public.ad_navigator_grants set revoked_at = now() where credential_hash = '${hash(cred)}';`,
       ),

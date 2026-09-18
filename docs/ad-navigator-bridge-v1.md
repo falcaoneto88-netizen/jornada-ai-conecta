@@ -142,23 +142,52 @@ Resposta HTTP 200:
 
 ## 4. `GET /api/version`
 
-Identificador de release público (`service`, versões de API, `release` quando o
-ambiente o fornece). Não expõe ambiente, segredos nem caminhos internos.
+Identificador de release público: `service`, versões de API, `build` estático
+desta revisão (`jornada-adnav-v1.1-20260918`, nunca nulo, serve de prova de
+publicação) e `release` do ambiente quando existe. Não expõe ambiente, segredos
+nem caminhos internos.
 
 ## 5. Segurança e base de dados
 
-- `ad_navigator_pairings`, `ad_navigator_grants` e `ad_navigator_rate_limits` têm
-  todos os privilégios revogados a `PUBLIC`, `anon` e `authenticated`, com RLS
-  ativa; só `service_role` e as funções autorizadas lhes tocam.
+- Vínculo: a origem de verdade é a ligação real ao GoHighLevel da organização
+  (`ghl_connections` + `ghl_location_bindings`, organização não-demo, `status`
+  `conectada`, `location_id` e `default_pipeline_id` não vazios), resolvida pela
+  função `ad_navigator_vinculo`. A integração de site **não** participa: mudar o
+  funil padrão da ligação revoga efetivamente a leitura, mesmo que o site
+  continue a apontar para o funil antigo. Criação, troca, resumo e revogação
+  revalidam sempre organização, papel do emissor, vínculo e funil.
+- Ordem de travas, igual em todas as operações: (1) trava consultiva por
+  organização, (2) pareamento `FOR UPDATE`, (3) concessão `FOR SHARE` na leitura.
+  Assim nenhum código novo escapa a uma revogação concorrente, nenhuma concessão
+  revogada lê depois de a revogação concluir, e a troca continua exatamente única.
+- O resumo calcula totais, estados, etapas e frescura numa **única** consulta
+  sobre uma CTE materializada: todos os números vêm da mesma versão dos dados.
+- `ad_navigator_pairings`, `ad_navigator_grants`, `ad_navigator_rate_limits` e
+  `ad_navigator_route_limits` têm todos os privilégios revogados a `PUBLIC`,
+  `anon` e `authenticated`, com RLS ativa; só `service_role` e as funções
+  autorizadas lhes tocam.
 - Todas as funções são `SECURITY DEFINER` com `search_path = ''` e nomes
   totalmente qualificados.
 - `ad_navigator_create_pairing`, `ad_navigator_state` e
   `ad_navigator_revoke_access`: executáveis por `authenticated`, mas validam
   `auth.uid()`, `current_org_id()` e `tem_papel(['administrador'])`.
-- `ad_navigator_exchange`, `ad_navigator_summary` e `ad_navigator_rate_hit`:
-  execução apenas para `service_role`.
+- `ad_navigator_vinculo`, `ad_navigator_exchange`, `ad_navigator_summary` e
+  `ad_navigator_rate_hit_v2`: execução apenas para `service_role`.
+- Limite de abuso: `ad_navigator_rate_hit_v2` avalia primeiro um **teto por
+  rota** (600/minuto) e só depois o balde derivado do segredo apresentado
+  (30/minuto). Chaves aleatórias não fazem a tabela crescer; a limpeza de linhas
+  antigas é limitada a 200 por chamada. Nada de IP, cabeçalhos do cliente ou PII
+  entra nesta contagem.
+- Formatos exatos: código `jpair_` + 43 caracteres `base64url`; bearer com 43
+  caracteres `base64url`; hashes em 64 hexadecimais minúsculos.
+- O resumo recusa (500 sanitizado) qualquer agregado que não cumpra o contrato —
+  contagens em falta, negativas, fracionadas, incoerentes com o total, etapas
+  fora da allowlist ou identidades malformadas. Nunca se inventa zero.
 - A RLS existente do projeto mantém-se intacta; não há chaves administrativas
   partilhadas com o recetor.
+- Migrações: `0009_ad_navigator_bridge_v1_1_definitivo.sql` é a definição
+  autoritativa e autossuficiente (o ficheiro `0008_ad_navigator_bridge_v1_1.sql`
+  ficou com o texto da versão anterior, baseada no site).
 
 ## 6. Estado
 
