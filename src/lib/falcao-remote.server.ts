@@ -50,16 +50,21 @@ function bate(c: ContactoRemoto, campo: "telefone" | "email", valor: string): bo
 
 
 
-/** Contacto estrito: sem id, location ou DND explícitos a resposta é malformada. */
+/** Identidade estrita. A API pode omitir DND num contacto novo.
+ * Ausência permanece desconhecida: este adaptador só regista contacto/oportunidade.
+ * O envio de mensagens exige DND explícito no adaptador separado de acolhimento.
+ */
 export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
   if (!bruto || typeof bruto !== "object") return null;
   const c = bruto as Record<string, unknown>;
   const id = texto(c["id"]);
   const location = texto(c["locationId"]);
-  if (!id || !location || typeof c["dnd"] !== "boolean") return null;
+  if (!id || !location) return null;
+  const dnd = c["dnd"];
+  if (dnd != null && typeof dnd !== "boolean") return null;
   const settings = c["dndSettings"];
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
-  const entradas = Object.entries(settings as Record<string, unknown>);
+  if (settings != null && (typeof settings !== "object" || Array.isArray(settings))) return null;
+  const entradas = Object.entries((settings ?? {}) as Record<string, unknown>);
   if (
     entradas.some(([, valor]) => {
       if (!valor || typeof valor !== "object" || Array.isArray(valor)) return true;
@@ -75,8 +80,8 @@ export function contactoDaApi(bruto: unknown): ContactoRemoto | null {
     locationId: location,
     phone: texto(c["phone"]),
     email: texto(c["email"]),
-    dnd: c["dnd"],
-    canaisBloqueados: canais,
+    dnd: typeof dnd === "boolean" ? dnd : null,
+    canaisBloqueados: settings == null ? null : canais,
   };
 }
 
