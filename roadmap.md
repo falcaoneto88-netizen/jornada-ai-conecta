@@ -73,4 +73,5 @@
 - [x] Migração aplicada na base real (`drizzle/migrations/0009_ad_navigator_bridge_v1_1_definitivo.sql`), só estrutura e funções — nenhum pareamento nem concessão criados.
 - [x] Vínculo pela ligação real ao GoHighLevel (organização não-demo, `location_id` + `default_pipeline_id`), independente do site.
 - [x] Agregados numa única consulta, validação estrita do contrato, formatos exatos de código/bearer, teto de abuso por rota, `build` fixo em `/api/version`.
+- [x] Travas corrigidas (`0010_ad_navigator_locks_v1_2.sql`): leitura em `FOR UPDATE` desde o início, autorização e vínculo travados até ao commit, modo real da ligação exigido.
 - [ ] Ponte por publicar; só declarar ligada após troca real + leitura autenticada do resumo + persistência confirmada no Ad Navigator.

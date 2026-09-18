@@ -156,10 +156,21 @@ nem caminhos internos.
   funil padrão da ligação revoga efetivamente a leitura, mesmo que o site
   continue a apontar para o funil antigo. Criação, troca, resumo e revogação
   revalidam sempre organização, papel do emissor, vínculo e funil.
-- Ordem de travas, igual em todas as operações: (1) trava consultiva por
-  organização, (2) pareamento `FOR UPDATE`, (3) concessão `FOR SHARE` na leitura.
-  Assim nenhum código novo escapa a uma revogação concorrente, nenhuma concessão
-  revogada lê depois de a revogação concluir, e a troca continua exatamente única.
+- Ordem única de travas em **todas** as operações (criar, trocar, ler, revogar),
+  o que elimina impasses por ordem cruzada:
+  1. trava consultiva por organização (serializa a organização);
+  2. organização não-demo `FOR SHARE`;
+  3. perfil do emissor `FOR SHARE`;
+  4. papel de administrador `FOR SHARE`;
+  5. ligação GoHighLevel `FOR SHARE` (exige `status = 'conectada'` **e**
+     `mode = 'conectado'`) e depois o vínculo de location `FOR SHARE`;
+  6. pareamento ou concessão `FOR UPDATE`.
+  As autorizações são avaliadas **depois** da espera pela trava e ficam
+  protegidas até ao commit: remover o papel do emissor ou trocar o funil padrão
+  a meio de uma operação nunca escapa. A leitura toma a concessão em
+  `FOR UPDATE` desde o início — escreve o contador na mesma transação, por isso
+  duas leituras simultâneas nunca se bloqueiam mutuamente. Nenhum código novo
+  escapa a uma revogação concorrente e a troca continua exatamente única.
 - O resumo calcula totais, estados, etapas e frescura numa **única** consulta
   sobre uma CTE materializada: todos os números vêm da mesma versão dos dados.
 - `ad_navigator_pairings`, `ad_navigator_grants`, `ad_navigator_rate_limits` e
@@ -171,7 +182,8 @@ nem caminhos internos.
 - `ad_navigator_create_pairing`, `ad_navigator_state` e
   `ad_navigator_revoke_access`: executáveis por `authenticated`, mas validam
   `auth.uid()`, `current_org_id()` e `tem_papel(['administrador'])`.
-- `ad_navigator_vinculo`, `ad_navigator_exchange`, `ad_navigator_summary` e
+- `ad_navigator_vinculo`, `ad_navigator_membro`,
+  `ad_navigator_vinculo_travado`, `ad_navigator_exchange`, `ad_navigator_summary` e
   `ad_navigator_rate_hit_v2`: execução apenas para `service_role`.
 - Limite de abuso: `ad_navigator_rate_hit_v2` avalia primeiro um **teto por
   rota** (600/minuto) e só depois o balde derivado do segredo apresentado
@@ -185,9 +197,11 @@ nem caminhos internos.
   fora da allowlist ou identidades malformadas. Nunca se inventa zero.
 - A RLS existente do projeto mantém-se intacta; não há chaves administrativas
   partilhadas com o recetor.
-- Migrações: `0009_ad_navigator_bridge_v1_1_definitivo.sql` é a definição
-  autoritativa e autossuficiente (o ficheiro `0008_ad_navigator_bridge_v1_1.sql`
-  ficou com o texto da versão anterior, baseada no site).
+- Migrações: `0009_ad_navigator_bridge_v1_1_definitivo.sql` cria as tabelas e a
+  primeira versão das funções; `0010_ad_navigator_locks_v1_2.sql` substitui as
+  funções pela versão com a ordem de travas acima. O ficheiro
+  `0008_ad_navigator_bridge_v1_1.sql` ficou com o texto da versão anterior,
+  baseada no site, e não é usado.
 
 ## 6. Estado
 
