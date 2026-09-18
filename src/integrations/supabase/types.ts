@@ -14,6 +14,155 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_navigator_grants: {
+        Row: {
+          created_at: string
+          credential_hash: string
+          expires_at: string
+          id: string
+          issuer_user_id: string
+          last_used_at: string | null
+          location_id: string
+          organization_id: string
+          pairing_id: string
+          pipeline_id: string
+          receiver_tenant_id: string
+          revoked_at: string | null
+          scope: string
+          use_count: number
+        }
+        Insert: {
+          created_at?: string
+          credential_hash: string
+          expires_at: string
+          id?: string
+          issuer_user_id: string
+          last_used_at?: string | null
+          location_id: string
+          organization_id: string
+          pairing_id: string
+          pipeline_id: string
+          receiver_tenant_id: string
+          revoked_at?: string | null
+          scope?: string
+          use_count?: number
+        }
+        Update: {
+          created_at?: string
+          credential_hash?: string
+          expires_at?: string
+          id?: string
+          issuer_user_id?: string
+          last_used_at?: string | null
+          location_id?: string
+          organization_id?: string
+          pairing_id?: string
+          pipeline_id?: string
+          receiver_tenant_id?: string
+          revoked_at?: string | null
+          scope?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_navigator_grants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_navigator_grants_pairing_id_fkey"
+            columns: ["pairing_id"]
+            isOneToOne: true
+            referencedRelation: "ad_navigator_pairings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_navigator_pairings: {
+        Row: {
+          code_sha256: string
+          consumed_at: string | null
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          location_id: string
+          organization_id: string
+          pipeline_id: string
+          revoked_at: string | null
+        }
+        Insert: {
+          code_sha256: string
+          consumed_at?: string | null
+          created_at?: string
+          created_by: string
+          expires_at: string
+          id?: string
+          location_id: string
+          organization_id: string
+          pipeline_id: string
+          revoked_at?: string | null
+        }
+        Update: {
+          code_sha256?: string
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          location_id?: string
+          organization_id?: string
+          pipeline_id?: string
+          revoked_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_navigator_pairings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_navigator_rate_limits: {
+        Row: {
+          bucket_key: string
+          hits: number
+          window_start: string
+        }
+        Insert: {
+          bucket_key: string
+          hits?: number
+          window_start: string
+        }
+        Update: {
+          bucket_key?: string
+          hits?: number
+          window_start?: string
+        }
+        Relationships: []
+      }
+      ad_navigator_route_limits: {
+        Row: {
+          hits: number
+          route: string
+          window_start: string
+        }
+        Insert: {
+          hits?: number
+          route: string
+          window_start: string
+        }
+        Update: {
+          hits?: number
+          route?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       appointment_followup_events: {
         Row: {
           actor_id: string
@@ -1585,6 +1734,41 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ad_navigator_create_pairing: {
+        Args: { _code_sha256: string; _confirm: boolean; _ttl_seconds: number }
+        Returns: Json
+      }
+      ad_navigator_exchange: {
+        Args: {
+          _code_sha256: string
+          _credential_hash: string
+          _receiver_tenant_id: string
+        }
+        Returns: Json
+      }
+      ad_navigator_rate_hit_v2: {
+        Args: {
+          _bucket_key: string
+          _limit: number
+          _route: string
+          _route_limit: number
+          _window_seconds: number
+        }
+        Returns: boolean
+      }
+      ad_navigator_revoke_access: { Args: { _confirm: boolean }; Returns: Json }
+      ad_navigator_state: { Args: never; Returns: Json }
+      ad_navigator_summary: {
+        Args: { _credential_hash: string }
+        Returns: Json
+      }
+      ad_navigator_vinculo: {
+        Args: { _org: string }
+        Returns: {
+          location_id: string
+          pipeline_id: string
+        }[]
+      }
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_remote_v2: {
         Args: { _source: string; _submission: string }

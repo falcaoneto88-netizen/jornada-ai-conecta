@@ -57,6 +57,13 @@
       "when": 1789682578373,
       "tag": "0007_meta_capi_test_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789741848675,
+      "tag": "0008_ad_navigator_bridge_v1_1",
+      "breakpoints": true
     }
   ]
 }

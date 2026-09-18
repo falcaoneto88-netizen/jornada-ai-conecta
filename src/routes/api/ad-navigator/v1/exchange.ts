@@ -35,9 +35,8 @@ export const Route = createFileRoute("/api/ad-navigator/v1/exchange")({
         const validado = validarPedidoTroca(bruto);
         if (!validado.ok) return recusa(400, "pedido_invalido");
 
-        const { limitePermitido, sha256hex, trocarCodigo } =
-          await import("@/lib/ad-navigator.server");
-        if (!(await limitePermitido(`exchange:${sha256hex(validado.pedido.code)}`))) {
+        const { limitePermitido, trocarCodigo } = await import("@/lib/ad-navigator.server");
+        if (!(await limitePermitido("exchange", validado.pedido.code))) {
           return recusa(429, "demasiados_pedidos");
         }
         const r = await trocarCodigo(validado.pedido);

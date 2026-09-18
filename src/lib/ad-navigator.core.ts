@@ -3,6 +3,10 @@
  *
  * Só indicadores comerciais agregados. Nenhuma função deste ficheiro conhece
  * nomes, telefones, emails, tags, conversas ou dados clínicos.
+ *
+ * Regra de ouro da validação: nada é "corrigido". Um payload incompleto,
+ * negativo, fracionado, incoerente ou com campos a mais é recusado — nunca
+ * transformado em zero nem em identidade inventada.
  */
 
 export const AD_NAV_SCHEMA_VERSION = 1 as const;
@@ -69,20 +73,27 @@ export function mapearEtapa(bruto: unknown): EtapaAdNav {
 export const HEX64 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** 32 bytes em base64url = exatamente 43 caracteres, sem preenchimento. */
+export const AD_NAV_CODE_REGEX = /^jpair_[A-Za-z0-9_-]{43}$/;
+export const AD_NAV_TOKEN_REGEX = /^[A-Za-z0-9_-]{43}$/;
+
+export function ehTokenAdNav(bruto: unknown): bruto is string {
+  return typeof bruto === "string" && AD_NAV_TOKEN_REGEX.test(bruto);
+}
+
 export type PedidoTroca = { code: string; receiver_tenant_id: string; credential_hash: string };
 
-/** Esquema estrito: só estes três campos, com estes tipos exatos. */
+/** Esquema estrito: só estes três campos, com estes tipos e formatos exatos. */
 export function validarPedidoTroca(
   bruto: unknown,
 ): { ok: true; pedido: PedidoTroca } | { ok: false } {
   if (bruto === null || typeof bruto !== "object" || Array.isArray(bruto)) return { ok: false };
   const o = bruto as Record<string, unknown>;
-  const chaves = Object.keys(o).sort();
-  if (chaves.join(",") !== "code,credential_hash,receiver_tenant_id") return { ok: false };
+  if (Object.keys(o).sort().join(",") !== "code,credential_hash,receiver_tenant_id") {
+    return { ok: false };
+  }
   const { code, receiver_tenant_id: tenant, credential_hash: hash } = o;
-  if (typeof code !== "string" || code.length < 16 || code.length > 128) return { ok: false };
-  if (!code.startsWith(AD_NAV_CODE_PREFIX)) return { ok: false };
-  if (!/^jpair_[A-Za-z0-9_-]{16,120}$/.test(code)) return { ok: false };
+  if (typeof code !== "string" || !AD_NAV_CODE_REGEX.test(code)) return { ok: false };
   if (typeof tenant !== "string" || !UUID.test(tenant)) return { ok: false };
   if (typeof hash !== "string" || !HEX64.test(hash)) return { ok: false };
   return { ok: true, pedido: { code, receiver_tenant_id: tenant, credential_hash: hash } };
@@ -120,65 +131,180 @@ export type ResumoEstavel = {
 
 export type RespostaResumo = ResumoEstavel & { snapshot_id: string; generated_at: string };
 
-function numero(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0;
+/**
+ * Contagem válida: número JSON inteiro e seguro, ou string de dígitos (bigint
+ * do Postgres) dentro do intervalo seguro. Ausente, nulo, negativo, fracionado
+ * ou acima de 2^53-1 é recusado — nunca convertido em zero.
+ */
+function contagem(v: unknown): number | null {
+  if (typeof v === "number") {
+    return Number.isSafeInteger(v) && v >= 0 ? v : null;
+  }
+  if (typeof v === "string" && /^[0-9]{1,16}$/.test(v)) {
+    const n = Number(v);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  return null;
 }
 
-function iso(v: unknown): string | null {
-  if (typeof v !== "string" || v === "") return null;
+function textoNaoVazio(v: unknown, max = 128): v is string {
+  return typeof v === "string" && v.trim() !== "" && v.length <= max;
+}
+
+/** Data: `null` explícito ou ISO válido. Texto inválido recusa o payload. */
+function data(v: unknown): { ok: true; valor: string | null } | { ok: false } {
+  if (v === null) return { ok: true, valor: null };
+  if (typeof v !== "string" || v === "") return { ok: false };
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  return Number.isNaN(d.getTime()) ? { ok: false } : { ok: true, valor: d.toISOString() };
+}
+
+function chavesExatas(o: Record<string, unknown>, esperadas: string[]): boolean {
+  return Object.keys(o).sort().join(",") === [...esperadas].sort().join(",");
+}
+
+function objeto(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
 }
 
 /**
- * Normaliza a saída bruta do SQL para o contrato exato, com etapas restritas à
- * allowlist (chaves desconhecidas somam em `unknown`) e sem texto livre.
+ * Normaliza (e valida) a saída bruta do SQL. Devolve `null` a qualquer desvio
+ * do contrato: campos em falta ou a mais, contagens inválidas, totais
+ * incoerentes, identidades malformadas ou escopo/origem inesperados.
  */
 export function normalizarResumo(bruto: unknown): ResumoEstavel | null {
-  if (bruto === null || typeof bruto !== "object") return null;
-  const o = bruto as Record<string, unknown>;
-  const contagens = (o["counts"] ?? {}) as Record<string, unknown>;
-  const cobertura = (o["coverage"] ?? {}) as Record<string, unknown>;
-  const estadosBrutos = (contagens["by_status"] ?? {}) as Record<string, unknown>;
-  const etapasBrutas = (contagens["by_stage"] ?? {}) as Record<string, unknown>;
+  const o = objeto(bruto);
+  if (!o) return null;
+  if (
+    !chavesExatas(o, [
+      "schema_version",
+      "grant_id",
+      "organization_id",
+      "location_id",
+      "pipeline_id",
+      "scope",
+      "source",
+      "coverage",
+      "counts",
+      "attribution",
+      "revenue",
+    ])
+  ) {
+    return null;
+  }
+  if (o["schema_version"] !== AD_NAV_SCHEMA_VERSION) return null;
+  if (o["scope"] !== AD_NAV_SCOPE || o["source"] !== AD_NAV_SOURCE) return null;
+  if (typeof o["grant_id"] !== "string" || !UUID.test(o["grant_id"])) return null;
+  if (typeof o["organization_id"] !== "string" || !UUID.test(o["organization_id"])) return null;
+  if (!textoNaoVazio(o["location_id"], 64) || !textoNaoVazio(o["pipeline_id"], 64)) return null;
 
-  for (const campo of ["grant_id", "organization_id", "location_id", "pipeline_id"]) {
-    if (typeof o[campo] !== "string" || (o[campo] as string) === "") return null;
+  const cobertura = objeto(o["coverage"]);
+  if (
+    !cobertura ||
+    !chavesExatas(cobertura, [
+      "kind",
+      "upstream_complete",
+      "last_synced_at",
+      "latest_record_at",
+      "reason",
+    ]) ||
+    cobertura["kind"] !== "local_snapshot" ||
+    cobertura["upstream_complete"] !== false ||
+    cobertura["reason"] !== "upstream_coverage_not_verified"
+  ) {
+    return null;
+  }
+  const sincronizado = data(cobertura["last_synced_at"]);
+  const ultimo = data(cobertura["latest_record_at"]);
+  if (!sincronizado.ok || !ultimo.ok) return null;
+
+  const contagens = objeto(o["counts"]);
+  if (
+    !contagens ||
+    !chavesExatas(contagens, [
+      "opportunities",
+      "linked_contacts",
+      "unlinked_opportunities",
+      "by_status",
+      "by_stage",
+    ])
+  ) {
+    return null;
+  }
+  const total = contagem(contagens["opportunities"]);
+  const ligados = contagem(contagens["linked_contacts"]);
+  const soltos = contagem(contagens["unlinked_opportunities"]);
+  if (total === null || ligados === null || soltos === null) return null;
+
+  const estadosBrutos = objeto(contagens["by_status"]);
+  if (!estadosBrutos || !chavesExatas(estadosBrutos, ["open", "won", "lost", "abandoned", "unknown"]))
+    return null;
+  const by_status = {} as Record<EstadoAdNav, number>;
+  let somaEstados = 0;
+  for (const chave of ["open", "won", "lost", "abandoned", "unknown"] as const) {
+    const n = contagem(estadosBrutos[chave]);
+    if (n === null) return null;
+    by_status[chave] = n;
+    somaEstados += n;
   }
 
+  const etapasBrutas = objeto(contagens["by_stage"]);
+  if (!etapasBrutas) return null;
   const by_stage: Record<string, number> = {};
+  let somaEtapas = 0;
   for (const [chave, valor] of Object.entries(etapasBrutas)) {
-    const etapa = mapearEtapa(chave);
-    by_stage[etapa] = (by_stage[etapa] ?? 0) + numero(valor);
+    if (!(AD_NAV_ETAPAS as readonly string[]).includes(chave)) return null;
+    const n = contagem(valor);
+    if (n === null) return null;
+    by_stage[chave] = n;
+    somaEtapas += n;
+  }
+
+  // Coerência: os cortes têm de somar o total, e os ligados/soltos cabem nele.
+  if (somaEstados !== total || somaEtapas !== total) return null;
+  if (soltos > total || ligados > total - soltos) return null;
+
+  const atribuicao = objeto(o["attribution"]);
+  if (
+    !atribuicao ||
+    !chavesExatas(atribuicao, ["status", "reason"]) ||
+    atribuicao["status"] !== "unavailable" ||
+    atribuicao["reason"] !== "campaign_link_not_available"
+  ) {
+    return null;
+  }
+  const receita = objeto(o["revenue"]);
+  if (
+    !receita ||
+    !chavesExatas(receita, ["value", "reason"]) ||
+    receita["value"] !== null ||
+    receita["reason"] !== "financial_source_not_connected"
+  ) {
+    return null;
   }
 
   return {
     schema_version: AD_NAV_SCHEMA_VERSION,
-    grant_id: o["grant_id"] as string,
-    organization_id: o["organization_id"] as string,
-    location_id: o["location_id"] as string,
-    pipeline_id: o["pipeline_id"] as string,
+    grant_id: o["grant_id"],
+    organization_id: o["organization_id"],
+    location_id: o["location_id"],
+    pipeline_id: o["pipeline_id"],
     scope: AD_NAV_SCOPE,
     source: AD_NAV_SOURCE,
     coverage: {
       kind: "local_snapshot",
       upstream_complete: false,
-      last_synced_at: iso(cobertura["last_synced_at"]),
-      latest_record_at: iso(cobertura["latest_record_at"]),
+      last_synced_at: sincronizado.valor,
+      latest_record_at: ultimo.valor,
       reason: "upstream_coverage_not_verified",
     },
     counts: {
-      opportunities: numero(contagens["opportunities"]),
-      linked_contacts: numero(contagens["linked_contacts"]),
-      unlinked_opportunities: numero(contagens["unlinked_opportunities"]),
-      by_status: {
-        open: numero(estadosBrutos["open"]),
-        won: numero(estadosBrutos["won"]),
-        lost: numero(estadosBrutos["lost"]),
-        abandoned: numero(estadosBrutos["abandoned"]),
-        unknown: numero(estadosBrutos["unknown"]),
-      },
+      opportunities: total,
+      linked_contacts: ligados,
+      unlinked_opportunities: soltos,
+      by_status,
       by_stage,
     },
     attribution: { status: "unavailable", reason: "campaign_link_not_available" },

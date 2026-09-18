@@ -18,13 +18,17 @@ import {
 } from "./ad-navigator.core";
 
 export const AD_NAV_RATE_LIMITE = 30;
+/** Teto da rota inteira por janela: impede crescimento por chaves aleatórias. */
+export const AD_NAV_TETO_ROTA = 600;
 export const AD_NAV_RATE_JANELA_SEGUNDOS = 60;
+
+export type RotaAdNav = "exchange" | "summary";
 
 export function sha256hex(valor: string): string {
   return createHash("sha256").update(valor, "utf8").digest("hex");
 }
 
-/** Código de uso único: 32 bytes aleatórios em base64url, com prefixo. */
+/** Código de uso único: 32 bytes aleatórios em base64url (43 caracteres). */
 export function gerarCodigoPareamento(): string {
   return `${AD_NAV_CODE_PREFIX}${randomBytes(32).toString("base64url")}`;
 }
@@ -41,12 +45,22 @@ async function admin(): Promise<ClienteRpc> {
   return supabaseAdmin as unknown as ClienteRpc;
 }
 
-/** Limite de abuso persistente, com chave derivada — sem IP e sem PII. */
-export async function limitePermitido(chaveBruta: string, cliente?: ClienteRpc): Promise<boolean> {
+/**
+ * Limite de abuso persistente: teto da rota avaliado antes do balde derivado
+ * do segredo apresentado. Sem IP, sem cabeçalhos do cliente e sem PII — nada
+ * enviado pelo chamador pode aumentar o que lhe é permitido.
+ */
+export async function limitePermitido(
+  rota: RotaAdNav,
+  chaveBruta: string,
+  cliente?: ClienteRpc,
+): Promise<boolean> {
   const c = cliente ?? (await admin());
-  const { data, error } = await c.rpc("ad_navigator_rate_hit", {
-    _bucket_key: sha256hex(chaveBruta),
+  const { data, error } = await c.rpc("ad_navigator_rate_hit_v2", {
+    _route: rota,
+    _bucket_key: sha256hex(`${rota}:${chaveBruta}`),
     _limit: AD_NAV_RATE_LIMITE,
+    _route_limit: AD_NAV_TETO_ROTA,
     _window_seconds: AD_NAV_RATE_JANELA_SEGUNDOS,
   });
   if (error) return false;
