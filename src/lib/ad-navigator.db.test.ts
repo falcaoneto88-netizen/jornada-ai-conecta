@@ -343,9 +343,7 @@ describe("resumo agregado", () => {
     expect(criar(UID_A, codigo).ok).toBe(true);
     expect(trocar(codigo, cred).ok).toBe(true);
     const [leitura, revogacao] = await Promise.all([
-      db.adminAsync(
-        `set role service_role; select public.ad_navigator_summary('${hash(cred)}');`,
-      ),
+      db.adminAsync(`set role service_role; select public.ad_navigator_summary('${hash(cred)}');`),
       db.adminAsync(
         `set role service_role; update public.ad_navigator_grants set revoked_at = now() where credential_hash = '${hash(cred)}';`,
       ),

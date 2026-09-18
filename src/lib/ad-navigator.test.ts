@@ -184,7 +184,9 @@ describe("resumo", () => {
       ["estados incompletos", comContagens({ by_status: { open: 3 } as never })],
       [
         "etapa fora da allowlist",
-        comContagens({ by_stage: { "Harmonização VIP": 3 } as unknown as Bruto["counts"]["by_stage"] }),
+        comContagens({
+          by_stage: { "Harmonização VIP": 3 } as unknown as Bruto["counts"]["by_stage"],
+        }),
       ],
       ["soma de estados diferente do total", comContagens({ opportunities: 4 })],
       [
@@ -204,7 +206,10 @@ describe("resumo", () => {
       ["receita preenchida", { ...brutoSql, revenue: { value: 10, reason: "x" } }],
       [
         "atribuição inesperada",
-        { ...brutoSql, attribution: { status: "available", reason: "campaign_link_not_available" } },
+        {
+          ...brutoSql,
+          attribution: { status: "available", reason: "campaign_link_not_available" },
+        },
       ],
     ];
     for (const [nome, caso] of casos) expect(normalizarResumo(caso), nome).toBeNull();

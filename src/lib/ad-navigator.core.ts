@@ -239,7 +239,10 @@ export function normalizarResumo(bruto: unknown): ResumoEstavel | null {
   if (total === null || ligados === null || soltos === null) return null;
 
   const estadosBrutos = objeto(contagens["by_status"]);
-  if (!estadosBrutos || !chavesExatas(estadosBrutos, ["open", "won", "lost", "abandoned", "unknown"]))
+  if (
+    !estadosBrutos ||
+    !chavesExatas(estadosBrutos, ["open", "won", "lost", "abandoned", "unknown"])
+  )
     return null;
   const by_status = {} as Record<EstadoAdNav, number>;
   let somaEstados = 0;
