@@ -213,7 +213,7 @@ describe("validação do recibo do acolhimento", () => {
 
 it("não envia mensagens com a resposta real sem DND de um contacto novo", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
-    contact: { id: "ghlC1", locationId: "loc", phone: pedido.phone_normalized },
+    total: 1, contacts: [{ id: "ghlC1", locationId: "loc", phone: pedido.phone_normalized }],
   }), { status: 200, headers: { "content-type": "application/json" } }));
   const adaptador = criarDepsAcolhimento({ baseUrl: "https://services.leadconnectorhq.com", version: "2021-07-28", token: "teste", locationId: "loc" }, async () => ({ ok: true }));
   const enviar = vi.fn();
@@ -222,4 +222,32 @@ it("não envia mensagens com a resposta real sem DND de um contacto novo", async
   expect(enviar).not.toHaveBeenCalled();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   fetchMock.mockRestore();
+});
+
+describe("pesquisa exata para o estado DND", () => {
+  const cfg = { baseUrl: "https://services.leadconnectorhq.com", version: "2021-07-28", token: "teste", locationId: "loc" };
+  const contact = { id: "ghlC1", locationId: "loc", phone: pedido.phone_normalized, dnd: false, dndSettings: {} };
+  it("lê o DND explícito com filtro de ID e location e sem busca ampla", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ total: 1, contacts: [contact] }), { status: 200 }));
+    try {
+      const deps = criarDepsAcolhimento(cfg, async () => ({ ok: true }));
+      expect(await deps.estadoContacto("ghlC1")).toMatchObject({ ok: true, data: { id: "ghlC1", dnd: false, canaisBloqueados: [] } });
+      expect(String(spy.mock.calls[0]?.[0])).toContain("/contacts/search");
+      expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({ locationId: "loc", page: 1, pageLimit: 2, filters: [{ field: "id", operator: "eq", value: "ghlC1" }] });
+    } finally { spy.mockRestore(); }
+  });
+  it.each([
+    { total: 2, contacts: [contact] },
+    { total: 1, contacts: [] },
+    { total: 1, contacts: [contact, contact] },
+    { total: 1, contacts: [{ ...contact, id: "other" }] },
+    { total: 1, contacts: [{ ...contact, locationId: "other" }] },
+    { total: 1, contacts: [{ ...contact, dnd: null }] },
+    { total: 1, contacts: [{ ...contact, dndSettings: null }] },
+    { total: 1, contacts: [{ ...contact, dndSettings: { SMS: { status: "unknown" } } }] },
+  ])("bloqueia resultado ambíguo ou estado desconhecido %#", async (body) => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
+    try { expect(await criarDepsAcolhimento(cfg, async () => ({ ok: true })).estadoContacto("ghlC1")).toMatchObject({ ok: false }); }
+    finally { spy.mockRestore(); }
+  });
 });
