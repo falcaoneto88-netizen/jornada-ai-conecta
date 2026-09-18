@@ -21,7 +21,10 @@ export const Route = createFileRoute("/api/ad-navigator/v1/exchange")({
         }
         const corpo = await lerCorpoLimitado(request, AD_NAV_LIMITE_BYTES);
         if (!corpo.ok) {
-          return recusa(corpo.status, corpo.status === 413 ? "pedido_demasiado_grande" : "pedido_invalido");
+          return recusa(
+            corpo.status,
+            corpo.status === 413 ? "pedido_demasiado_grande" : "pedido_invalido",
+          );
         }
         let bruto: unknown;
         try {
@@ -32,7 +35,8 @@ export const Route = createFileRoute("/api/ad-navigator/v1/exchange")({
         const validado = validarPedidoTroca(bruto);
         if (!validado.ok) return recusa(400, "pedido_invalido");
 
-        const { limitePermitido, sha256hex, trocarCodigo } = await import("@/lib/ad-navigator.server");
+        const { limitePermitido, sha256hex, trocarCodigo } =
+          await import("@/lib/ad-navigator.server");
         if (!(await limitePermitido(`exchange:${sha256hex(validado.pedido.code)}`))) {
           return recusa(429, "demasiados_pedidos");
         }

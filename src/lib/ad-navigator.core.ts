@@ -67,13 +67,14 @@ export function mapearEtapa(bruto: unknown): EtapaAdNav {
 }
 
 export const HEX64 = /^[0-9a-f]{64}$/;
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type PedidoTroca = { code: string; receiver_tenant_id: string; credential_hash: string };
 
 /** Esquema estrito: só estes três campos, com estes tipos exatos. */
-export function validarPedidoTroca(bruto: unknown): { ok: true; pedido: PedidoTroca } | { ok: false } {
+export function validarPedidoTroca(
+  bruto: unknown,
+): { ok: true; pedido: PedidoTroca } | { ok: false } {
   if (bruto === null || typeof bruto !== "object" || Array.isArray(bruto)) return { ok: false };
   const o = bruto as Record<string, unknown>;
   const chaves = Object.keys(o).sort();
@@ -208,5 +209,9 @@ export function montarResposta(
   digest: (texto: string) => string,
   agora: Date,
 ): RespostaResumo {
-  return { ...resumo, snapshot_id: calcularSnapshotId(resumo, digest), generated_at: agora.toISOString() };
+  return {
+    ...resumo,
+    snapshot_id: calcularSnapshotId(resumo, digest),
+    generated_at: agora.toISOString(),
+  };
 }

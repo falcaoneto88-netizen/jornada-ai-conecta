@@ -42,10 +42,7 @@ async function admin(): Promise<ClienteRpc> {
 }
 
 /** Limite de abuso persistente, com chave derivada — sem IP e sem PII. */
-export async function limitePermitido(
-  chaveBruta: string,
-  cliente?: ClienteRpc,
-): Promise<boolean> {
+export async function limitePermitido(chaveBruta: string, cliente?: ClienteRpc): Promise<boolean> {
   const c = cliente ?? (await admin());
   const { data, error } = await c.rpc("ad_navigator_rate_hit", {
     _bucket_key: sha256hex(chaveBruta),
@@ -57,8 +54,7 @@ export async function limitePermitido(
 }
 
 export type ResultadoTroca =
-  | { ok: true; body: Record<string, unknown> }
-  | { ok: false; status: number; erro: string };
+  { ok: true; body: Record<string, unknown> } | { ok: false; status: number; erro: string };
 
 export async function trocarCodigo(
   pedido: { code: string; receiver_tenant_id: string; credential_hash: string },
@@ -78,8 +74,7 @@ export async function trocarCodigo(
 }
 
 export type ResultadoResumo =
-  | { ok: true; body: RespostaResumo }
-  | { ok: false; status: number; erro: string };
+  { ok: true; body: RespostaResumo } | { ok: false; status: number; erro: string };
 
 export async function lerResumo(
   bearer: string,
@@ -148,7 +143,9 @@ export type DetalhePareamento = {
 
 export async function criarPareamentoAdNavigator(
   supabase: ClienteSessao,
-): Promise<{ ok: true; code: string; detalhe: DetalhePareamento } | { ok: false; message: string }> {
+): Promise<
+  { ok: true; code: string; detalhe: DetalhePareamento } | { ok: false; message: string }
+> {
   const code = gerarCodigoPareamento();
   const { data, error } = await supabase.rpc("ad_navigator_create_pairing", {
     _code_sha256: sha256hex(code),

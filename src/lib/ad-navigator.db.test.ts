@@ -31,7 +31,10 @@ function valor(r: { linhas: string[][] }): string | null {
 }
 
 const criar = (uid: string, codigo: string, ttl = 600) =>
-  db.comoUtilizador(uid, `select public.ad_navigator_create_pairing('${hash(codigo)}',${ttl},true)::text;`);
+  db.comoUtilizador(
+    uid,
+    `select public.ad_navigator_create_pairing('${hash(codigo)}',${ttl},true)::text;`,
+  );
 
 const trocar = (codigo: string, credencial: string, tenant = TENANT) =>
   db.comoServico(
@@ -63,7 +66,9 @@ beforeAll(async () => {
     [UID_B, "nb@exemplo.test"],
     [UID_V, "nv@exemplo.test"],
   ] as const) {
-    expect(db.admin(`insert into auth.users (id, email) values ('${uid}','${email}');`).ok).toBe(true);
+    expect(db.admin(`insert into auth.users (id, email) values ('${uid}','${email}');`).ok).toBe(
+      true,
+    );
   }
   orgA = valor(db.admin(`select organization_id from public.profiles where id = '${UID_A}';`))!;
   orgB = valor(db.admin(`select organization_id from public.profiles where id = '${UID_B}';`))!;
@@ -104,9 +109,10 @@ describe("pareamento", () => {
       `'${hash("x")}',5,true`,
       `'${hash("x")}',100000,true`,
     ]) {
-      expect(db.comoUtilizador(UID_A, `select public.ad_navigator_create_pairing(${args});`).ok, args).toBe(
-        false,
-      );
+      expect(
+        db.comoUtilizador(UID_A, `select public.ad_navigator_create_pairing(${args});`).ok,
+        args,
+      ).toBe(false);
     }
     expect(valor(db.admin("select count(*) from public.ad_navigator_pairings;"))).toBe("0");
   });
@@ -114,12 +120,14 @@ describe("pareamento", () => {
   it("nega acesso direto às tabelas a anon e authenticated", () => {
     expect(db.comoUtilizador(UID_A, "select * from public.ad_navigator_pairings;").ok).toBe(false);
     expect(db.comoUtilizador(UID_A, "select * from public.ad_navigator_grants;").ok).toBe(false);
-    expect(db.comoUtilizador(UID_A, `select public.ad_navigator_summary('${"a".repeat(64)}');`).ok).toBe(
-      false,
-    );
     expect(
-      db.comoUtilizador(UID_A, `select public.ad_navigator_exchange('${"a".repeat(64)}','${TENANT}','${"b".repeat(64)}');`)
-        .ok,
+      db.comoUtilizador(UID_A, `select public.ad_navigator_summary('${"a".repeat(64)}');`).ok,
+    ).toBe(false);
+    expect(
+      db.comoUtilizador(
+        UID_A,
+        `select public.ad_navigator_exchange('${"a".repeat(64)}','${TENANT}','${"b".repeat(64)}');`,
+      ).ok,
     ).toBe(false);
   });
 
@@ -169,15 +177,21 @@ describe("troca do código", () => {
       ),
     ]);
     expect([a.ok, b.ok].filter(Boolean).length).toBe(1);
-    expect(Number(valor(db.admin("select count(*) from public.ad_navigator_grants;")))).toBe(antes + 1);
+    expect(Number(valor(db.admin("select count(*) from public.ad_navigator_grants;")))).toBe(
+      antes + 1,
+    );
   });
 
   it("recusa quando o vínculo deixa de coincidir", () => {
     const codigo = "jpair_binding";
     expect(criar(UID_A, codigo).ok).toBe(true);
-    db.admin(`update public.ghl_connections set status = 'nao_testada' where organization_id = '${orgA}';`);
+    db.admin(
+      `update public.ghl_connections set status = 'nao_testada' where organization_id = '${orgA}';`,
+    );
     expect(trocar(codigo, "bearer-binding").ok).toBe(false);
-    db.admin(`update public.ghl_connections set status = 'conectada' where organization_id = '${orgA}';`);
+    db.admin(
+      `update public.ghl_connections set status = 'conectada' where organization_id = '${orgA}';`,
+    );
   });
 
   it("recusa quando o emissor deixa de ser administrador", () => {
@@ -274,7 +288,9 @@ describe("resumo agregado", () => {
   });
 
   it("recusa leitura quando o vínculo é alterado", () => {
-    db.admin(`update public.site_integrations set ghl_pipeline_id = 'outro' where organization_id = '${orgA}';`);
+    db.admin(
+      `update public.site_integrations set ghl_pipeline_id = 'outro' where organization_id = '${orgA}';`,
+    );
     expect(resumo(CRED).ok).toBe(false);
     db.admin(
       `update public.site_integrations set ghl_pipeline_id = '${PIPELINE}' where organization_id = '${orgA}';`,
@@ -294,17 +310,29 @@ describe("revogação e limite de abuso", () => {
   });
 
   it("recusa revogação sem confirmação e por não administrador", () => {
-    expect(db.comoUtilizador(UID_A, "select public.ad_navigator_revoke_access(false);").ok).toBe(false);
-    expect(db.comoUtilizador(UID_A, "select public.ad_navigator_revoke_access(null);").ok).toBe(false);
-    expect(db.comoUtilizador(UID_V, "select public.ad_navigator_revoke_access(true);").ok).toBe(false);
+    expect(db.comoUtilizador(UID_A, "select public.ad_navigator_revoke_access(false);").ok).toBe(
+      false,
+    );
+    expect(db.comoUtilizador(UID_A, "select public.ad_navigator_revoke_access(null);").ok).toBe(
+      false,
+    );
+    expect(db.comoUtilizador(UID_V, "select public.ad_navigator_revoke_access(true);").ok).toBe(
+      false,
+    );
   });
 
   it("conta pedidos na janela e bloqueia acima do limite", () => {
     const chave = hash("bucket-teste");
     const primeira = db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`);
     expect(valor(primeira)).toBe("true");
-    expect(valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`))).toBe("true");
-    expect(valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`))).toBe("false");
-    expect(db.comoUtilizador(UID_A, `select public.ad_navigator_rate_hit('${chave}',2,60);`).ok).toBe(false);
+    expect(
+      valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`)),
+    ).toBe("true");
+    expect(
+      valor(db.comoServico(`select public.ad_navigator_rate_hit('${chave}',2,60)::text;`)),
+    ).toBe("false");
+    expect(
+      db.comoUtilizador(UID_A, `select public.ad_navigator_rate_hit('${chave}',2,60);`).ok,
+    ).toBe(false);
   });
 });

@@ -14,7 +14,10 @@ export const Route = createFileRoute("/api/version")({
             ok: true,
             service: "jornada-ai",
             api: { "ad-navigator": 1 },
-            release: typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release) ? release : null,
+            release:
+              typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release)
+                ? release
+                : null,
             checked_at: new Date().toISOString(),
           },
           { status: 200, headers: { "Cache-Control": "no-store" } },

@@ -16,7 +16,13 @@ function dataCurta(valor: string | null | undefined) {
   const d = new Date(valor);
   return Number.isNaN(d.getTime())
     ? "—"
-    : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 }
 
 /** Cartão "Ad Navigator — indicadores": pareamento e revogação, sem segredos externos. */
@@ -61,14 +67,14 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
 
   const e = data.estado;
   const ativos = e.grants.filter((g) => !g.revoked_at);
-  const podeGerar = e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
+  const podeGerar =
+    e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
 
   async function gerarCodigo() {
     setPendente(true);
     try {
       const r = (await gerar({ data: { confirm: true } })) as
-        | { ok: true; code: string }
-        | { ok: false; message: string };
+        { ok: true; code: string } | { ok: false; message: string };
       if (r.ok) {
         setCodigo(r.code);
         toast.success("Código gerado. Copie agora: não volta a ser mostrado.");
@@ -76,7 +82,9 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
         toast.error(r.message);
       }
     } catch {
-      toast.error("Não foi possível confirmar o resultado. Consulte o estado abaixo antes de repetir.");
+      toast.error(
+        "Não foi possível confirmar o resultado. Consulte o estado abaixo antes de repetir.",
+      );
     } finally {
       setPendente(false);
       await queryClient.invalidateQueries({ queryKey: ["ad-navigator"] });
@@ -87,8 +95,7 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
     setPendente(true);
     try {
       const r = (await revogar({ data: { confirm: true } })) as
-        | { ok: true }
-        | { ok: false; message: string };
+        { ok: true } | { ok: false; message: string };
       if (r.ok) {
         setCodigo(null);
         toast.success("Acesso revogado.");
@@ -139,8 +146,8 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
 
       {!podeGerar && (
         <p className="text-sm text-muted-foreground">
-          Confirme primeiro a ligação ao GoHighLevel desta conta: sem vínculo validado não é possível
-          gerar código.
+          Confirme primeiro a ligação ao GoHighLevel desta conta: sem vínculo validado não é
+          possível gerar código.
         </p>
       )}
 
