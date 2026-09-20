@@ -72,13 +72,25 @@ function espelhoExistente(
 }
 
 const campo = (id: string, coluna: string) =>
-  valor(db.admin(`select coalesce(${coluna}::text,'nulo') from public.site_lead_submissions where id='${id}';`));
+  valor(
+    db.admin(
+      `select coalesce(${coluna}::text,'nulo') from public.site_lead_submissions where id='${id}';`,
+    ),
+  );
 
 const ledger = (id: string) =>
-  valor(db.admin(`select state from public.site_lead_execution_ledger where first_submission_id='${id}' and scope='remote';`));
+  valor(
+    db.admin(
+      `select state from public.site_lead_execution_ledger where first_submission_id='${id}' and scope='remote';`,
+    ),
+  );
 
 const oportunidade = (ghl: string, coluna: string) =>
-  valor(db.admin(`select ${coluna}::text from public.opportunities where organization_id='${orgA}' and ghl_opportunity_id='${ghl}';`));
+  valor(
+    db.admin(
+      `select ${coluna}::text from public.opportunities where organization_id='${orgA}' and ghl_opportunity_id='${ghl}';`,
+    ),
+  );
 
 beforeAll(async () => {
   db = await iniciarDbReal();
@@ -97,7 +109,9 @@ beforeAll(async () => {
     expect(aplicada.ok, aplicada.erro).toBe(true);
   }
 
-  expect(db.admin(`insert into auth.users (id, email) values ('${UID_A}','ra@exemplo.test');`).ok).toBe(true);
+  expect(
+    db.admin(`insert into auth.users (id, email) values ('${UID_A}','ra@exemplo.test');`).ok,
+  ).toBe(true);
   orgA = valor(db.admin(`select organization_id from public.profiles where id='${UID_A}';`))!;
 
   const preparacao = db.admin(`
@@ -119,7 +133,9 @@ beforeAll(async () => {
   );
   expect(configurada.ok, configurada.erro).toBe(true);
   expect(
-    db.admin(`update public.site_integrations set remote_write_state='habilitado' where organization_id='${orgA}';`).ok,
+    db.admin(
+      `update public.site_integrations set remote_write_state='habilitado' where organization_id='${orgA}';`,
+    ).ok,
   ).toBe(true);
 }, 180_000);
 
@@ -138,7 +154,11 @@ describe("espelho local desatualizado da mesma oportunidade", () => {
     expect(oportunidade("oppStale1", "stage_id")).toBe("etapa-nova");
     expect(ledger(id)).toBe("confirmed");
     expect(
-      valor(db.admin(`select count(*) from public.audit_logs where action='site_lead.remote_snapshot_reconciled' and metadata->>'ghl_opportunity_id'='oppStale1';`)),
+      valor(
+        db.admin(
+          `select count(*) from public.audit_logs where action='site_lead.remote_snapshot_reconciled' and metadata->>'ghl_opportunity_id'='oppStale1';`,
+        ),
+      ),
     ).toBe("1");
   });
 
@@ -199,20 +219,30 @@ describe("guardas que continuam a falhar fechado", () => {
     expect(ledger(id)).toBe("blocked");
     expect(oportunidade("oppOutro", "stage_id")).toBe("etapa-antiga");
     expect(
-      valor(db.admin(`select count(*) from public.audit_logs where action='site_lead.remote_reconciliation_required' and entity_id='${id}';`)),
+      valor(
+        db.admin(
+          `select count(*) from public.audit_logs where action='site_lead.remote_reconciliation_required' and entity_id='${id}';`,
+        ),
+      ),
     ).toBe("1");
   });
 
   it("bloqueia contacto local com identidade externa divergente", () => {
     const { id, contacto } = novoRecibo();
-    expect(db.admin(`update public.contacts set ghl_contact_id='outroGhl' where id='${contacto}';`).ok).toBe(true);
+    expect(
+      db.admin(`update public.contacts set ghl_contact_id='outroGhl' where id='${contacto}';`).ok,
+    ).toBe(true);
     const fim = db.comoServico(
       `select public.finish_site_lead_remote_v2('${id}','confirmado','ok','ghlRC6','oppDiv','Lead','${PIPELINE}','etapa-nova','open')::text;`,
     );
     expect(fim.ok, fim.erro).toBe(true);
     expect(valor(fim)).toContain("contacto_local_com_identidade_externa_divergente");
     expect(ledger(id)).toBe("blocked");
-    expect(valor(db.admin(`select count(*) from public.opportunities where ghl_opportunity_id='oppDiv';`))).toBe("0");
+    expect(
+      valor(
+        db.admin(`select count(*) from public.opportunities where ghl_opportunity_id='oppDiv';`),
+      ),
+    ).toBe("0");
   });
 
   it("funil diferente do configurado reverte a transação e mantém a reserva", () => {
@@ -233,7 +263,9 @@ describe("guardas que continuam a falhar fechado", () => {
     expect(fim.ok, fim.erro).toBe(true);
     expect(campo(id, "remote_state")).toBe("bloqueado");
     expect(ledger(id)).toBe("uncertain");
-    const repetir = db.comoServico(`select public.claim_site_lead_remote_v2('${id}','experiencia-falcao');`);
+    const repetir = db.comoServico(
+      `select public.claim_site_lead_remote_v2('${id}','experiencia-falcao');`,
+    );
     expect(repetir.ok).toBe(false);
   });
 });
