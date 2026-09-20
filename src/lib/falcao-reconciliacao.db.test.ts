@@ -3,7 +3,7 @@
  * espelho local de oportunidades na conclusão da escrita remota do site
  * "Experiência Falcão". Nenhum dado real é usado; nada sai da máquina e nada
  * é aplicado na base do projeto: a migração testada está apenas preparada em
- * `sql/pending/0011_site_lead_snapshot_reconciliacao.sql`.
+ * `drizzle/migrations/0011_site_lead_snapshot_reconciliacao.sql`.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -103,7 +103,7 @@ beforeAll(async () => {
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
     "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
     // Migração ainda NÃO aplicada na base do projeto.
-    "sql/pending/0011_site_lead_snapshot_reconciliacao.sql",
+    "drizzle/migrations/0011_site_lead_snapshot_reconciliacao.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
