@@ -52,6 +52,9 @@ beforeAll(async () => {
     "drizzle/migrations/0004_site_lead_durable_execution_ledger.sql",
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
     "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
+    // Substituição revisada de finish_site_lead_remote_v2 (reconciliação de espelho).
+    "sql/pending/0011_site_lead_snapshot_reconciliacao.sql",
+
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
