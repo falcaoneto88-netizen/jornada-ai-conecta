@@ -80,9 +80,10 @@ BEGIN
           motivo_bloqueio := 'espelho_local_de_outra_identidade'; estado_bloqueio := 'blocked';
         ELSIF (o.stage_id IS DISTINCT FROM _opp_stage OR o.status IS DISTINCT FROM _opp_status
                OR o.name IS DISTINCT FROM coalesce(nullif(_opp_name,''), o.name))
-              AND s.remote_attempted_at IS NOT NULL AND o.updated_at > s.remote_attempted_at THEN
-          -- Evidência de versão local mais recente do que a leitura: não sobrescrever.
+              AND (s.remote_attempted_at IS NULL OR o.updated_at > s.remote_attempted_at) THEN
+          -- Sem prova de versão (remote_attempted_at nulo) ou espelho mais recente: não sobrescrever.
           motivo_bloqueio := 'reconciliacao_snapshot_concorrente'; estado_bloqueio := 'uncertain';
+
         END IF;
       END IF;
     END IF;
