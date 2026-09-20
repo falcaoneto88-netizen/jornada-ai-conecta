@@ -224,8 +224,6 @@ describe("guardas que continuam a falhar fechado", () => {
     expect(oportunidade("oppSemProva", "status")).toBe("open");
   });
 
-
-
   it("bloqueia oportunidade local de outro contacto, sem exceção e com auditoria", () => {
     const { id } = novoRecibo();
     const outro = valor(
