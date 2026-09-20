@@ -75,3 +75,11 @@
 - [x] Agregados numa única consulta, validação estrita do contrato, formatos exatos de código/bearer, teto de abuso por rota, `build` fixo em `/api/version`.
 - [x] Travas corrigidas (`0010_ad_navigator_locks_v1_2.sql`): leitura em `FOR UPDATE` desde o início, autorização e vínculo travados até ao commit, modo real da ligação exigido.
 - [ ] Ponte por publicar; só declarar ligada após troca real + leitura autenticada do resumo + persistência confirmada no Ad Navigator.
+
+### Reconciliação de espelho desatualizado (2026-09-20, migração PREPARADA)
+- [x] `sql/pending/0011_site_lead_snapshot_reconciliacao.sql` — conclusão remota aceita etapa/estado reais do GoHighLevel para oportunidade já existente do mesmo contacto e funil
+- [x] Guarda conservadora de versão: linha local alterada depois da reserva do recibo nunca é sobrescrita (reconciliação auditável)
+- [x] Incoerências passam a ficar persistidas em revisão/auditoria, em vez de reverterem e prender o recibo em `a_processar`
+- [x] Testes PostgreSQL isolados (`src/lib/falcao-reconciliacao.db.test.ts`)
+- [ ] Aplicar a migração na base real e reconciliar o pedido `884062b4-…` (a rever com o utilizador)
+- [ ] Submissão `0981dfd5-…` fica em revisão: telefone e e-mail ligados a contactos diferentes, a aguardar esclarecimento
