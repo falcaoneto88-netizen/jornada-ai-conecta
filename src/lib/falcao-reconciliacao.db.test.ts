@@ -203,6 +203,28 @@ describe("guardas que continuam a falhar fechado", () => {
     expect(oportunidade("oppRecente", "status")).toBe("open");
   });
 
+  it("bloqueia quando não há prova de versão (remote_attempted_at nulo)", () => {
+    const { id, contacto } = novoRecibo();
+    espelhoExistente(contacto, "oppSemProva", "etapa-antiga", "open");
+    expect(
+      db.admin(
+        `update public.site_lead_submissions set remote_attempted_at = null where id='${id}';`,
+      ).ok,
+    ).toBe(true);
+    const fim = db.comoServico(
+      `select public.finish_site_lead_remote_v2('${id}','confirmado','ok','ghlRC9','oppSemProva','Lead','${PIPELINE}','etapa-nova','won')::text;`,
+    );
+    expect(fim.ok, fim.erro).toBe(true);
+    expect(valor(fim)).toContain("reconciliacao_snapshot_concorrente");
+    expect(campo(id, "remote_state")).toBe("bloqueado");
+    expect(campo(id, "status")).toBe("em_revisao");
+    expect(ledger(id)).toBe("uncertain");
+    expect(oportunidade("oppSemProva", "stage_id")).toBe("etapa-antiga");
+    expect(oportunidade("oppSemProva", "status")).toBe("open");
+  });
+
+
+
   it("bloqueia oportunidade local de outro contacto, sem exceção e com auditoria", () => {
     const { id } = novoRecibo();
     const outro = valor(
