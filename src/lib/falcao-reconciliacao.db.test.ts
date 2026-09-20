@@ -1,9 +1,10 @@
 /**
  * Testes contra Postgres real (base isolada e efémera) da reconciliação do
  * espelho local de oportunidades na conclusão da escrita remota do site
- * "Experiência Falcão". Nenhum dado real é usado; nada sai da máquina e nada
- * é aplicado na base do projeto: a migração testada está apenas preparada em
+ * "Experiência Falcão". Nenhum dado real é usado e nada sai da máquina; a
+ * migração sob teste é a definitiva
  * `drizzle/migrations/0011_site_lead_snapshot_reconciliacao.sql`.
+
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
