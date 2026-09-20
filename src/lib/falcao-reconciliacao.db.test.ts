@@ -1,9 +1,10 @@
 /**
  * Testes contra Postgres real (base isolada e efémera) da reconciliação do
  * espelho local de oportunidades na conclusão da escrita remota do site
- * "Experiência Falcão". Nenhum dado real é usado; nada sai da máquina e nada
- * é aplicado na base do projeto: a migração testada está apenas preparada em
- * `sql/pending/0011_site_lead_snapshot_reconciliacao.sql`.
+ * "Experiência Falcão". Nenhum dado real é usado e nada sai da máquina; a
+ * migração sob teste é a definitiva
+ * `drizzle/migrations/0011_site_lead_snapshot_reconciliacao.sql`.
+
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -102,8 +103,8 @@ beforeAll(async () => {
     "drizzle/migrations/0004_site_lead_durable_execution_ledger.sql",
     "drizzle/migrations/0005_site_lead_flags_v2.sql",
     "drizzle/migrations/0006_site_lead_flags_v2_null_guard.sql",
-    // Migração ainda NÃO aplicada na base do projeto.
-    "sql/pending/0011_site_lead_snapshot_reconciliacao.sql",
+    // Substituição definitiva de finish_site_lead_remote_v2.
+    "drizzle/migrations/0011_site_lead_snapshot_reconciliacao.sql",
   ]) {
     const aplicada = db.admin(readFileSync(join(process.cwd(), ficheiro), "utf8"));
     expect(aplicada.ok, aplicada.erro).toBe(true);
@@ -201,6 +202,26 @@ describe("guardas que continuam a falhar fechado", () => {
     // Dados potencialmente mais recentes ficam intactos.
     expect(oportunidade("oppRecente", "stage_id")).toBe("etapa-antiga");
     expect(oportunidade("oppRecente", "status")).toBe("open");
+  });
+
+  it("bloqueia quando não há prova de versão (remote_attempted_at nulo)", () => {
+    const { id, contacto } = novoRecibo();
+    espelhoExistente(contacto, "oppSemProva", "etapa-antiga", "open");
+    expect(
+      db.admin(
+        `update public.site_lead_submissions set remote_attempted_at = null where id='${id}';`,
+      ).ok,
+    ).toBe(true);
+    const fim = db.comoServico(
+      `select public.finish_site_lead_remote_v2('${id}','confirmado','ok','ghlRC9','oppSemProva','Lead','${PIPELINE}','etapa-nova','won')::text;`,
+    );
+    expect(fim.ok, fim.erro).toBe(true);
+    expect(valor(fim)).toContain("reconciliacao_snapshot_concorrente");
+    expect(campo(id, "remote_state")).toBe("bloqueado");
+    expect(campo(id, "status")).toBe("em_revisao");
+    expect(ledger(id)).toBe("uncertain");
+    expect(oportunidade("oppSemProva", "stage_id")).toBe("etapa-antiga");
+    expect(oportunidade("oppSemProva", "status")).toBe("open");
   });
 
   it("bloqueia oportunidade local de outro contacto, sem exceção e com auditoria", () => {

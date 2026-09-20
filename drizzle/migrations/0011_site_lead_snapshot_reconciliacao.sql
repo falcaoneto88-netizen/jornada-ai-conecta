@@ -1,18 +1,8 @@
--- MIGRAÇÃO PREPARADA — NÃO APLICADA NA BASE REAL.
 -- Corrige o bloqueio permanente em 'a_processar' quando o espelho local da
 -- oportunidade está desatualizado face ao estado REAL lido no GoHighLevel.
---
--- Princípios mantidos:
---   * organização, integração, binding, funil configurado, reserva no ledger e
---     identidade do contacto continuam a falhar fechado;
---   * nada é escrito, movido ou reaberto no GoHighLevel;
---   * estado/etapa fechados vindos da API são preservados tal como vêm;
---   * uma linha local alterada DEPOIS da reserva do recibo nunca é sobrescrita:
---     vai para reconciliação auditável;
---   * um espelho já igual não tem o seu carimbo temporal tocado;
---   * falhas de coerência ficam persistidas e auditadas (revisão), em vez de
---     reverterem a transação e deixarem o recibo preso;
---   * resultado incerto nunca é sucesso e nunca repete escrita remota.
+-- Nada é escrito no GoHighLevel; estados fechados são preservados; espelho
+-- sem prova de versão (remote_attempted_at nulo) ou mais recente do que a
+-- reserva nunca é sobrescrito: vai para reconciliação auditável.
 
 CREATE OR REPLACE FUNCTION public.finish_site_lead_remote_v2(
   _submission uuid, _state text, _reason text, _ghl_contact text, _ghl_opportunity text,
@@ -57,13 +47,11 @@ BEGIN
     RAISE EXCEPTION USING errcode='42501',message='Reserva remota inconsistente.';
   END IF;
 
-  -- Funil fora do configurado continua a falhar fechado, antes de qualquer escrita local.
   IF _state='confirmado' AND _opp_pipeline IS DISTINCT FROM i.ghl_pipeline_id THEN
     RAISE EXCEPTION USING errcode='22023',message='Oportunidade fora do funil configurado.';
   END IF;
 
   IF _state='confirmado' THEN
-    -- 1. Identidade do contacto local validada ANTES de qualquer alteração.
     SELECT * INTO c FROM public.contacts WHERE id=s.contact_id AND organization_id=s.organization_id FOR UPDATE;
     IF c.id IS NULL THEN
       motivo_bloqueio := 'contacto_local_ausente'; estado_bloqueio := 'blocked';
@@ -71,7 +59,6 @@ BEGIN
       motivo_bloqueio := 'contacto_local_com_identidade_externa_divergente'; estado_bloqueio := 'blocked';
     END IF;
 
-    -- 2. Espelho local da oportunidade: identidade e funil antes de decidir escrita.
     IF motivo_bloqueio IS NULL THEN
       SELECT * INTO o FROM public.opportunities
         WHERE organization_id=s.organization_id AND ghl_opportunity_id=_ghl_opportunity FOR UPDATE;
@@ -80,14 +67,12 @@ BEGIN
           motivo_bloqueio := 'espelho_local_de_outra_identidade'; estado_bloqueio := 'blocked';
         ELSIF (o.stage_id IS DISTINCT FROM _opp_stage OR o.status IS DISTINCT FROM _opp_status
                OR o.name IS DISTINCT FROM coalesce(nullif(_opp_name,''), o.name))
-              AND s.remote_attempted_at IS NOT NULL AND o.updated_at > s.remote_attempted_at THEN
-          -- Evidência de versão local mais recente do que a leitura: não sobrescrever.
+              AND (s.remote_attempted_at IS NULL OR o.updated_at > s.remote_attempted_at) THEN
           motivo_bloqueio := 'reconciliacao_snapshot_concorrente'; estado_bloqueio := 'uncertain';
         END IF;
       END IF;
     END IF;
 
-    -- 3. Bloqueio persistido e auditável (sem reverter a transação).
     IF motivo_bloqueio IS NOT NULL THEN
       UPDATE public.site_lead_submissions
         SET status='em_revisao', local_state='em_revisao', review_reason=motivo_bloqueio,
@@ -108,7 +93,6 @@ BEGIN
         'persisted',true);
     END IF;
 
-    -- 4. Escrita local do espelho fiel ao estado REAL do GoHighLevel.
     UPDATE public.site_lead_submissions SET remote_state='confirmado',remote_reason=left(coalesce(_reason,''),200),
       ghl_contact_id=_ghl_contact,ghl_opportunity_id=_ghl_opportunity,
       remote_observed_contact_id=NULL,remote_observed_opportunity_id=NULL WHERE id=s.id RETURNING * INTO s;
@@ -137,7 +121,6 @@ BEGIN
       END IF;
     END IF;
 
-    -- 5. O espelho final tem de corresponder exatamente ao lido; caso contrário é incerto.
     IF NOT EXISTS (SELECT 1 FROM public.opportunities x
       WHERE x.organization_id=s.organization_id AND x.ghl_opportunity_id=_ghl_opportunity
         AND x.contact_id=s.contact_id AND x.pipeline_id=_opp_pipeline
@@ -180,3 +163,6 @@ BEGIN
     'ghl_opportunity_id',s.ghl_opportunity_id,'observed_contact_id',s.remote_observed_contact_id,
     'observed_opportunity_id',s.remote_observed_opportunity_id,'snapshot_reconciled',alterou,'persisted',true);
 END $function$;
+
+REVOKE ALL ON FUNCTION public.finish_site_lead_remote_v2(uuid,text,text,text,text,text,text,text,text) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.finish_site_lead_remote_v2(uuid,text,text,text,text,text,text,text,text) TO service_role;
