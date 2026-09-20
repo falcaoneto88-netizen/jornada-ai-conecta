@@ -58,11 +58,15 @@ function espelhoExistente(
   estado: string,
   recente = false,
 ) {
+  // O gatilho de `updated_at` é desligado apenas para datar o cenário; a
+  // função sob teste continua a correr com o gatilho ativo.
   const r = db.admin(`
     insert into public.opportunities (organization_id, contact_id, ghl_opportunity_id, name, pipeline_id, stage_id, status, is_demo)
       values ('${orgA}','${contacto}','${oportunidade}','Oportunidade','${PIPELINE}','${etapa}','${estado}', false);
+    alter table public.opportunities disable trigger trg_opps_updated;
     update public.opportunities set updated_at = now() ${recente ? "+" : "-"} interval '1 hour'
       where organization_id='${orgA}' and ghl_opportunity_id='${oportunidade}';
+    alter table public.opportunities enable trigger trg_opps_updated;
   `);
   expect(r.ok, r.erro).toBe(true);
 }
