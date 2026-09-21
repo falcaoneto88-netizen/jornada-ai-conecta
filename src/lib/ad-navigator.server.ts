@@ -233,3 +233,22 @@ export async function sondarPonte(
     return { exchange_ok: false, summary_ok: false, motivo: "indisponivel" };
   }
 }
+
+/**
+ * Sonda várias origens próprias (pedido atual, loopback local e URL canónica
+ * publicada) e fica pela primeira que responda como esperado. Resolve o caso
+ * do preview, onde a origem do pedido não serve as rotas da ponte.
+ */
+export async function sondarPonteNasOrigens(
+  origens: readonly string[],
+  transporte: typeof fetch = fetch,
+): Promise<SondaPonte> {
+  let ultima: SondaPonte = { exchange_ok: false, summary_ok: false, motivo: "nao_verificado" };
+  for (const origem of origens) {
+    const r = await sondarPonte(origem, transporte);
+    if (r.motivo === "ok") return r;
+    ultima = r;
+  }
+  return ultima;
+}
+
