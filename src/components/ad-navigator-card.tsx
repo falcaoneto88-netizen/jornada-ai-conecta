@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { estadoConcessao, resumoPareamento } from "@/lib/ad-navigator-status";
+import { estadoConcessao, linhaDoTempo, resumoPareamento } from "@/lib/ad-navigator-status";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   estadoAdNavigator,
   gerarCodigoAdNavigator,
+  prontidaoAdNavigator,
   revogarAcessoAdNavigator,
 } from "@/lib/ad-navigator.functions";
 
@@ -31,6 +32,7 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
   const ler = useServerFn(estadoAdNavigator);
   const gerar = useServerFn(gerarCodigoAdNavigator);
   const revogar = useServerFn(revogarAcessoAdNavigator);
+  const verificar = useServerFn(prontidaoAdNavigator);
   const queryClient = useQueryClient();
   const [codigo, setCodigo] = useState<{
     code: string;
@@ -47,6 +49,13 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
   useEffect(() => {
     if (codigo && Date.parse(codigo.expires_at) <= agora) setCodigo(null);
   }, [codigo, agora]);
+
+  const prontidao = useQuery({
+    queryKey: ["ad-navigator-prontidao", escopo],
+    enabled: allowed,
+    staleTime: 60_000,
+    queryFn: () => verificar({ data: undefined }),
+  });
 
   const { data, isError } = useQuery({
     queryKey: ["ad-navigator", escopo],
@@ -82,8 +91,11 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
 
   const e = data.estado;
   const resumo = resumoPareamento(e, agora);
-  const podeGerar =
-    e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
+  const p = prontidao.data;
+  const verificacoes = p?.autorizado && p.leituraOk ? p.verificacoes : [];
+  const prontidaoOk = Boolean(p?.autorizado && p.leituraOk && p.podeGerar);
+  const podeGerar = prontidaoOk && !prontidao.isFetching;
+  const passos = linhaDoTempo(e, agora);
 
   async function gerarCodigo() {
     if (!receptorPronto) return;
@@ -105,6 +117,7 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
     } finally {
       setPendente(false);
       await queryClient.invalidateQueries({ queryKey: ["ad-navigator"] });
+      await prontidao.refetch();
     }
   }
 
@@ -124,6 +137,7 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
     } finally {
       setPendente(false);
       await queryClient.invalidateQueries({ queryKey: ["ad-navigator"] });
+      await prontidao.refetch();
     }
   }
 
@@ -161,12 +175,47 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
         </div>
       </dl>
 
-      {!podeGerar && (
-        <p className="text-sm text-muted-foreground">
-          Confirme primeiro a ligação ao GoHighLevel desta conta: sem vínculo validado não é
-          possível gerar código.
-        </p>
-      )}
+      <div className="space-y-2 rounded-md border p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium">Verificação prévia (antes de gerar o código)</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void prontidao.refetch()}
+            disabled={prontidao.isFetching}
+          >
+            {prontidao.isFetching ? "A verificar…" : "Verificar agora"}
+          </Button>
+        </div>
+        {verificacoes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Verificação por concluir. Sem ela o servidor recusa emitir código.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {verificacoes.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-baseline gap-2">
+                <span aria-hidden>{v.ok ? "✓" : "•"}</span>
+                <span className="font-medium">{v.rotulo}</span>
+                <span className="text-xs text-muted-foreground">{v.detalhe}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="space-y-1 rounded-md border p-3 text-sm">
+        <p className="font-medium">Registo da ligação</p>
+        <ul className="space-y-1">
+          {passos.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-baseline gap-2">
+              <span aria-hidden>{s.concluido ? "✓" : "•"}</span>
+              <span>{s.rotulo}</span>
+              <span className="text-xs text-muted-foreground">{s.detalhe}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {codigo &&
         Date.parse(codigo.expires_at) > agora &&
