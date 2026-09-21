@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { verificarCatalogoMcp } from "@/lib/integration-diagnostics.functions";
-import type { MotivoCatalogo } from "@/lib/integration-diagnostics.server";
+import type { MotivoCatalogo } from "@/lib/integration-diagnostics.core";
 
 type Resultado = {
   ok: boolean;

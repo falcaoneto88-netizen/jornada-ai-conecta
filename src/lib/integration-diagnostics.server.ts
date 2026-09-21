@@ -8,26 +8,13 @@ const toolsSchema = z.object({
 });
 
 /**
- * Categorias fechadas de falha. Nunca se devolve cabeçalho, corpo ou exceção
- * em bruto, e nunca se atribui um 401 à exigência de client claim sem um
- * desafio `WWW-Authenticate` correspondente.
+ * Categorias fechadas de falha em `integration-diagnostics.core`. Nunca se
+ * devolve cabeçalho, corpo ou exceção em bruto, e nunca se atribui um 401 à
+ * exigência de client claim sem um desafio `WWW-Authenticate` correspondente.
  */
-export type MotivoCatalogo =
-  | "ok"
-  | "sem_sessao"
-  | "sem_permissao"
-  | "oauth_client_required"
-  | "unauthorized"
-  | "http_error"
-  | "resposta_invalida"
-  | "indisponivel";
+import type { MotivoCatalogo, ResultadoCatalogo } from "./integration-diagnostics.core";
 
-export type ResultadoCatalogo = {
-  ok: boolean;
-  status: number;
-  reason: MotivoCatalogo;
-  tools: string[];
-};
+export type { MotivoCatalogo, ResultadoCatalogo };
 
 const DESAFIO_CLIENT_CLAIM = 'error_description="OAuth client claim is required"';
 
