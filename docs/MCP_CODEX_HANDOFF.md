@@ -126,7 +126,7 @@ Uma tentativa via Python urllib recebeu bloqueio 403/1010 do proxy antes da apli
 1. Completar a descoberta autenticada do servidor publicado e comparar com as seis ferramentas da sessão Codex; obter a mensagem exata do erro do cliente, sem credenciais.
 2. No Ad Navigator autenticado e no tenant correto, concluir a troca no formulário e conferir a persistência. Não preparar código antecipadamente.
 3. No BioReport, conferir correspondência de assinatura dentro do backend e identificar o registro de teste autorizado para um evento ponta a ponta. Não enviar conteúdo clínico para publicidade.
-4. Sessão de navegador ficou indisponível durante a retomada (timeout de transporte); isso limita validação pela interface e não comprova indisponibilidade dos apps.
+4. Correção da nota anterior: a sessão de navegador foi recuperada após o timeout de transporte e **a consulta pela interface autenticada foi realmente feita** (botão “Verificar catálogo MCP”). A limitação registada antes já não se aplica.
 
 ## Complemento de revisão e regressão — 21/09/2026
 
