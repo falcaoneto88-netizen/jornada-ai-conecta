@@ -8,6 +8,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { SondaPonte } from "./ad-navigator-prontidao";
+
 import {
   AD_NAV_CODE_PREFIX,
   AD_NAV_CODE_TTL_SEGUNDOS,
@@ -186,4 +188,48 @@ export async function revogarAdNavigator(
     return { ok: false, message: "Não foi possível revogar o acesso." };
   }
   return { ok: true, detalhe: data as unknown as DetalheRevogacao };
+}
+
+/**
+ * Sonda somente-leitura ao caminho autenticado da própria ponte publicada.
+ * Usa um código e um bearer aleatórios que nunca existiram: confirma que a
+ * troca recusa código inválido (400) e que o resumo recusa credencial
+ * inválida (401). Não cria pareamento, concessão nem leitura.
+ */
+export async function sondarPonte(
+  origem: string,
+  transporte: typeof fetch = fetch,
+): Promise<SondaPonte> {
+  const cabecalhos = { "Content-Type": "application/json" } as const;
+  try {
+    const [troca, resumo] = await Promise.all([
+      transporte(`${origem}/api/ad-navigator/v1/exchange`, {
+        method: "POST",
+        redirect: "manual",
+        signal: AbortSignal.timeout(10000),
+        headers: cabecalhos,
+        body: JSON.stringify({
+          code: gerarCodigoPareamento(),
+          receiver_tenant_id: "00000000-0000-4000-8000-000000000000",
+          credential_hash: sha256hex(randomBytes(32).toString("base64url")),
+        }),
+      }),
+      transporte(`${origem}/api/ad-navigator/v1/summary`, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(10000),
+        headers: { Authorization: `Bearer ${randomBytes(32).toString("base64url")}` },
+      }),
+    ]);
+    const exchange_ok = troca.status === 400;
+    const summary_ok = resumo.status === 401;
+    await Promise.all([troca.body?.cancel(), resumo.body?.cancel()]);
+    return {
+      exchange_ok,
+      summary_ok,
+      motivo: exchange_ok && summary_ok ? "ok" : "resposta_inesperada",
+    };
+  } catch {
+    return { exchange_ok: false, summary_ok: false, motivo: "indisponivel" };
+  }
 }
