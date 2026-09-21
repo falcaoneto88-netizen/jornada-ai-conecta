@@ -22,10 +22,21 @@ export const estadoAdNavigator = createServerFn({ method: "POST" })
     return { autorizado: true as const, leituraOk: true as const, estado: r.estado };
   });
 
-/** Origem da própria aplicação: a sonda nunca fala com servidores externos. */
-function origemPropria() {
-  return new URL(getRequest().url).origin;
+/**
+ * Origens da própria aplicação: a sonda nunca fala com servidores externos.
+ * Inclui a origem do pedido (produção), o loopback local (preview/dev) e a URL
+ * canónica publicada, por esta ordem.
+ */
+export function origensProprias(origemPedido: string): string[] {
+  const canonica = "https://jornada-ai-conecta.lovable.app";
+  const lista = [origemPedido, "http://localhost:8080", canonica].filter(Boolean);
+  return [...new Set(lista)];
 }
+
+function origens() {
+  return origensProprias(new URL(getRequest().url).origin);
+}
+
 
 /** Verificação prévia (somente leitura): estado + caminho autenticado da ponte. */
 export const prontidaoAdNavigator = createServerFn({ method: "POST" })
