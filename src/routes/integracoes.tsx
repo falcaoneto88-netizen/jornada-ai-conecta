@@ -3,6 +3,7 @@ import { FUSO_DEMO, formatarDataHora } from "@/lib/clinic-time";
 import { SyncPendencias } from "@/components/sync-pendencias";
 import { BioreportSetup } from "@/components/bioreport-setup";
 import { FalcaoSiteIntegration } from "@/components/falcao-site-integration";
+import { McpDiagnostics } from "@/components/mcp-diagnostics";
 import { AdNavigatorCard } from "@/components/ad-navigator-card";
 import type { PendenciaContacto } from "@/lib/ghl-contacts.core";
 import { createFileRoute } from "@tanstack/react-router";
