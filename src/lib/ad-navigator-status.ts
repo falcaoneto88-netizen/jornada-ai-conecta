@@ -53,7 +53,8 @@ export type PassoPonte = {
  * servidor (pareamento, concessões, leituras), nunca de memória do browser.
  */
 export function linhaDoTempo(e: EstadoAdNavigator, agora: number): PassoPonte[] {
-  const vinculo = e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
+  const vinculo =
+    e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
   const pendente = e.pending_pairing && Date.parse(e.pending_pairing.expires_at) > agora;
   const emitido = Boolean(pendente) || e.grants.length > 0;
   const troca = e.grants.length > 0;
@@ -74,7 +75,11 @@ export function linhaDoTempo(e: EstadoAdNavigator, agora: number): PassoPonte[] 
       id: "codigo",
       rotulo: "Código emitido",
       concluido: emitido,
-      detalhe: pendente ? "Código válido à espera de troca." : emitido ? "Já emitido." : "Ainda não.",
+      detalhe: pendente
+        ? "Código válido à espera de troca."
+        : emitido
+          ? "Já emitido."
+          : "Ainda não.",
     },
     {
       id: "troca",

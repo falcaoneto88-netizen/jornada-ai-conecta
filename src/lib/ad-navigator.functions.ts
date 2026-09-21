@@ -51,9 +51,8 @@ export const gerarCodigoAdNavigator = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const acesso = await autorizar(context as never);
     if (!acesso) return { ok: false as const, message: SEM_PERMISSAO };
-    const { criarPareamentoAdNavigator, lerEstadoAdNavigator, sondarPonte } = await import(
-      "./ad-navigator.server"
-    );
+    const { criarPareamentoAdNavigator, lerEstadoAdNavigator, sondarPonte } =
+      await import("./ad-navigator.server");
     // Falha fechada: sem estado legível e sem caminho autenticado de pé, não se emite código.
     const [estado, sonda] = await Promise.all([
       lerEstadoAdNavigator(context.supabase),

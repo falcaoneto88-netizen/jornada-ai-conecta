@@ -27,9 +27,7 @@ export function avaliarProntidao(
 ): { verificacoes: VerificacaoPonte[]; podeGerar: boolean } {
   const vinculo =
     e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
-  const pendente = Boolean(
-    e.pending_pairing && Date.parse(e.pending_pairing.expires_at) > agora,
-  );
+  const pendente = Boolean(e.pending_pairing && Date.parse(e.pending_pairing.expires_at) > agora);
   const vigente = e.grants.some((g) => estadoConcessao(g, agora) === "vigente");
   const autenticacao = sonda.exchange_ok && sonda.summary_ok;
 
