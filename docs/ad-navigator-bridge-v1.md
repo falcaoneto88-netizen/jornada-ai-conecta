@@ -211,3 +211,7 @@ de verificar, em conjunto com o Ad Navigator: (1) uma troca real bem-sucedida,
 Ad Navigator. As rotas vivem em `/api/ad-navigator/v1/*`; se o alojamento
 interpuser autenticação de site nesse prefixo, o acesso externo tem de ser
 confirmado antes de considerar a ponte operacional.
+
+### Revisão de interface e diagnóstico — 2026-09-21
+
+O cartão passa a distinguir concessão vigente, expirada, revogada, troca sem leitura e leitura registrada. Uma leitura no Jornada não prova persistência no receptor. Sem essa prova, o cartão não declara conexão ponta a ponta. A geração pede receptor autenticado e pronto; o código continua somente em memória, desaparece ao vencer/ser consumido e não atravessa a troca de escopo da sessão. O contrato externo v1 e as migrações 0009/0010 não foram alterados. O build preparado nesta revisão é `jornada-integrations-20260921.1`; ver `MCP_CODEX_HANDOFF.md` para evidências de publicação, testes e pendências.

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { estadoConcessao, resumoPareamento } from "@/lib/ad-navigator-status";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -26,17 +27,31 @@ function dataCurta(valor: string | null | undefined) {
 }
 
 /** Cartão "Ad Navigator — indicadores": pareamento e revogação, sem segredos externos. */
-export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
+export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo: string }) {
   const ler = useServerFn(estadoAdNavigator);
   const gerar = useServerFn(gerarCodigoAdNavigator);
   const revogar = useServerFn(revogarAcessoAdNavigator);
   const queryClient = useQueryClient();
-  const [codigo, setCodigo] = useState<string | null>(null);
+  const [codigo, setCodigo] = useState<{
+    code: string;
+    expires_at: string;
+    pairing_id: string;
+  } | null>(null);
   const [pendente, setPendente] = useState(false);
+  const [receptorPronto, setReceptorPronto] = useState(false);
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (codigo && Date.parse(codigo.expires_at) <= agora) setCodigo(null);
+  }, [codigo, agora]);
 
   const { data, isError } = useQuery({
-    queryKey: ["ad-navigator"],
+    queryKey: ["ad-navigator", escopo],
     enabled: allowed,
+    refetchInterval: 15_000,
     queryFn: () => ler({ data: undefined }),
   });
 
@@ -66,17 +81,19 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
   }
 
   const e = data.estado;
-  const ativos = e.grants.filter((g) => !g.revoked_at);
+  const resumo = resumoPareamento(e, agora);
   const podeGerar =
     e.binding_ok && e.connection_ok && Boolean(e.location_id) && Boolean(e.pipeline_id);
 
   async function gerarCodigo() {
+    if (!receptorPronto) return;
     setPendente(true);
     try {
       const r = (await gerar({ data: { confirm: true } })) as
-        { ok: true; code: string } | { ok: false; message: string };
+        | { ok: true; code: string; detalhe: { expires_at: string; pairing_id: string } }
+        | { ok: false; message: string };
       if (r.ok) {
-        setCodigo(r.code);
+        setCodigo({ code: r.code, ...r.detalhe });
         toast.success("Código gerado. Copie agora: não volta a ser mostrado.");
       } else {
         toast.error(r.message);
@@ -120,10 +137,10 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
             estado e por etapa. Sem nomes, telefones, emails, conversas ou dados clínicos.
           </p>
         </div>
-        <Badge variant={ativos.length > 0 ? "default" : "outline"}>
-          {ativos.length > 0 ? "Ligado" : "Sem acesso ativo"}
-        </Badge>
+        <Badge variant="outline">{resumo.rotulo}</Badge>
       </div>
+
+      <p className="text-sm text-muted-foreground">{resumo.detalhe}</p>
 
       <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
         <div>
@@ -151,19 +168,33 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
         </p>
       )}
 
-      {codigo && (
-        <div className="space-y-2 rounded-md border p-3">
-          <p className="text-sm font-medium">Código de uso único (válido 10 minutos)</p>
-          <p className="break-all rounded bg-muted p-2 font-mono text-xs">{codigo}</p>
-          <p className="text-xs text-muted-foreground">
-            Cole no Ad Navigator já autenticado. É mostrado uma única vez e serve apenas uma troca.
-            Não introduza aqui nenhuma credencial da Meta nem do GoHighLevel.
-          </p>
-        </div>
-      )}
+      {codigo &&
+        Date.parse(codigo.expires_at) > agora &&
+        e.pending_pairing?.pairing_id === codigo.pairing_id && (
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-sm font-medium">Código de uso único (válido 10 minutos)</p>
+            <p className="break-all rounded bg-muted p-2 font-mono text-xs">{codigo.code}</p>
+            <p className="text-xs text-muted-foreground">
+              Cole no Ad Navigator já autenticado. É mostrado uma única vez e serve apenas uma
+              troca. Não introduza aqui nenhuma credencial da Meta nem do GoHighLevel.
+            </p>
+          </div>
+        )}
 
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={receptorPronto}
+          onChange={(event) => setReceptorPronto(event.target.checked)}
+        />
+        O Ad Navigator está aberto, autenticado e pronto para receber o código agora.
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Não partilhe o código em chat, ficheiros ou logs. Cole-o somente no fluxo autenticado do Ad
+        Navigator.
+      </p>
       <div className="flex flex-wrap gap-2">
-        <Button onClick={gerarCodigo} disabled={!podeGerar || pendente}>
+        <Button onClick={gerarCodigo} disabled={!podeGerar || !receptorPronto || pendente}>
           Gerar código de pareamento
         </Button>
         <Button variant="outline" onClick={revogarTudo} disabled={pendente}>
@@ -183,7 +214,7 @@ export function AdNavigatorCard({ allowed }: { allowed: boolean }) {
                 <span>criado {dataCurta(g.created_at)}</span>
                 <span>expira {dataCurta(g.expires_at)}</span>
                 <span>leituras {g.use_count}</span>
-                <span>{g.revoked_at ? "revogado" : "ativo"}</span>
+                <span>{estadoConcessao(g, agora)}</span>
               </li>
             ))}
           </ul>
