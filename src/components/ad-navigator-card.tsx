@@ -142,7 +142,6 @@ export function AdNavigatorCard({ allowed, escopo }: { allowed: boolean; escopo:
 
       <p className="text-sm text-muted-foreground">{resumo.detalhe}</p>
 
-
       <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground">Clínica autorizada</dt>
