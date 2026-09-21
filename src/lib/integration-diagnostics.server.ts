@@ -7,10 +7,42 @@ const toolsSchema = z.object({
   }),
 });
 
+/**
+ * Categorias fechadas de falha. Nunca se devolve cabeçalho, corpo ou exceção
+ * em bruto, e nunca se atribui um 401 à exigência de client claim sem um
+ * desafio `WWW-Authenticate` correspondente.
+ */
+export type MotivoCatalogo =
+  | "ok"
+  | "sem_sessao"
+  | "sem_permissao"
+  | "oauth_client_required"
+  | "unauthorized"
+  | "http_error"
+  | "resposta_invalida"
+  | "indisponivel";
+
+export type ResultadoCatalogo = {
+  ok: boolean;
+  status: number;
+  reason: MotivoCatalogo;
+  tools: string[];
+};
+
+const DESAFIO_CLIENT_CLAIM = 'error_description="OAuth client claim is required"';
+
+/** Só classifica como claim de cliente quando o desafio o declara literalmente. */
+export function classificar401(wwwAuthenticate: string | null): MotivoCatalogo {
+  return wwwAuthenticate?.includes(DESAFIO_CLIENT_CLAIM) ? "oauth_client_required" : "unauthorized";
+}
+
 /** Fixed destination, no redirects, no credentials/error bodies in the result. */
-export async function lerCatalogoPublicado(authorization: string, transport: typeof fetch = fetch) {
+export async function lerCatalogoPublicado(
+  authorization: string,
+  transport: typeof fetch = fetch,
+): Promise<ResultadoCatalogo> {
   if (!authorization.startsWith("Bearer ") || authorization.length < 10) {
-    return { ok: false as const, status: 401, tools: [] as string[] };
+    return { ok: false, status: 401, reason: "sem_sessao", tools: [] };
   }
   try {
     const response = await transport(MCP_PUBLIC_URL, {
@@ -30,11 +62,16 @@ export async function lerCatalogoPublicado(authorization: string, transport: typ
       }),
     });
     if (!response.ok) {
+      const reason: MotivoCatalogo =
+        response.status === 401
+          ? classificar401(response.headers.get("www-authenticate"))
+          : "http_error";
       await response.body?.cancel();
-      return { ok: false as const, status: response.status, tools: [] as string[] };
+      return { ok: false, status: response.status, reason, tools: [] };
     }
     const text = await response.text();
-    if (text.length > 256_000) return { ok: false as const, status: 502, tools: [] as string[] };
+    if (text.length > 256_000)
+      return { ok: false, status: 502, reason: "resposta_invalida", tools: [] };
     const payloads = response.headers.get("content-type")?.includes("text/event-stream")
       ? text
           .split(/\r?\n\r?\n/)
@@ -57,13 +94,14 @@ export async function lerCatalogoPublicado(authorization: string, transport: typ
       const parsed = toolsSchema.safeParse(decoded);
       if (parsed.success)
         return {
-          ok: true as const,
+          ok: true,
           status: 200,
+          reason: "ok",
           tools: [...new Set(parsed.data.result.tools.map((t) => t.name))].sort(),
         };
     }
-    return { ok: false as const, status: 502, tools: [] as string[] };
+    return { ok: false, status: 502, reason: "resposta_invalida", tools: [] };
   } catch {
-    return { ok: false as const, status: 503, tools: [] as string[] };
+    return { ok: false, status: 503, reason: "indisponivel", tools: [] };
   }
 }

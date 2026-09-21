@@ -12,6 +12,7 @@ export const verificarCatalogoMcp = createServerFn({ method: "POST" })
       return {
         ok: false as const,
         status: 403,
+        reason: "sem_permissao" as const,
         tools: [] as string[],
         checked_at: new Date().toISOString(),
       };
