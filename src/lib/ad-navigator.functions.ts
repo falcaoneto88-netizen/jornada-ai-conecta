@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -21,13 +22,50 @@ export const estadoAdNavigator = createServerFn({ method: "POST" })
     return { autorizado: true as const, leituraOk: true as const, estado: r.estado };
   });
 
+/** Origem da própria aplicação: a sonda nunca fala com servidores externos. */
+function origemPropria() {
+  return new URL(getRequest().url).origin;
+}
+
+/** Verificação prévia (somente leitura): estado + caminho autenticado da ponte. */
+export const prontidaoAdNavigator = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const acesso = await autorizar(context as never);
+    if (!acesso) return { autorizado: false as const, message: SEM_PERMISSAO };
+    const { lerEstadoAdNavigator, sondarPonte } = await import("./ad-navigator.server");
+    const [estado, sonda] = await Promise.all([
+      lerEstadoAdNavigator(context.supabase),
+      sondarPonte(origemPropria()),
+    ]);
+    if (!estado.ok)
+      return { autorizado: true as const, leituraOk: false as const, message: estado.message };
+    const { avaliarProntidao } = await import("./ad-navigator-prontidao");
+    const { verificacoes, podeGerar } = avaliarProntidao(estado.estado, sonda, Date.now());
+    return { autorizado: true as const, leituraOk: true as const, verificacoes, podeGerar, sonda };
+  });
+
 export const gerarCodigoAdNavigator = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ confirm: z.literal(true) }).strict())
   .handler(async ({ context }) => {
     const acesso = await autorizar(context as never);
     if (!acesso) return { ok: false as const, message: SEM_PERMISSAO };
-    const { criarPareamentoAdNavigator } = await import("./ad-navigator.server");
+    const { criarPareamentoAdNavigator, lerEstadoAdNavigator, sondarPonte } = await import(
+      "./ad-navigator.server"
+    );
+    // Falha fechada: sem estado legível e sem caminho autenticado de pé, não se emite código.
+    const [estado, sonda] = await Promise.all([
+      lerEstadoAdNavigator(context.supabase),
+      sondarPonte(origemPropria()),
+    ]);
+    if (!estado.ok) return { ok: false as const, message: estado.message };
+    const { avaliarProntidao } = await import("./ad-navigator-prontidao");
+    const prontidao = avaliarProntidao(estado.estado, sonda, Date.now());
+    if (!prontidao.podeGerar) {
+      const falha = prontidao.verificacoes.find((v) => !v.ok);
+      return { ok: false as const, message: falha?.detalhe ?? "Verificação prévia por concluir." };
+    }
     const r = await criarPareamentoAdNavigator(context.supabase);
     if (!r.ok) return { ok: false as const, message: r.message };
     // O código só é devolvido aqui, uma única vez, para colar no Ad Navigator.
