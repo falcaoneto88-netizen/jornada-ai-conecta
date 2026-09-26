@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { estadoJev, testarJev } from "@/lib/jev.functions";
 import { MENSAGENS_JEV, type EstadoJev, type TesteRegistado } from "@/lib/jev.core";
-import { formatarDataHora } from "@/lib/clinic-time";
+import { FUSO_DEMO, formatarDataHora } from "@/lib/clinic-time";
 
 function Linha({ t, rotulo }: { t: TesteRegistado; rotulo: string }) {
   return (
     <p className="text-sm text-muted-foreground">
-      {rotulo}: {formatarDataHora(t.em)}
+      {rotulo}: {formatarDataHora(t.em, FUSO_DEMO)}
       {t.modelo ? ` · ${t.modelo}` : ""}
       {t.latencia_ms !== null ? ` · ${t.latencia_ms} ms` : ""} · {MENSAGENS_JEV[t.categoria]}
     </p>
