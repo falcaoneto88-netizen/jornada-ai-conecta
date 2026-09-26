@@ -5,6 +5,7 @@ import { BioreportSetup } from "@/components/bioreport-setup";
 import { FalcaoSiteIntegration } from "@/components/falcao-site-integration";
 import { McpDiagnostics } from "@/components/mcp-diagnostics";
 import { AdNavigatorCard } from "@/components/ad-navigator-card";
+import { JevCard } from "@/components/jev-card";
 import type { PendenciaContacto } from "@/lib/ghl-contacts.core";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -656,6 +657,7 @@ function Integracoes() {
             <BioreportSetup allowed={!demo && podeGerir} />
             <McpDiagnostics key={`mcp-${escopo}`} allowed={!demo && podeGerir} />
             <AdNavigatorCard key={escopo} escopo={escopo} allowed={!demo && podeGerir} />
+            <JevCard key={`jev-${escopo}`} escopo={escopo} allowed={!demo && podeGerir} />
             <div className="surface-card space-y-5 p-6">
               <p className="flex items-start gap-2 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />O token privado,
