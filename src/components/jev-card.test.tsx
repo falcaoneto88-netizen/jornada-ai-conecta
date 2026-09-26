@@ -28,7 +28,8 @@ it("clique único mesmo com cliques concorrentes", async () => {
   let solta: (v: unknown) => void = () => {};
   m.testar.mockReturnValue(new Promise((r) => { solta = r; }));
   wrap();
-  const b = await screen.findByRole("button", { name: "Testar conexão Jev" });
+  await screen.findByText("Configurado, sem teste");
+  const b = screen.getByRole("button", { name: "Testar conexão Jev" });
   fireEvent.click(b); fireEvent.click(b);
   expect(m.testar).toHaveBeenCalledTimes(1);
   solta({ ok: false, categoria: "nao_autorizado" });

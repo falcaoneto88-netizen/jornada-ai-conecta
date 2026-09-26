@@ -39,7 +39,7 @@ describe("cliente", () => {
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(JEV_URL);
     expect(init.redirect).toBe("manual");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer k");
+    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer k");
   });
   it.each([[401, "nao_autorizado"], [403, "nao_autorizado"], [402, "saldo_insuficiente"]])("%i sem retry", async (s, c) => {
     const f = vi.fn(async () => resp(s, {}));

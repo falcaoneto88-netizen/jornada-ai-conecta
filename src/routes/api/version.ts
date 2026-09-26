@@ -8,7 +8,7 @@ import { createFileRoute } from "@tanstack/react-router";
  * de fora, qual a versão publicada. `release` é o identificador do ambiente,
  * quando existe.
  */
-const BUILD = "jornada-integrations-20260921.4";
+const BUILD = "jornada-integrations-20260926.1";
 
 export const Route = createFileRoute("/api/version")({
   server: {
