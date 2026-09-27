@@ -40,7 +40,7 @@ export const ROTULO_ACAO: Record<Acao, string> = {
   sem_acao: "Sem ação",
 };
 
-export type ModeloCandidato = { id: string; name: string; usage_note: string };
+export type ModeloCandidato = { id: string; name: string; usage_note: string; body: string };
 
 export const classificarSchema = z
   .object({ texto: z.string().trim().min(1).max(4000) })

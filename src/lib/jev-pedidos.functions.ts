@@ -40,7 +40,7 @@ export async function classificarHandler(ctx: Ctx, texto: string, deps: DepsClas
 
   const { data: linhas } = await ctx.supabase
     .from("message_templates")
-    .select("id,name,usage_note")
+    .select("id,name,usage_note,body")
     .eq("organization_id", orgId)
     .eq("is_demo", false)
     .eq("lifecycle", "draft")
@@ -50,6 +50,7 @@ export async function classificarHandler(ctx: Ctx, texto: string, deps: DepsClas
     id: String(l.id),
     name: String(l.name),
     usage_note: String(l.usage_note ?? ""),
+    body: String(l.body ?? ""),
   }));
 
   const inicio = Date.now();
