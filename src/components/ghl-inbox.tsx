@@ -12,6 +12,7 @@ import { useOrganizacao } from "@/lib/organization";
 import { useModoDados } from "@/lib/repo";
 import { formatarDataHora } from "@/lib/clinic-time";
 import { aiSupport, type AnaliseIA } from "@/lib/ai.functions";
+import { JevPedido } from "@/components/jev-pedido";
 
 export function GhlInbox() {
   const contexto = useOrganizacao();
@@ -338,6 +339,18 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           </>
         )}
       </div>
+      {!result.isError && (
+        <JevPedido
+          texto={mensagens
+            .filter((m) => m.direcao === "inbound" && m.texto)
+            .slice(-3)
+            .map((m) => m.texto)
+            .join("\n")
+            .slice(-4000)}
+          nome={conversa.nome}
+          usarRascunho={setRascunho}
+        />
+      )}
       <div className="surface-card space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-semibold">Preparar resposta</h3>
