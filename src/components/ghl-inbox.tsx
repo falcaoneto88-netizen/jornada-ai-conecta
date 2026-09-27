@@ -13,6 +13,7 @@ import { useModoDados } from "@/lib/repo";
 import { formatarDataHora } from "@/lib/clinic-time";
 import { aiSupport, type AnaliseIA } from "@/lib/ai.functions";
 import { JevPedido } from "@/components/jev-pedido";
+import { JevMensagem } from "@/components/jev-mensagem";
 
 export function GhlInbox() {
   const contexto = useOrganizacao();
@@ -326,6 +327,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
                       Erro informado pelo GHL: {m.erro}
                     </p>
                   )}
+                  {m.direcao === "inbound" && m.texto && <JevMensagem texto={m.texto} />}
                 </li>
               ))}
             </ul>
