@@ -21,7 +21,7 @@ export type DepsJev = {
   maxTentativas?: number;
 };
 
-/** Chamada server-only ao Jev via OpenRouter. Nunca registra chave nem corpo. */
+/** Chamada server-only ao Jev via IA da plataforma. Nunca registra chave nem corpo. */
 export async function testarJevServidor(chave: string, deps: DepsJev = {}): Promise<ResultadoChamada> {
   const f = deps.fetch ?? fetch;
   const esperar = deps.esperar ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -38,7 +38,7 @@ export async function testarJevServidor(chave: string, deps: DepsJev = {}): Prom
         method: "POST",
         redirect: "manual",
         signal: ctrl.signal,
-        headers: { Authorization: `Bearer ${chave}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${chave}`, "Content-Type": "application/json", "X-Lovable-AIG-SDK": "fetch" },
         body: JSON.stringify(pedidoTeste()),
       });
       if (res.status >= 300 && res.status < 400) {
