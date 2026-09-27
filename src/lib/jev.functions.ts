@@ -31,7 +31,7 @@ export async function estadoJevHandler(ctx: Ctx, deps: DepsTeste = {}): Promise<
   const acesso = await resolverAcesso(ctx, ["administrador"], deps.acesso);
   if (!acesso.ok) return { ok: false };
   const orgId = acesso.acesso.orgId;
-  const chave = (deps.lerChave ?? (() => process.env["OPENROUTER_API_KEY"]))();
+  const chave = (deps.lerChave ?? (() => process.env["LOVABLE_API_KEY"]))();
   const base = () =>
     ctx.supabase
       .from("audit_logs")
@@ -53,7 +53,7 @@ export async function testarJevHandler(ctx: Ctx, deps: DepsTeste = {}) {
   const acesso = await resolverAcesso(ctx, ["administrador"], deps.acesso);
   if (!acesso.ok) return { ok: false as const, categoria: "sem_permissao" as CategoriaJev };
   const { orgId, nome } = acesso.acesso;
-  const chave = (deps.lerChave ?? (() => process.env["OPENROUTER_API_KEY"]))();
+  const chave = (deps.lerChave ?? (() => process.env["LOVABLE_API_KEY"]))();
   if (!chave) return { ok: false as const, categoria: "sem_chave" as CategoriaJev };
 
   const r = await testarJevServidor(chave, deps.jev);

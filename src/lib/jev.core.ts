@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-/** Contrato OpenRouter Decisions (alpha) para o Jev da TypeSafe. Destino fixo. */
-export const JEV_URL = "https://openrouter.ai/api/alpha/decisions";
-export const JEV_MODELO = "typesafe/jev-1.13";
+/** Contrato System One (IA incluída na plataforma) para o Jev da TypeSafe. Destino fixo. */
+export const JEV_URL = "https://ai.gateway.lovable.dev/v1/systemone";
+export const JEV_MODELO = "typesafe/jev-latest";
 export const JEV_MENSAGEM_FICTICIA = "Gostaria de saber os horários disponíveis para uma consulta";
 export const JEV_OPCOES = ["agendamento", "preco", "outro"] as const;
 
@@ -20,14 +20,14 @@ export type CategoriaJev =
 
 export const MENSAGENS_JEV: Record<CategoriaJev, string> = {
   ok: "Chamada autenticada concluída e resposta validada.",
-  sem_chave: "Chave OpenRouter não configurada no backend.",
-  nao_autorizado: "A OpenRouter recusou a chave (401/403). Verifique a chave ou as permissões.",
-  saldo_insuficiente: "Saldo insuficiente na conta OpenRouter (402).",
+  sem_chave: "Chave da IA da plataforma não configurada no backend.",
+  nao_autorizado: "Acesso recusado (401/403). Verifique a disponibilidade do Jev para esta conta.",
+  saldo_insuficiente: "Créditos de IA insuficientes (402). Adicione créditos em Settings → Plans & credits.",
   limite_taxa: "Limite de pedidos atingido (429). Tente mais tarde.",
-  timeout: "A OpenRouter não respondeu a tempo.",
+  timeout: "O serviço de IA não respondeu a tempo.",
   erro_servidor: "Erro temporário do serviço (5xx).",
   resposta_invalida: "A resposta não corresponde ao formato esperado do Jev.",
-  indisponivel: "Não foi possível contactar a OpenRouter.",
+  indisponivel: "Não foi possível contactar o serviço de IA.",
   sem_permissao: "Reservado ao administrador de uma organização com vínculo autorizado.",
 };
 
