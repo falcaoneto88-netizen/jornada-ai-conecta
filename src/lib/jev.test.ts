@@ -17,7 +17,7 @@ const resp = (status: number, body: unknown, headers: Record<string, string> = {
 describe("contrato", () => {
   it("pedido fixo usa modelo e mensagem fictícia, sem score", () => {
     const p = pedidoTeste();
-    expect(p.model).toBe("typesafe/jev-1.13");
+    expect(p.model).toBe("typesafe/jev-latest");
     expect(Object.keys(p.questions)).toEqual(["intencao", "pergunta_horario"]);
   });
   it("valida resposta correta", () => expect(validarResposta(valido)?.escolha).toBe("agendamento"));

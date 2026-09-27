@@ -76,10 +76,10 @@ export function JevCard({ allowed, escopo }: { allowed: boolean; escopo: string 
 
   const estado = q.data && q.data.ok ? q.data.estado : null;
   return (
-    <section className="surface-card space-y-3 p-6" aria-label="Jev / OpenRouter">
-      <h2 className="text-lg font-semibold">Jev / OpenRouter</h2>
+    <section className="surface-card space-y-3 p-6" aria-label="Jev / TypeSafe">
+      <h2 className="text-lg font-semibold">Jev / TypeSafe</h2>
       <p className="text-sm text-muted-foreground">
-        Modelo de decisão TypeSafe via OpenRouter. O teste classifica apenas uma mensagem fictícia fixa; não
+        Modelo de decisão TypeSafe via IA incluída na plataforma. O teste classifica apenas uma mensagem fictícia fixa; não
         usa dados de pacientes, não aciona o CRM nem envia mensagens.
       </p>
       {q.isLoading ? (
