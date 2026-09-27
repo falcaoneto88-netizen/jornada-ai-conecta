@@ -85,3 +85,5 @@
 - [ ] Reconciliação limitada do pedido `884062b4-…` — a fazer pelo utilizador; nada foi reprocessado
 - [ ] Submissão `0981dfd5-…` fica em revisão: telefone e e-mail ligados a contactos diferentes, a aguardar esclarecimento
 
+
+- [x] Jev sem OpenRouter: ligação pela IA da plataforma (typesafe/jev-latest); pendência da OPENROUTER_API_KEY retirada.
