@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ analisar: vi.fn(), escopo: "conta-a", error: false }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
 vi.mock("@/lib/ai.functions", () => ({ aiSupport: mocks.analisar }));
+vi.mock("@/lib/jev-pedidos.functions", () => ({ classificarPedido: vi.fn() }));
 vi.mock("@/lib/organization", () => ({
   useOrganizacao: () => ({ data: { organizacao: { id: "orgA", timezone: "Europe/Lisbon" } } }),
 }));
