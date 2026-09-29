@@ -23,7 +23,8 @@ export const MENSAGENS_JEV: Record<CategoriaJev, string> = {
   sem_chave: "Chave da IA da plataforma não configurada no backend.",
   nao_autorizado: "Acesso recusado (401/403). Verifique a disponibilidade do Jev para esta conta.",
   saldo_insuficiente: "Créditos de IA insuficientes (402). Adicione créditos em Settings → Plans & credits.",
-  limite_taxa: "Limite de pedidos atingido (429). Tente mais tarde.",
+  limite_taxa:
+    "O fornecedor do Jev está temporariamente sobrecarregado (429). Nada foi alterado; tente novamente dentro de alguns segundos.",
   timeout: "O serviço de IA não respondeu a tempo.",
   erro_servidor: "Erro temporário do serviço (5xx).",
   resposta_invalida: "A resposta não corresponde ao formato esperado do Jev.",
@@ -110,6 +111,21 @@ export function esperaRetry(valor: string | null, tentativa: number, tetoMs = 30
     if (Number.isFinite(d)) return Math.min(Math.max(d - Date.now(), 0), tetoMs);
   }
   return Math.min(400 * 2 ** tentativa, tetoMs);
+}
+
+/** Segundos de pausa após 429: Retry-After (segundos ou data HTTP), padrão 30, limitado a 1..600. */
+export function segundosRetryAfter(valor: string | null, agora = Date.now()): number {
+  let s = NaN;
+  if (valor) {
+    const n = Number(valor);
+    if (Number.isFinite(n) && n >= 0) s = n;
+    else {
+      const d = Date.parse(valor);
+      if (Number.isFinite(d)) s = (d - agora) / 1000;
+    }
+  }
+  if (!Number.isFinite(s)) return 30;
+  return Math.min(Math.max(Math.ceil(s), 1), 600);
 }
 
 export type TesteRegistado = {

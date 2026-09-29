@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolverAcesso, type DepsAcesso } from "./ghl.functions";
-import { JEV_URL, MENSAGENS_JEV, categoriaDoStatus, type CategoriaJev } from "./jev.core";
+import { JEV_URL, MENSAGENS_JEV, categoriaDoStatus, segundosRetryAfter, type CategoriaJev } from "./jev.core";
 import {
   classificarSchema,
   interpretarClassificacao,
@@ -22,7 +22,7 @@ export type DepsClassificar = {
 
 export type RespostaClassificar =
   | { ok: true; classificacao: Classificacao }
-  | { ok: false; categoria: CategoriaJev; message: string };
+  | { ok: false; categoria: CategoriaJev; message: string; retry_after_s?: number };
 
 const falha = (categoria: CategoriaJev): RespostaClassificar => ({
   ok: false,
@@ -62,7 +62,9 @@ export async function classificarHandler(ctx: Ctx, texto: string, deps: DepsClas
       headers: { Authorization: `Bearer ${chave}`, "Content-Type": "application/json", "X-Lovable-AIG-SDK": "fetch" },
       body: JSON.stringify(pedidoClassificacao(texto, modelos)),
     });
-    if (!res.ok) resultado = falha(res.status >= 300 && res.status < 400 ? "resposta_invalida" : categoriaDoStatus(res.status));
+    if (res.status === 429)
+      resultado = { ...falha("limite_taxa"), retry_after_s: segundosRetryAfter(res.headers.get("retry-after")) };
+    else if (!res.ok) resultado = falha(res.status >= 300 && res.status < 400 ? "resposta_invalida" : categoriaDoStatus(res.status));
     else {
       const c = interpretarClassificacao(await res.json().catch(() => null), modelos);
       resultado = c ? { ok: true, classificacao: c } : falha("resposta_invalida");

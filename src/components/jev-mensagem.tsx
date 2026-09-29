@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Tags } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { usePausaJev } from "@/lib/use-pausa-jev";
 import { classificarPedido } from "@/lib/jev-pedidos.functions";
 import { ROTULO_ACAO, ROTULO_CATEGORIA, type Classificacao } from "@/lib/jev-pedidos.core";
 
@@ -11,6 +12,7 @@ export function JevMensagem({ texto }: { texto: string }) {
   const classificar = useServerFn(classificarPedido);
   const [pendente, setPendente] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [pausa, iniciarPausa] = usePausaJev();
   const [c, setC] = useState<Classificacao | null>(null);
 
   async function executar() {
@@ -19,7 +21,10 @@ export function JevMensagem({ texto }: { texto: string }) {
     try {
       const r = await classificar({ data: { texto: texto.slice(0, 4000) } });
       if (r.ok) setC(r.classificacao);
-      else setErro(r.message);
+      else {
+        setErro(r.message);
+        if (r.categoria === "limite_taxa") iniciarPausa(r.retry_after_s ?? 30);
+      }
     } catch {
       setErro("Não foi possível classificar.");
     } finally {
@@ -38,8 +43,8 @@ export function JevMensagem({ texto }: { texto: string }) {
     );
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <Button size="sm" variant="ghost" disabled={pendente} onClick={() => void executar()}>
-        <Tags className="size-3.5" /> {pendente ? "A classificar…" : "Classificar mensagem"}
+      <Button size="sm" variant="ghost" disabled={pausa > 0 || pendente} onClick={() => void executar()}>
+        <Tags className="size-3.5" /> {pendente ? "A classificar…" : pausa > 0 ? `Aguarde ${pausa} s` : "Classificar mensagem"}
       </Button>
       {erro && (
         <span role="alert" className="text-xs text-destructive">

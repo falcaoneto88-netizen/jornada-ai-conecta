@@ -73,6 +73,7 @@ export async function testarJevHandler(ctx: Ctx, deps: DepsTeste = {}) {
     modelo: r.resultado?.modelo ?? null,
     latencia_ms: r.latencia_ms,
     escolha: r.resultado?.escolha ?? null,
+    retry_after_s: r.retry_after_s ?? null,
   };
 }
 

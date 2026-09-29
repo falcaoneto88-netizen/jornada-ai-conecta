@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { ShieldAlert, Tags } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { usePausaJev } from "@/lib/use-pausa-jev";
 import { classificarPedido } from "@/lib/jev-pedidos.functions";
 import { ROTULO_ACAO, ROTULO_CATEGORIA, type Classificacao } from "@/lib/jev-pedidos.core";
 import { previsualizarModelo } from "@/lib/message-library.core";
@@ -22,6 +23,7 @@ export function JevPedido({
   const classificar = useServerFn(classificarPedido);
   const [pendente, setPendente] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [pausa, iniciarPausa] = usePausaJev();
   const [res, setRes] = useState<{ c: Classificacao; para: string } | null>(null);
 
   async function executar() {
@@ -30,7 +32,10 @@ export function JevPedido({
     try {
       const r = await classificar({ data: { texto } });
       if (r.ok) setRes({ c: r.classificacao, para: texto });
-      else setErro(r.message);
+      else {
+        setErro(r.message);
+        if (r.categoria === "limite_taxa") iniciarPausa(r.retry_after_s ?? 30);
+      }
     } catch {
       setErro("Não foi possível classificar o pedido.");
     } finally {
@@ -50,8 +55,8 @@ export function JevPedido({
     <div className="surface-card space-y-4 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-semibold">Classificação do pedido (Jev)</h3>
-        <Button size="sm" variant="outline" disabled={pendente || !texto} onClick={() => void executar()}>
-          <Tags className="size-4" /> {pendente ? "A classificar…" : "Classificar"}
+        <Button size="sm" variant="outline" disabled={pausa > 0 || pendente || !texto} onClick={() => void executar()}>
+          <Tags className="size-4" /> {pendente ? "A classificar…" : pausa > 0 ? `Aguarde ${pausa} s` : "Classificar"}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
