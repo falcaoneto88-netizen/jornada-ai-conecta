@@ -85,6 +85,13 @@
       "when": 1789909428574,
       "tag": "0011_site_lead_snapshot_reconciliacao",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790712676491,
+      "tag": "0012_n8n_appointment_events",
+      "breakpoints": true
     }
   ]
 }
