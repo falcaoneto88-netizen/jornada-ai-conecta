@@ -1145,6 +1145,57 @@ export type Database = {
           },
         ]
       }
+      n8n_appointment_events: {
+        Row: {
+          appointment_id: string | null
+          event_id: string
+          ghl_appointment_id: string
+          id: string
+          occurred_at: string
+          organization_id: string
+          received_at: string
+          resultado: string
+          status: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          event_id: string
+          ghl_appointment_id: string
+          id?: string
+          occurred_at: string
+          organization_id: string
+          received_at?: string
+          resultado: string
+          status: string
+        }
+        Update: {
+          appointment_id?: string | null
+          event_id?: string
+          ghl_appointment_id?: string
+          id?: string
+          occurred_at?: string
+          organization_id?: string
+          received_at?: string
+          resultado?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_appointment_events_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "n8n_appointment_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opportunities: {
         Row: {
           contact_id: string | null
@@ -2026,6 +2077,16 @@ export type Database = {
           _request: string
         }
         Returns: string
+      }
+      record_n8n_appointment_event: {
+        Args: {
+          _event_id: string
+          _ghl_appointment_id: string
+          _occurred_at: string
+          _org: string
+          _status: string
+        }
+        Returns: Json
       }
       record_site_lead_welcome_delivery: {
         Args: {
