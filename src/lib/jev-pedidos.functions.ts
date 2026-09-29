@@ -63,7 +63,7 @@ export async function classificarHandler(ctx: Ctx, texto: string, deps: DepsClas
       body: JSON.stringify(pedidoClassificacao(texto, modelos)),
     });
     if (res.status === 429)
-      resultado = { ...falha("limite_taxa"), retry_after_s: segundosRetryAfter(res.headers.get("retry-after")) };
+      resultado = { ok: false, categoria: "limite_taxa", message: MENSAGENS_JEV.limite_taxa, retry_after_s: segundosRetryAfter(res.headers.get("retry-after")) };
     else if (!res.ok) resultado = falha(res.status >= 300 && res.status < 400 ? "resposta_invalida" : categoriaDoStatus(res.status));
     else {
       const c = interpretarClassificacao(await res.json().catch(() => null), modelos);
