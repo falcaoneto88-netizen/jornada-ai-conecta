@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { estadoJev, testarJev } from "@/lib/jev.functions";
 import { MENSAGENS_JEV, type EstadoJev, type TesteRegistado } from "@/lib/jev.core";
+import { usePausaJev } from "@/lib/use-pausa-jev";
 import { FUSO_DEMO, formatarDataHora } from "@/lib/clinic-time";
 
 function Linha({ t, rotulo }: { t: TesteRegistado; rotulo: string }) {
@@ -53,6 +54,7 @@ export function JevCard({ allowed, escopo }: { allowed: boolean; escopo: string 
   const emCurso = useRef(false);
   const [pending, setPending] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [pausa, iniciarPausa] = usePausaJev();
   const chave = ["jev-estado", escopo];
   const q = useQuery({ queryKey: chave, queryFn: () => ler(), enabled: allowed });
   if (!allowed) return null;
@@ -64,7 +66,10 @@ export function JevCard({ allowed, escopo }: { allowed: boolean; escopo: string 
     setErro(null);
     try {
       const r = await testar();
-      if (!r.ok) setErro(MENSAGENS_JEV[r.categoria]);
+      if (!r.ok) {
+        setErro(MENSAGENS_JEV[r.categoria]);
+        if (r.categoria === "limite_taxa") iniciarPausa("retry_after_s" in r ? (r.retry_after_s ?? 30) : 30);
+      }
     } catch {
       setErro(MENSAGENS_JEV.indisponivel);
     } finally {
@@ -91,10 +96,10 @@ export function JevCard({ allowed, escopo }: { allowed: boolean; escopo: string 
       )}
       <Button
         variant="outline"
-        disabled={pending || !estado || estado.tipo === "sem_chave"}
+        disabled={pending || pausa > 0 || !estado || estado.tipo === "sem_chave"}
         onClick={() => void executar()}
       >
-        {pending ? "A testar…" : "Testar conexão Jev"}
+        {pending ? "A testar…" : pausa > 0 ? `Tente novamente em ${pausa} s` : "Testar conexão Jev"}
       </Button>
       {erro && (
         <p role="alert" className="text-sm text-destructive">

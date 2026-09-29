@@ -2,6 +2,7 @@ import {
   JEV_URL,
   categoriaDoStatus,
   esperaRetry,
+  segundosRetryAfter,
   pedidoTeste,
   validarResposta,
   type CategoriaJev,
@@ -12,6 +13,7 @@ export type ResultadoChamada = {
   categoria: CategoriaJev;
   latencia_ms: number;
   resultado: ResultadoValidado | null;
+  retry_after_s?: number;
 };
 
 export type DepsJev = {
@@ -29,6 +31,7 @@ export async function testarJevServidor(chave: string, deps: DepsJev = {}): Prom
   const max = deps.maxTentativas ?? 2;
   const inicio = Date.now();
   let categoria: CategoriaJev = "indisponivel";
+  let retryAfter: number | undefined;
 
   for (let tentativa = 0; tentativa < max; tentativa++) {
     const ctrl = new AbortController();
@@ -59,9 +62,15 @@ export async function testarJevServidor(chave: string, deps: DepsJev = {}): Prom
         };
       }
       categoria = categoriaDoStatus(res.status);
+      const ra = res.headers.get("retry-after");
+      if (res.status === 429) {
+        retryAfter = segundosRetryAfter(ra);
+        // Espera longa: não gastar mais pedidos, devolver a pausa ao cliente.
+        if (retryAfter > 3) break;
+      }
       const retentavel = res.status === 429 || res.status >= 500;
       if (!retentavel || tentativa === max - 1) break;
-      await esperar(esperaRetry(res.headers.get("retry-after"), tentativa));
+      await esperar(esperaRetry(ra, tentativa));
     } catch (e) {
       categoria = e instanceof Error && e.name === "AbortError" ? "timeout" : "indisponivel";
       if (tentativa === max - 1) break;
@@ -70,5 +79,5 @@ export async function testarJevServidor(chave: string, deps: DepsJev = {}): Prom
       clearTimeout(t);
     }
   }
-  return { categoria, latencia_ms: Date.now() - inicio, resultado: null };
+  return { categoria, latencia_ms: Date.now() - inicio, resultado: null, ...(retryAfter ? { retry_after_s: retryAfter } : {}) };
 }
