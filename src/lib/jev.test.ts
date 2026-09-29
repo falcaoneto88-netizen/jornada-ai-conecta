@@ -132,3 +132,18 @@ describe("estado", () => {
     expect(e.tipo).toBe("falha");
   });
 });
+
+describe("pausa após 429", () => {
+  it("Retry-After longo não repete e devolve a pausa", async () => {
+    const f = vi.fn(async () => resp(429, {}, { "retry-after": "20" }));
+    const r = await testarJevServidor("k", { fetch: f as unknown as typeof fetch, esperar: async () => {} });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(r.retry_after_s).toBe(20);
+  });
+  it("sem Retry-After usa 30 s", async () => {
+    const { segundosRetryAfter } = await import("./jev.core");
+    expect(segundosRetryAfter(null)).toBe(30);
+    expect(segundosRetryAfter("2")).toBe(2);
+    expect(segundosRetryAfter("99999")).toBe(600);
+  });
+});
