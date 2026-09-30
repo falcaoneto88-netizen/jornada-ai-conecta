@@ -95,7 +95,7 @@ describe("resolverEscopo", () => {
     expect(await resolverEscopo(cliente(base({ location_id: null })), {})).toBeNull();
     expect(await resolverEscopo(cliente({ ...base(), ghl_location_bindings: [] }), {})).toBeNull();
     expect(
-      await resolverEscopo(cliente({ ghl_location_bindings: base().ghl_location_bindings! }), {}),
+      await resolverEscopo(cliente({ ghl_location_bindings: base()["ghl_location_bindings"]! }), {}),
     ).toBeNull();
     vi.stubEnv("GHL_LOCATION_ID", "");
     expect(await resolverEscopo(cliente(base()), {})).toBeNull();
