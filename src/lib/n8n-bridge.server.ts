@@ -1,11 +1,13 @@
 /** Dependências reais da ponte n8n. Server-only: nunca devolve tokens. */
 import {
   CONFIG_PADRAO,
+  DIGEST_HEX,
   processarBridge,
   BRIDGE_RATE_POR_MINUTO,
   type Canal,
   type ConfigBridge,
   type DepsBridge,
+  type LeituraCredencial,
   type Resolucao,
 } from "./n8n-bridge.core";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } from "./ghl.server";
@@ -20,6 +22,7 @@ export type ClienteBridge = {
   from: (t: string) => {
     select: (c: string) => Filtro;
     upsert: (v: Record<string, unknown>, o?: { onConflict: string }) => PromiseLike<Resp>;
+    insert: (v: Record<string, unknown>) => PromiseLike<Resp>;
   };
   rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<Resp>;
 };
@@ -97,6 +100,22 @@ export async function lerConfigBridge(
   return { ok: true, cfg: configDeLinha(r.data as Record<string, unknown> | null) };
 }
 
+/** Lê só o digest da credencial da organização. Erro/schema em falta -> { ok:false } (fail-closed). */
+export async function lerCredencialBridge(
+  db: ClienteBridge,
+  orgId: string,
+): Promise<LeituraCredencial> {
+  const r = await db
+    .from("n8n_bridge_credentials")
+    .select("key_sha256")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (r.error) return { ok: false };
+  const d = (r.data as { key_sha256?: unknown } | null)?.key_sha256;
+  if (d === undefined || d === null) return { ok: true, digest: null };
+  return typeof d === "string" && DIGEST_HEX.test(d) ? { ok: true, digest: d } : { ok: false };
+}
+
 export async function utilizadorNaLocation(
   cfg: GhlConfig,
   userId: string,
@@ -112,6 +131,7 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
   const cfgDe = (loc: string) => configGhl(loc);
   return {
     token: process.env["N8N_JORNADA_BRIDGE_TOKEN"],
+    credencial: (org) => lerCredencialBridge(db, org),
     now: () => Date.now(),
     resolver: () => resolverEscopo(db),
     lerConfig: (org) => lerConfigBridge(db, org),
