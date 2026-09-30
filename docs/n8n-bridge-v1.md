@@ -131,6 +131,11 @@ curl -X POST https://<dominio>/api/public/n8n/bridge \
 
 ## Substituição dos 4 nós HTTP do n8n
 
+> Estado: os 4 nós do rascunho `WrDn82MwKBcuM73G` já foram alterados para chamar esta ponte com
+> estes corpos, sem redirecionamentos, sem repetição automática e com timeout 120000 ms. Falta
+> apenas a credencial Bearer dedicada (passo 2 das pendências). 23 cenários sintéticos passaram;
+> nenhum teste real de ponta a ponta foi feito.
+
 | Nó atual | Corpo para `POST /api/public/n8n/bridge` |
 |---|---|
 | GHL Contacto Inicial | `{"op":"contact.get","contactId":"{{ $json.appointment.contactId }}"}` |
