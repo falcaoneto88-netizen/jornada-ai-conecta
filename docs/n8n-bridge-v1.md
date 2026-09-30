@@ -1,15 +1,31 @@
 # Ponte n8n → Jornada → GoHighLevel (v1)
 
-Estado: **código e testes preparados; ponte DESLIGADA.** Pendentes: migração, secret do token,
-configuração, deploy e origem dos eventos. O n8n **não está ligado** e o erro `Invalid JWT` do n8n
-**não está resolvido**: só poderá ser declarado resolvido depois de uma leitura autenticada de
-ponta a ponta (n8n → ponte → GHL) verificada. A entrada existente
+Estado: **código, testes e migração aplicados; ponte DESLIGADA.** A migração foi aplicada em
+produção a 2026-09-30 ~16:35 UTC. Pendentes: secret do token, credencial dedicada do n8n, escolha
+de canal, deploy e leitura autenticada de ponta a ponta. O n8n **não está ligado** e o erro
+`Invalid JWT` do n8n **não está resolvido**: só poderá ser declarado resolvido depois de uma
+leitura autenticada de ponta a ponta (n8n → ponte → GHL) verificada. A entrada existente
 `POST /api/public/n8n/confirmacao-consulta` (HMAC com `N8N_JORNADA_SIGNING_SECRET`) mantém-se
 intacta: regista estados de confirmação e **não envia mensagens**.
 
 Estado de verificação: `concurrency_verified = false`. A reserva durável da ponte garante no
 máximo uma tentativa por org+consulta+horário+tipo, mas **não** resolve corridas de estado entre
 execuções do n8n nas suas Data Tables.
+
+## Estado de implantação (2026-09-30)
+
+- Migração aplicada em produção (transação). Verificado: RLS ativo nas três tabelas, 0 concessões
+  a anon/authenticated, `authenticated` não pode executar `n8n_bridge_claim_send`,
+  `n8n_bridge_sends` com 0 linhas.
+- Semeadura mínima: apenas a organização `f07ab3be-7419-4779-a901-ef71c5fc27f0`, agenda
+  `nPXR1Fyp0r3CpaMMGSki` e morada da clínica preenchida pelo utilizador.
+- Configuração verificada: `bridge_enabled=false`, `live_send_enabled=false`, `simulation=true`,
+  `channel=null`, `channel_verified=false`, vendedor de reserva `null`. Nenhum segredo criado.
+- n8n (rascunho `WrDn82MwKBcuM73G`): os 4 nós HTTP já apontam para esta ponte, com corpos estritos
+  por `op`, sem redirecionamentos, sem repetição automática e timeout 120000 ms. A credencial
+  Bearer dedicada **ainda não está configurada**.
+- Testes no n8n: 23 cenários sintéticos, 8 regressões de regras independentes e verificações do
+  adaptador passaram. **Não há teste real de ponta a ponta.**
 
 ## Endpoint
 

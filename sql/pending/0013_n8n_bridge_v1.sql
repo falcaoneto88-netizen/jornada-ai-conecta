@@ -1,8 +1,12 @@
 -- n8n bridge v1 (n8n -> Jornada -> GoHighLevel).
--- ESTADO: PENDENTE. Não aplicado em produção. Fonte única desta migração.
--- Aplicação manual documentada em docs/n8n-bridge-v1.md.
--- Tudo nasce desligado: bridge_enabled=false, live_send_enabled=false, simulation=true,
--- morada vazia, canal por definir, sem vendedor de reserva.
+-- ESTADO: APLICADO EM PRODUÇÃO a 2026-09-30 ~16:35 UTC (transação, editor SQL do backend).
+-- NÃO REAPLICAR: tudo nasce desligado e reexecutar cria funções novas sem efeito útil de guarda.
+-- Este ficheiro mantém-se como fonte única de registo; o caminho não muda (referenciado por testes).
+-- Estado verificado pós-aplicação: RLS ativo nas 3 tabelas, 0 concessões a anon/authenticated,
+-- authenticated não pode executar claim; n8n_bridge_sends com 0 linhas. Apenas a organização
+-- f07ab3be-7419-4779-a901-ef71c5fc27f0 semeada (calendar nPXR1Fyp0r3CpaMMGSki) e morada da clínica
+-- preenchida pelo utilizador. Flags: bridge_enabled=false, live_send_enabled=false, simulation=true,
+-- channel=null, channel_verified=false, fallback_user_id=null. Nenhum segredo criado.
 
 CREATE TABLE IF NOT EXISTS public.n8n_bridge_settings (
   organization_id uuid PRIMARY KEY REFERENCES public.organizations(id),
