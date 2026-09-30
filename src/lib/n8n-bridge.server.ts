@@ -41,7 +41,11 @@ export async function resolverEscopo(
 ): Promise<Resolucao | null> {
   const { locationId, token } = readGhlSecrets();
   if (!locationId || !token) return null;
-  const b = await db.from("ghl_location_bindings").select("organization_id").eq("location_id", locationId).maybeSingle();
+  const b = await db
+    .from("ghl_location_bindings")
+    .select("organization_id")
+    .eq("location_id", locationId)
+    .maybeSingle();
   const orgId = (b.data as { organization_id?: unknown } | null)?.organization_id;
   if (b.error || typeof orgId !== "string" || !orgId) return null;
   if (env.orgId && env.orgId !== orgId) return null;
