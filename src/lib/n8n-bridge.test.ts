@@ -20,9 +20,11 @@ const PRONTO: ConfigBridge = {
   liveSendEnabled: true,
   simulation: false,
   calendarId: CAL,
-  channel: "sms",
+  channel: "whatsapp_zaptos",
   clinicAddress: "Rua Exemplo 1, Lisboa",
   fallbackUserId: null,
+  zaptosProviderId: "zaptosProv01",
+  channelVerified: true,
 };
 
 function contactoRaw(extra: Record<string, unknown> = {}) {
@@ -36,7 +38,7 @@ function contactoRaw(extra: Record<string, unknown> = {}) {
         phone: "+351910000000",
         assignedTo: "seller001",
         dnd: false,
-        dndSettings: { SMS: { status: "inactive" } },
+        dndSettings: { SMS: { status: "inactive" }, WhatsApp: { status: "inactive" } },
         notes: "NOTA CLINICA",
         ...extra,
       },
@@ -251,7 +253,7 @@ describe("message.send guards", () => {
     ],
     [
       "whatsapp sem chave WhatsApp",
-      { cfg: { ...PRONTO, channel: "whatsapp_zaptos" } },
+      { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: { SMS: { status: "inactive" } } }) }) },
       {},
       "dnd_not_confirmed",
     ],
@@ -264,6 +266,11 @@ describe("message.send guards", () => {
     ["remarcada", {}, { expectedStartTime: "2026-10-02T12:00:00Z" }, "appointment_rescheduled"],
     ["passada", { now: () => Date.parse("2026-10-03T00:00:00Z") }, {}, "appointment_in_past"],
     ["contacto divergente", {}, { contactId: "contact99" }, "contact_mismatch"],
+    ["sms bloqueado (real)", { cfg: { ...PRONTO, channel: "sms", channelVerified: false } }, {}, "sms_route_not_configured"],
+    ["sms bloqueado (simulação)", { cfg: { ...PRONTO, channel: "sms", simulation: true } }, {}, "sms_route_not_configured"],
+    ["provedor em falta", { cfg: { ...PRONTO, zaptosProviderId: null } }, {}, "provider_not_configured"],
+    ["canal não verificado", { cfg: { ...PRONTO, channelVerified: false } }, {}, "channel_not_verified"],
+    ["canal não verificado (simulação)", { cfg: { ...PRONTO, channelVerified: false, simulation: true } }, {}, "channel_not_verified"],
     ["canal pendente", { cfg: { ...PRONTO, channel: null } }, {}, "channel_not_configured"],
     [
       "morada pendente",
@@ -333,7 +340,12 @@ describe("message.send guards", () => {
     });
     expect(d.enviar).toHaveBeenCalledTimes(1);
     const corpo = d.enviar.mock.calls[0]![0] as Record<string, unknown>;
-    expect(corpo["type"]).toBe("SMS");
+    expect(corpo).toMatchObject({
+      type: "SMS",
+      conversationProviderId: "zaptosProv01",
+      appointmentId: "appt0001",
+      status: "pending",
+    });
     expect(String(corpo["message"])).toContain("CONFIRMO");
   });
 
@@ -341,7 +353,14 @@ describe("message.send guards", () => {
     const d = deps();
     await run({ ...envio, kind: "escalation" }, d);
     const corpo = d.enviar.mock.calls[0]![0] as Record<string, unknown>;
-    expect(corpo).toMatchObject({ type: "InternalComment", mentions: ["seller001"] });
+    expect(corpo).toMatchObject({
+      type: "InternalComment",
+      mentions: ["seller001"],
+      appointmentId: "appt0001",
+      status: "pending",
+    });
+    expect(String(corpo["message"])).toMatch(/^@Responsável<userId>seller001<\/userId> /);
+    expect(corpo).not.toHaveProperty("conversationProviderId");
   });
 
   it("duplicado aceite devolve messageId persistido sem POST", async () => {
