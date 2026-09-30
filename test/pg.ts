@@ -25,8 +25,10 @@ function migracaoWebhook(): string {
   if (!ficheiro) throw new Error("migração das funções do webhook não encontrada");
   const sql = readFileSync(join(dir, ficheiro), "utf8");
   // A revogação da função antiga (v1) não se aplica ao esquema sintético.
-  return sql.replace(/revoke all on function public\.ghl_apply_contact_event\(uuid, uuid[^;]*;/g, "");
-
+  return sql.replace(
+    /revoke all on function public\.ghl_apply_contact_event\(uuid, uuid[^;]*;/g,
+    "",
+  );
 }
 
 export async function iniciarDb(): Promise<Db> {
@@ -51,9 +53,11 @@ export async function iniciarDb(): Promise<Db> {
   correr("initdb", ["-D", dados, "-U", "postgres", "--auth=trust"]);
   const cmdArgs = ["-D", dados, "-k", socket, "-c", "listen_addresses="];
   const proc = prefixo.length
-    ? spawn(prefixo[0]!, [...prefixo.slice(1), "postgres", ...cmdArgs], { stdio: "ignore", env: ambiente })
+    ? spawn(prefixo[0]!, [...prefixo.slice(1), "postgres", ...cmdArgs], {
+        stdio: "ignore",
+        env: ambiente,
+      })
     : spawn("postgres", cmdArgs, { stdio: "ignore", env: ambiente });
-
 
   const psql = (args: string[], input?: string) =>
     execFileSync("psql", ["-h", socket, "-U", "postgres", "-v", "ON_ERROR_STOP=1", ...args], {
@@ -99,10 +103,29 @@ export async function iniciarDb(): Promise<Db> {
 
   const queryAsync = (sql: string) =>
     new Promise<string>((resolve, reject) => {
-      const filho = spawn("psql", ["-h", socket, "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-d", "jornada", "-t", "-A", "-c", sql], { env: ambiente });
+      const filho = spawn(
+        "psql",
+        [
+          "-h",
+          socket,
+          "-U",
+          "postgres",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-d",
+          "jornada",
+          "-t",
+          "-A",
+          "-c",
+          sql,
+        ],
+        { env: ambiente },
+      );
       let out = "";
       filho.stdout.on("data", (d: Buffer) => (out += d.toString()));
-      filho.on("close", (code) => (code === 0 ? resolve(out.trim()) : reject(new Error(`psql ${code}`))));
+      filho.on("close", (code) =>
+        code === 0 ? resolve(out.trim()) : reject(new Error(`psql ${code}`)),
+      );
     });
 
   return {

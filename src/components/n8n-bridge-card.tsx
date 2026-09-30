@@ -25,7 +25,11 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoPonteN8n);
   const guardar = useServerFn(guardarPonteN8n);
   const qc = useQueryClient();
-  const { data, isError } = useQuery({ queryKey: ["n8n-bridge"], enabled: allowed, queryFn: () => ler() });
+  const { data, isError } = useQuery({
+    queryKey: ["n8n-bridge"],
+    enabled: allowed,
+    queryFn: () => ler(),
+  });
   const [cal, setCal] = useState("");
   const [canal, setCanal] = useState<Canal>("");
   const [morada, setMorada] = useState("");
@@ -70,27 +74,68 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
         <Badge variant="outline">{data?.bridgeEnabled ? "Ponte ligada" : "Ponte desligada"}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">
-        Ainda não há nenhum endpoint do n8n ligado a esta ponte. A entrada já existente apenas regista
-        estados de confirmação; não envia mensagens. Ativação é manual e feita no servidor.
+        Ainda não há nenhum endpoint do n8n ligado a esta ponte. A entrada já existente apenas
+        regista estados de confirmação; não envia mensagens. Ativação é manual e feita no servidor.
       </p>
       {data && (
         <ul className="space-y-1.5">
-          <Linha rotulo="Token da ponte no servidor" ok={data.tokenPresente} texto={data.tokenPresente ? "Presente" : "Em falta"} />
-          <Linha rotulo="Migração da ponte" ok={data.schemaDisponivel} texto={data.schemaDisponivel ? "Disponível" : "Pendente"} />
-          <Linha rotulo="Vínculo GoHighLevel" ok={data.bindingOk} texto={data.bindingOk ? "Confirmado" : "Por confirmar"} />
-          <Linha rotulo="Escrita GoHighLevel" ok={data.writeEnabled} texto={data.writeEnabled ? "Habilitada" : "Desativada"} />
-          <Linha rotulo="Modo" ok={!data.simulation} texto={data.simulation ? "Simulação" : "Real"} />
-          <Linha rotulo="Envio real" ok={data.liveSendEnabled} texto={data.liveSendEnabled ? "Ligado" : "Desligado"} />
-          <Linha rotulo="Agenda" ok={!!data.calendarId} texto={data.calendarId ? "Definida" : "Por definir"} />
+          <Linha
+            rotulo="Token da ponte no servidor"
+            ok={data.tokenPresente}
+            texto={data.tokenPresente ? "Presente" : "Em falta"}
+          />
+          <Linha
+            rotulo="Migração da ponte"
+            ok={data.schemaDisponivel}
+            texto={data.schemaDisponivel ? "Disponível" : "Pendente"}
+          />
+          <Linha
+            rotulo="Vínculo GoHighLevel"
+            ok={data.bindingOk}
+            texto={data.bindingOk ? "Confirmado" : "Por confirmar"}
+          />
+          <Linha
+            rotulo="Escrita GoHighLevel"
+            ok={data.writeEnabled}
+            texto={data.writeEnabled ? "Habilitada" : "Desativada"}
+          />
+          <Linha
+            rotulo="Modo"
+            ok={!data.simulation}
+            texto={data.simulation ? "Simulação" : "Real"}
+          />
+          <Linha
+            rotulo="Envio real"
+            ok={data.liveSendEnabled}
+            texto={data.liveSendEnabled ? "Ligado" : "Desligado"}
+          />
+          <Linha
+            rotulo="Agenda"
+            ok={!!data.calendarId}
+            texto={data.calendarId ? "Definida" : "Por definir"}
+          />
           <Linha rotulo="Canal" ok={!!data.channel} texto={data.channel ?? "Por definir"} />
-          <Linha rotulo="Morada" ok={data.clinicAddress.trim() !== ""} texto={data.clinicAddress.trim() ? "Definida" : "Vazia"} />
-          <Linha rotulo="Vendedor de reserva" ok={!!data.fallbackUserId} texto={data.fallbackUserId ? "Definido" : "Nenhum"} />
+          <Linha
+            rotulo="Morada"
+            ok={data.clinicAddress.trim() !== ""}
+            texto={data.clinicAddress.trim() ? "Definida" : "Vazia"}
+          />
+          <Linha
+            rotulo="Vendedor de reserva"
+            ok={!!data.fallbackUserId}
+            texto={data.fallbackUserId ? "Definido" : "Nenhum"}
+          />
         </ul>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="n8n-cal">ID da agenda GHL</Label>
-          <Input id="n8n-cal" value={cal} onChange={(e) => setCal(e.target.value)} placeholder="ID da agenda" />
+          <Input
+            id="n8n-cal"
+            value={cal}
+            onChange={(e) => setCal(e.target.value)}
+            placeholder="ID da agenda"
+          />
         </div>
         <div className="space-y-1">
           <Label htmlFor="n8n-canal">Canal</Label>
@@ -107,7 +152,12 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
         </div>
         <div className="space-y-1 sm:col-span-2">
           <Label htmlFor="n8n-morada">Morada verificada da clínica</Label>
-          <Input id="n8n-morada" value={morada} maxLength={240} onChange={(e) => setMorada(e.target.value)} />
+          <Input
+            id="n8n-morada"
+            value={morada}
+            maxLength={240}
+            onChange={(e) => setMorada(e.target.value)}
+          />
         </div>
         <div className="space-y-1">
           <Label htmlFor="n8n-reserva">ID do vendedor de reserva (opcional)</Label>

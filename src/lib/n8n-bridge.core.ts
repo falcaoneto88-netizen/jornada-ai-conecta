@@ -79,8 +79,7 @@ export type EventoBridge = {
 
 export type Ler<T> = { ok: true; data: T } | { ok: false; code: string };
 export type EnvioGhl =
-  | { ok: true; messageId: string | null }
-  | { ok: false; definitivo: boolean; code: string };
+  { ok: true; messageId: string | null } | { ok: false; definitivo: boolean; code: string };
 export type Reserva =
   | { reserved: true; id: string }
   | { reserved: false; id: string; state: string; messageId: string | null };
@@ -95,7 +94,12 @@ export type DepsBridge = {
   consulta: (id: string) => Promise<Ler<unknown>>;
   utilizadorNaLocation: (locationId: string, userId: string) => Promise<boolean | null>;
   enviar: (corpo: Record<string, unknown>) => Promise<EnvioGhl>;
-  claim: (orgId: string, appointmentId: string, start: string, kind: KindN8n) => Promise<Reserva | null>;
+  claim: (
+    orgId: string,
+    appointmentId: string,
+    start: string,
+    kind: KindN8n,
+  ) => Promise<Reserva | null>;
   finish: (
     orgId: string,
     id: string,
@@ -106,7 +110,10 @@ export type DepsBridge = {
 };
 
 const reply = (body: unknown, status: number) =>
-  Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+  Response.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+  });
 const erro = (code: string, status: number) => reply({ error: code }, status);
 
 /** Comparação em tempo constante (digests de tamanho fixo). */
@@ -127,7 +134,8 @@ export function parseContacto(raw: unknown, id: string, locationId: string): Con
   const rows = r?.["contacts"];
   if (!r || r["total"] !== 1 || !Array.isArray(rows) || rows.length !== 1) return null;
   const c = obj(rows[0]);
-  if (!c || c["id"] !== id || c["locationId"] !== locationId || typeof c["dnd"] !== "boolean") return null;
+  if (!c || c["id"] !== id || c["locationId"] !== locationId || typeof c["dnd"] !== "boolean")
+    return null;
   const ds = obj(c["dndSettings"]);
   if (!ds) return null;
   const dndSettings: Record<string, { status: EstadoDnd }> = {};
@@ -142,7 +150,10 @@ export function parseContacto(raw: unknown, id: string, locationId: string): Con
     locationId,
     firstName: str(c["firstName"]),
     phone: phone && /^\+[1-9]\d{7,14}$/.test(phone) ? phone : null,
-    assignedTo: str(c["assignedTo"]) && idGhl.safeParse(c["assignedTo"]).success ? String(c["assignedTo"]) : null,
+    assignedTo:
+      str(c["assignedTo"]) && idGhl.safeParse(c["assignedTo"]).success
+        ? String(c["assignedTo"])
+        : null,
     dnd: c["dnd"] as boolean,
     dndSettings,
   };
@@ -154,7 +165,10 @@ export function parseEvento(raw: unknown, id: string, locationId: string): Event
   if (!e || e["id"] !== id || e["locationId"] !== locationId) return null;
   const campos = ["calendarId", "contactId", "startTime", "endTime", "appointmentStatus"] as const;
   if (campos.some((k) => !str(e[k]))) return null;
-  if (Number.isNaN(Date.parse(String(e["startTime"]))) || Number.isNaN(Date.parse(String(e["endTime"]))))
+  if (
+    Number.isNaN(Date.parse(String(e["startTime"]))) ||
+    Number.isNaN(Date.parse(String(e["endTime"])))
+  )
     return null;
   return {
     id,
@@ -289,12 +303,17 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     corpoGhl = {
       type: "InternalComment",
       contactId: c.data.id,
-      message: montarMensagem(pedido.kind, { firstName: c.data.firstName, startTime: atual, morada: "" }),
+      message: montarMensagem(pedido.kind, {
+        firstName: c.data.firstName,
+        startTime: atual,
+        morada: "",
+      }),
       mentions: [responsavel],
     };
   } else {
     if (!cfg.channel) return erro("channel_not_configured", 409);
-    if (pedido.kind === "confirm" && cfg.clinicAddress.trim() === "") return erro("address_not_configured", 409);
+    if (pedido.kind === "confirm" && cfg.clinicAddress.trim() === "")
+      return erro("address_not_configured", 409);
     if (!c.data.phone) return erro("contact_phone_missing", 409);
     if (!dndPermite(c.data, cfg.channel)) return erro("dnd_not_confirmed", 409);
     corpoGhl = {
@@ -311,7 +330,14 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
 
   if (cfg.simulation) {
     return reply(
-      { simulated: true, status: "simulated", messageId: null, duplicate: false, delivered: false, kind: pedido.kind },
+      {
+        simulated: true,
+        status: "simulated",
+        messageId: null,
+        duplicate: false,
+        delivered: false,
+        kind: pedido.kind,
+      },
       200,
     );
   }
@@ -322,35 +348,62 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!reserva) return erro("reservation_unavailable", 503);
   if (!reserva.reserved) {
     if (reserva.state === "accepted" && reserva.messageId)
-      return reply({ messageId: reserva.messageId, status: "accepted", duplicate: true, delivered: false }, 200);
+      return reply(
+        { messageId: reserva.messageId, status: "accepted", duplicate: true, delivered: false },
+        200,
+      );
     return reply({ error: "send_already_attempted", state: reserva.state }, 409);
   }
 
   // Única tentativa externa desta reserva.
-  const envio = await deps.enviar(corpoGhl).catch((): EnvioGhl => ({ ok: false, definitivo: false, code: "outcome_unknown" }));
+  const envio = await deps
+    .enviar(corpoGhl)
+    .catch((): EnvioGhl => ({ ok: false, definitivo: false, code: "outcome_unknown" }));
   if (envio.ok && envio.messageId) {
-    const gravado = await deps.finish(res.orgId, reserva.id, "accepted", envio.messageId, null).catch(() => false);
+    const gravado = await deps
+      .finish(res.orgId, reserva.id, "accepted", envio.messageId, null)
+      .catch(() => false);
     if (!gravado) {
-      await deps.finish(res.orgId, reserva.id, "unknown", null, "persist_failed").catch(() => false);
+      await deps
+        .finish(res.orgId, reserva.id, "unknown", null, "persist_failed")
+        .catch(() => false);
       return erro("outcome_unknown", 502);
     }
-    return reply({ messageId: envio.messageId, status: "accepted", duplicate: false, delivered: false }, 200);
+    return reply(
+      { messageId: envio.messageId, status: "accepted", duplicate: false, delivered: false },
+      200,
+    );
   }
   if (!envio.ok && envio.definitivo) {
     await deps.finish(res.orgId, reserva.id, "rejected", null, "ghl_rejected").catch(() => false);
     return erro("send_rejected", 502);
   }
   await deps
-    .finish(res.orgId, reserva.id, "unknown", null, envio.ok ? "missing_message_id" : "outcome_unknown")
+    .finish(
+      res.orgId,
+      reserva.id,
+      "unknown",
+      null,
+      envio.ok ? "missing_message_id" : "outcome_unknown",
+    )
     .catch(() => false);
   return erro("outcome_unknown", 502);
 }
 
 type Lido<T> = { ok: true; data: T } | { ok: false; code: string; status: number };
 
-async function lerContacto(deps: DepsBridge, locationId: string, id: string): Promise<Lido<ContactoBridge>> {
-  const r = await deps.contacto(locationId, id).catch((): Ler<unknown> => ({ ok: false, code: "network_error" }));
-  if (!r.ok) return r.code === "not_found" ? { ok: false, code: "contact_not_found", status: 404 } : { ok: false, code: "ghl_unavailable", status: 502 };
+async function lerContacto(
+  deps: DepsBridge,
+  locationId: string,
+  id: string,
+): Promise<Lido<ContactoBridge>> {
+  const r = await deps
+    .contacto(locationId, id)
+    .catch((): Ler<unknown> => ({ ok: false, code: "network_error" }));
+  if (!r.ok)
+    return r.code === "not_found"
+      ? { ok: false, code: "contact_not_found", status: 404 }
+      : { ok: false, code: "ghl_unavailable", status: 502 };
   const c = parseContacto(r.data, id, locationId);
   return c ? { ok: true, data: c } : { ok: false, code: "contact_not_verified", status: 409 };
 }
@@ -361,8 +414,13 @@ async function lerEvento(
   id: string,
   calendarId: string,
 ): Promise<Lido<EventoBridge>> {
-  const r = await deps.consulta(id).catch((): Ler<unknown> => ({ ok: false, code: "network_error" }));
-  if (!r.ok) return r.code === "not_found" ? { ok: false, code: "appointment_not_found", status: 404 } : { ok: false, code: "ghl_unavailable", status: 502 };
+  const r = await deps
+    .consulta(id)
+    .catch((): Ler<unknown> => ({ ok: false, code: "network_error" }));
+  if (!r.ok)
+    return r.code === "not_found"
+      ? { ok: false, code: "appointment_not_found", status: 404 }
+      : { ok: false, code: "ghl_unavailable", status: 502 };
   const e = parseEvento(r.data, id, locationId);
   if (!e) return { ok: false, code: "appointment_not_verified", status: 409 };
   if (e.calendarId !== calendarId) return { ok: false, code: "calendar_mismatch", status: 409 };

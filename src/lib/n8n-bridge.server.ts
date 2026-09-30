@@ -35,8 +35,13 @@ export async function resolverEscopo(db: ClienteBridge): Promise<Resolucao | nul
   const orgId = process.env["JORNADA_AI_ORGANIZATION_ID"];
   const { locationId, token } = readGhlSecrets();
   if (!orgId || !locationId || !token) return null;
-  const b = await db.from("ghl_location_bindings").select("organization_id").eq("location_id", locationId).maybeSingle();
-  if (b.error || (b.data as { organization_id?: string } | null)?.organization_id !== orgId) return null;
+  const b = await db
+    .from("ghl_location_bindings")
+    .select("organization_id")
+    .eq("location_id", locationId)
+    .maybeSingle();
+  if (b.error || (b.data as { organization_id?: string } | null)?.organization_id !== orgId)
+    return null;
   const g = await db
     .from("ghl_integrations")
     .select("location_id,status,write_enabled")
@@ -72,15 +77,22 @@ export async function lerConfigBridge(
 ): Promise<{ ok: true; cfg: ConfigBridge } | { ok: false }> {
   const r = await db
     .from("n8n_bridge_settings")
-    .select("bridge_enabled,live_send_enabled,simulation,calendar_id,channel,clinic_address,fallback_user_id")
+    .select(
+      "bridge_enabled,live_send_enabled,simulation,calendar_id,channel,clinic_address,fallback_user_id",
+    )
     .eq("organization_id", orgId)
     .maybeSingle();
   if (r.error) return { ok: false };
   return { ok: true, cfg: configDeLinha(r.data as Record<string, unknown> | null) };
 }
 
-export async function utilizadorNaLocation(cfg: GhlConfig, userId: string): Promise<boolean | null> {
-  const r = await ghlFetch<{ users?: { id?: string }[] }>(cfg, "users/", { query: { locationId: cfg.locationId } });
+export async function utilizadorNaLocation(
+  cfg: GhlConfig,
+  userId: string,
+): Promise<boolean | null> {
+  const r = await ghlFetch<{ users?: { id?: string }[] }>(cfg, "users/", {
+    query: { locationId: cfg.locationId },
+  });
   if (!r.ok || !Array.isArray(r.data.users)) return null;
   return r.data.users.some((u) => u?.id === userId);
 }
@@ -102,7 +114,12 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
       // Pesquisa por ID exato: o GET simples omite o DND em contactos recentes.
       const r = await ghlFetch(cfg, "contacts/search", {
         method: "POST",
-        body: { locationId: loc, page: 1, pageLimit: 2, filters: [{ field: "id", operator: "eq", value: id }] },
+        body: {
+          locationId: loc,
+          page: 1,
+          pageLimit: 2,
+          filters: [{ field: "id", operator: "eq", value: id }],
+        },
       });
       return r.ok ? { ok: true, data: r.data } : { ok: false, code: r.code };
     },
@@ -121,12 +138,25 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
       const { locationId } = readGhlSecrets();
       const cfg = locationId ? cfgDe(locationId) : null;
       if (!cfg) return { ok: false, definitivo: true, code: "missing_secrets" };
-      const r = await ghlFetch<{ messageId?: unknown }>(cfg, "conversations/messages", { method: "POST", body: corpo });
-      if (r.ok) return { ok: true, messageId: typeof r.data.messageId === "string" && r.data.messageId ? r.data.messageId : null };
+      const r = await ghlFetch<{ messageId?: unknown }>(cfg, "conversations/messages", {
+        method: "POST",
+        body: corpo,
+      });
+      if (r.ok)
+        return {
+          ok: true,
+          messageId:
+            typeof r.data.messageId === "string" && r.data.messageId ? r.data.messageId : null,
+        };
       return { ok: false, definitivo: r.code !== "outcome_unknown", code: r.code };
     },
     claim: async (org, appt, start, kind) => {
-      const r = await db.rpc("n8n_bridge_claim_send", { _org: org, _appointment: appt, _start: start, _kind: kind });
+      const r = await db.rpc("n8n_bridge_claim_send", {
+        _org: org,
+        _appointment: appt,
+        _start: start,
+        _kind: kind,
+      });
       const d = r.data as Record<string, unknown> | null;
       if (r.error || !d || typeof d["id"] !== "string") return null;
       if (d["reserved"] === true) return { reserved: true, id: d["id"] };
@@ -146,7 +176,12 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
         _error: error,
       });
       const d = r.data as Record<string, unknown> | null;
-      return !r.error && d?.["persisted"] === true && d["state"] === state && (state !== "accepted" || d["message_id"] === messageId);
+      return (
+        !r.error &&
+        d?.["persisted"] === true &&
+        d["state"] === state &&
+        (state !== "accepted" || d["message_id"] === messageId)
+      );
     },
   };
 }

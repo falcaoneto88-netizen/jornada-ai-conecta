@@ -2,14 +2,27 @@
 import type { ConfigEntrada } from "./n8n-bridge.schema";
 
 import { BRIDGE_TOKEN_MIN } from "./n8n-bridge.core";
-import { configGhl, lerConfigBridge, resolverEscopo, utilizadorNaLocation, type ClienteBridge } from "./n8n-bridge.server";
+import {
+  configGhl,
+  lerConfigBridge,
+  resolverEscopo,
+  utilizadorNaLocation,
+  type ClienteBridge,
+} from "./n8n-bridge.server";
 import { ghlFetch } from "./ghl.server";
 
 type Sessao = {
   supabase: {
     auth: { getUser: () => Promise<{ data: { user: { id: string } | null }; error: unknown }> };
     rpc: (fn: string, a: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
-    from: (t: string) => { select: (c: string) => { eq: (k: string, v: string) => { maybeSingle: () => PromiseLike<{ data: unknown; error: unknown }> } } };
+    from: (t: string) => {
+      select: (c: string) => {
+        eq: (
+          k: string,
+          v: string,
+        ) => { maybeSingle: () => PromiseLike<{ data: unknown; error: unknown }> };
+      };
+    };
   };
   userId: string;
 };
@@ -56,7 +69,11 @@ async function autorizar(ctx: Sessao, db: ClienteBridge) {
     if (error || data.user?.id !== ctx.userId) return null;
     const papel = await ctx.supabase.rpc("tem_papel", { _papeis: ["administrador"] });
     if (papel.error || papel.data !== true) return null;
-    const perfil = await ctx.supabase.from("profiles").select("organization_id").eq("id", ctx.userId).maybeSingle();
+    const perfil = await ctx.supabase
+      .from("profiles")
+      .select("organization_id")
+      .eq("id", ctx.userId)
+      .maybeSingle();
     const org = (perfil.data as { organization_id?: string } | null)?.organization_id;
     if (perfil.error || !org) return null;
     const escopo = await resolverEscopo(db);
@@ -90,7 +107,10 @@ export async function lerEstadoPonte(ctx: Sessao): Promise<EstadoPonteN8n> {
 }
 
 /** Grava apenas campos não secretos. Nunca altera bridge_enabled, live_send_enabled ou simulation. */
-export async function guardarConfigPonte(ctx: Sessao, e: ConfigEntrada): Promise<{ ok: boolean; message: string }> {
+export async function guardarConfigPonte(
+  ctx: Sessao,
+  e: ConfigEntrada,
+): Promise<{ ok: boolean; message: string }> {
   const db = await admin();
   const a = await autorizar(ctx, db);
   if (!a) return { ok: false, message: "Acesso reservado a administradores." };
@@ -98,14 +118,18 @@ export async function guardarConfigPonte(ctx: Sessao, e: ConfigEntrada): Promise
   const cfg = configGhl(a.escopo.locationId);
   if (!cfg) return { ok: false, message: "Ligação ao GoHighLevel indisponível no servidor." };
   if (e.calendarId) {
-    const r = await ghlFetch<{ calendars?: { id?: string }[] }>(cfg, "calendars/", { query: { locationId: cfg.locationId } });
-    if (!r.ok || !Array.isArray(r.data.calendars)) return { ok: false, message: "Não foi possível verificar a agenda." };
+    const r = await ghlFetch<{ calendars?: { id?: string }[] }>(cfg, "calendars/", {
+      query: { locationId: cfg.locationId },
+    });
+    if (!r.ok || !Array.isArray(r.data.calendars))
+      return { ok: false, message: "Não foi possível verificar a agenda." };
     if (!r.data.calendars.some((c) => c?.id === e.calendarId))
       return { ok: false, message: "A agenda indicada não pertence a esta location." };
   }
   if (e.fallbackUserId) {
     const ok = await utilizadorNaLocation(cfg, e.fallbackUserId);
-    if (ok === null) return { ok: false, message: "Não foi possível verificar o utilizador de reserva." };
+    if (ok === null)
+      return { ok: false, message: "Não foi possível verificar o utilizador de reserva." };
     if (!ok) return { ok: false, message: "O utilizador de reserva não pertence a esta location." };
   }
   const r = await db.from("n8n_bridge_settings").upsert(
@@ -120,6 +144,10 @@ export async function guardarConfigPonte(ctx: Sessao, e: ConfigEntrada): Promise
     },
     { onConflict: "organization_id" },
   );
-  if (r.error) return { ok: false, message: "Configuração não guardada: a migração da ponte ainda não está aplicada." };
+  if (r.error)
+    return {
+      ok: false,
+      message: "Configuração não guardada: a migração da ponte ainda não está aplicada.",
+    };
   return { ok: true, message: "Configuração guardada. A ponte continua desligada." };
 }

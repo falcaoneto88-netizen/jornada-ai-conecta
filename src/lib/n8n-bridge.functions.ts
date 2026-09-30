@@ -15,5 +15,8 @@ export const guardarPonteN8n = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => configEntradaSchema.parse(d))
   .handler(async ({ context, data }) => {
     const { guardarConfigPonte } = await import("./n8n-bridge.admin.server");
-    return guardarConfigPonte({ supabase: context.supabase as never, userId: context.userId }, data);
+    return guardarConfigPonte(
+      { supabase: context.supabase as never, userId: context.userId },
+      data,
+    );
   });

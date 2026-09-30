@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { CONFIG_PADRAO, processarBridge, type ConfigBridge, type DepsBridge } from "./n8n-bridge.core";
+import {
+  CONFIG_PADRAO,
+  processarBridge,
+  type ConfigBridge,
+  type DepsBridge,
+} from "./n8n-bridge.core";
 import { dataHoraLisboa, montarMensagem } from "./n8n-bridge.templates";
 
 const TOKEN = "t".repeat(20) + "Z9x8Y7w6V5u4T3s2R1q0";
@@ -54,12 +59,19 @@ function eventoRaw(extra: Record<string, unknown> = {}) {
   };
 }
 
-function deps(o: Partial<DepsBridge> & { cfg?: ConfigBridge } = {}): DepsBridge & { enviar: ReturnType<typeof vi.fn> } {
+function deps(
+  o: Partial<DepsBridge> & { cfg?: ConfigBridge } = {},
+): DepsBridge & { enviar: ReturnType<typeof vi.fn> } {
   const enviar = vi.fn(async () => ({ ok: true as const, messageId: "msg-1" }));
   return {
     token: TOKEN,
     now: () => AGORA,
-    resolver: async () => ({ orgId: ORG, locationId: LOC, writeEnabled: true, integracaoConectada: true }),
+    resolver: async () => ({
+      orgId: ORG,
+      locationId: LOC,
+      writeEnabled: true,
+      integracaoConectada: true,
+    }),
     lerConfig: async () => ({ ok: true, cfg: o.cfg ?? PRONTO }),
     hit: async () => true,
     contacto: async () => ({ ok: true, data: contactoRaw() }),
@@ -75,9 +87,19 @@ function deps(o: Partial<DepsBridge> & { cfg?: ConfigBridge } = {}): DepsBridge 
 function req(body: unknown, auth: string | null = `Bearer ${TOKEN}`) {
   const h: Record<string, string> = { "content-type": "application/json" };
   if (auth) h["authorization"] = auth;
-  return new Request("http://x/api/public/n8n/bridge", { method: "POST", headers: h, body: JSON.stringify(body) });
+  return new Request("http://x/api/public/n8n/bridge", {
+    method: "POST",
+    headers: h,
+    body: JSON.stringify(body),
+  });
 }
-const envio = { op: "message.send", appointmentId: "appt0001", contactId: "contact01", expectedStartTime: INICIO, kind: "req24" };
+const envio = {
+  op: "message.send",
+  appointmentId: "appt0001",
+  contactId: "contact01",
+  expectedStartTime: INICIO,
+  kind: "req24",
+};
 
 async function run(body: unknown, d = deps(), auth?: string | null) {
   const r = await processarBridge(req(body, auth === undefined ? `Bearer ${TOKEN}` : auth), d);
@@ -106,7 +128,13 @@ describe("autenticação de máquina", () => {
 
 describe("união estrita", () => {
   it("rejeita escopo/url/texto do cliente", async () => {
-    for (const extra of [{ locationId: LOC }, { url: "https://x" }, { message: "oi" }, { orgId: ORG }, { channel: "sms" }]) {
+    for (const extra of [
+      { locationId: LOC },
+      { url: "https://x" },
+      { message: "oi" },
+      { orgId: ORG },
+      { channel: "sms" },
+    ]) {
       expect((await run({ ...envio, ...extra })).status).toBe(400);
     }
     expect((await run({ op: "proxy", path: "/contacts" })).status).toBe(400);
@@ -114,22 +142,36 @@ describe("união estrita", () => {
   });
   it("corpo grande 413 e content-type 415", async () => {
     const r = await processarBridge(
-      new Request("http://x", { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, body: "x".repeat(3000) }),
+      new Request("http://x", {
+        method: "POST",
+        headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+        body: "x".repeat(3000),
+      }),
       deps(),
     );
     expect(r.status).toBe(413);
     const r2 = await processarBridge(
-      new Request("http://x", { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "text/plain" }, body: "{}" }),
+      new Request("http://x", {
+        method: "POST",
+        headers: { authorization: `Bearer ${TOKEN}`, "content-type": "text/plain" },
+        body: "{}",
+      }),
       deps(),
     );
     expect(r2.status).toBe(415);
   });
   it("ponte desligada por padrão", async () => {
-    expect((await run({ op: "contact.get", contactId: "contact01" }, deps({ cfg: CONFIG_PADRAO }))).json["error"]).toBe("bridge_disabled");
+    expect(
+      (await run({ op: "contact.get", contactId: "contact01" }, deps({ cfg: CONFIG_PADRAO }))).json[
+        "error"
+      ],
+    ).toBe("bridge_disabled");
   });
   it("sem binding/schema bloqueia; rate limit", async () => {
     expect((await run({ op: "health" }, deps({ resolver: async () => null }))).status).toBe(503);
-    expect((await run({ op: "health" }, deps({ lerConfig: async () => ({ ok: false }) }))).json["error"]).toBe("bridge_schema_unavailable");
+    expect(
+      (await run({ op: "health" }, deps({ lerConfig: async () => ({ ok: false }) }))).json["error"],
+    ).toBe("bridge_schema_unavailable");
     expect((await run({ op: "health" }, deps({ hit: async () => false }))).status).toBe(429);
   });
 });
@@ -137,37 +179,125 @@ describe("união estrita", () => {
 describe("leituras minimizadas e isolamento", () => {
   it("contact.get devolve só campos permitidos", async () => {
     const r = await run({ op: "contact.get", contactId: "contact01" });
-    expect(Object.keys(r.json["contact"] as object).sort()).toEqual(["assignedTo", "dnd", "dndSettings", "firstName", "id", "locationId", "phone"]);
+    expect(Object.keys(r.json["contact"] as object).sort()).toEqual([
+      "assignedTo",
+      "dnd",
+      "dndSettings",
+      "firstName",
+      "id",
+      "locationId",
+      "phone",
+    ]);
     expect(JSON.stringify(r.json)).not.toContain("NOTA");
   });
   it("contacto de outra location ou id divergente é recusado", async () => {
-    expect((await run({ op: "contact.get", contactId: "contact01" }, deps({ contacto: async () => ({ ok: true, data: contactoRaw({ locationId: "outraLoc01" }) }) }))).status).toBe(409);
+    expect(
+      (
+        await run(
+          { op: "contact.get", contactId: "contact01" },
+          deps({
+            contacto: async () => ({ ok: true, data: contactoRaw({ locationId: "outraLoc01" }) }),
+          }),
+        )
+      ).status,
+    ).toBe(409);
     expect((await run({ op: "contact.get", contactId: "contact02" })).status).toBe(409);
   });
   it("appointment.get minimizado; outra agenda recusada", async () => {
     const r = await run({ op: "appointment.get", appointmentId: "appt0001" });
     expect(Object.keys(r.json["event"] as object)).not.toContain("notes");
-    expect((await run({ op: "appointment.get", appointmentId: "appt0001" }, deps({ consulta: async () => ({ ok: true, data: eventoRaw({ calendarId: "outraCal01" }) }) }))).json["error"]).toBe("calendar_mismatch");
+    expect(
+      (
+        await run(
+          { op: "appointment.get", appointmentId: "appt0001" },
+          deps({
+            consulta: async () => ({ ok: true, data: eventoRaw({ calendarId: "outraCal01" }) }),
+          }),
+        )
+      ).json["error"],
+    ).toBe("calendar_mismatch");
   });
 });
 
 describe("message.send guards", () => {
-  const casos: [string, Partial<DepsBridge> & { cfg?: ConfigBridge }, Record<string, unknown>, string][] = [
-    ["DND ausente", { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: {} }) }) }, {}, "dnd_not_confirmed"],
-    ["DND ativo", { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: { SMS: { status: "active" } } }) }) }, {}, "dnd_not_confirmed"],
-    ["dnd omitido", { contacto: async () => ({ ok: true, data: contactoRaw({ dnd: undefined }) }) }, {}, "contact_not_verified"],
-    ["whatsapp sem chave WhatsApp", { cfg: { ...PRONTO, channel: "whatsapp_zaptos" } }, {}, "dnd_not_confirmed"],
-    ["cancelada", { consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "cancelled" }) }) }, {}, "appointment_not_active"],
+  const casos: [
+    string,
+    Partial<DepsBridge> & { cfg?: ConfigBridge },
+    Record<string, unknown>,
+    string,
+  ][] = [
+    [
+      "DND ausente",
+      { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: {} }) }) },
+      {},
+      "dnd_not_confirmed",
+    ],
+    [
+      "DND ativo",
+      {
+        contacto: async () => ({
+          ok: true,
+          data: contactoRaw({ dndSettings: { SMS: { status: "active" } } }),
+        }),
+      },
+      {},
+      "dnd_not_confirmed",
+    ],
+    [
+      "dnd omitido",
+      { contacto: async () => ({ ok: true, data: contactoRaw({ dnd: undefined }) }) },
+      {},
+      "contact_not_verified",
+    ],
+    [
+      "whatsapp sem chave WhatsApp",
+      { cfg: { ...PRONTO, channel: "whatsapp_zaptos" } },
+      {},
+      "dnd_not_confirmed",
+    ],
+    [
+      "cancelada",
+      { consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "cancelled" }) }) },
+      {},
+      "appointment_not_active",
+    ],
     ["remarcada", {}, { expectedStartTime: "2026-10-02T12:00:00Z" }, "appointment_rescheduled"],
     ["passada", { now: () => Date.parse("2026-10-03T00:00:00Z") }, {}, "appointment_in_past"],
     ["contacto divergente", {}, { contactId: "contact99" }, "contact_mismatch"],
     ["canal pendente", { cfg: { ...PRONTO, channel: null } }, {}, "channel_not_configured"],
-    ["morada pendente", { cfg: { ...PRONTO, clinicAddress: "" } }, { kind: "confirm" }, "address_not_configured"],
+    [
+      "morada pendente",
+      { cfg: { ...PRONTO, clinicAddress: "" } },
+      { kind: "confirm" },
+      "address_not_configured",
+    ],
     ["agenda pendente", { cfg: { ...PRONTO, calendarId: null } }, {}, "calendar_not_configured"],
-    ["sem vendedor", { contacto: async () => ({ ok: true, data: contactoRaw({ assignedTo: undefined }) }) }, { kind: "escalation" }, "seller_not_configured"],
-    ["vendedor fora da location", { utilizadorNaLocation: async () => false }, { kind: "handoff" }, "seller_not_in_location"],
+    [
+      "sem vendedor",
+      { contacto: async () => ({ ok: true, data: contactoRaw({ assignedTo: undefined }) }) },
+      { kind: "escalation" },
+      "seller_not_configured",
+    ],
+    [
+      "vendedor fora da location",
+      { utilizadorNaLocation: async () => false },
+      { kind: "handoff" },
+      "seller_not_in_location",
+    ],
     ["live off", { cfg: { ...PRONTO, liveSendEnabled: false } }, {}, "live_send_disabled"],
-    ["write_enabled off", { resolver: async () => ({ orgId: ORG, locationId: LOC, writeEnabled: false, integracaoConectada: true }) }, {}, "live_send_disabled"],
+    [
+      "write_enabled off",
+      {
+        resolver: async () => ({
+          orgId: ORG,
+          locationId: LOC,
+          writeEnabled: false,
+          integracaoConectada: true,
+        }),
+      },
+      {},
+      "live_send_disabled",
+    ],
   ];
   for (const [nome, o, extra, codigo] of casos) {
     it(nome, async () => {
@@ -195,7 +325,12 @@ describe("message.send guards", () => {
   it("aceite com messageId persistido", async () => {
     const d = deps();
     const r = await run(envio, d);
-    expect(r.json).toEqual({ messageId: "msg-1", status: "accepted", duplicate: false, delivered: false });
+    expect(r.json).toEqual({
+      messageId: "msg-1",
+      status: "accepted",
+      duplicate: false,
+      delivered: false,
+    });
     expect(d.enviar).toHaveBeenCalledTimes(1);
     const corpo = d.enviar.mock.calls[0]![0] as Record<string, unknown>;
     expect(corpo["type"]).toBe("SMS");
@@ -210,20 +345,36 @@ describe("message.send guards", () => {
   });
 
   it("duplicado aceite devolve messageId persistido sem POST", async () => {
-    const d = deps({ claim: async () => ({ reserved: false, id: "r", state: "accepted", messageId: "msg-old" }) });
+    const d = deps({
+      claim: async () => ({ reserved: false, id: "r", state: "accepted", messageId: "msg-old" }),
+    });
     const r = await run(envio, d);
-    expect(r.json).toEqual({ messageId: "msg-old", status: "accepted", duplicate: true, delivered: false });
+    expect(r.json).toEqual({
+      messageId: "msg-old",
+      status: "accepted",
+      duplicate: true,
+      delivered: false,
+    });
     expect(d.enviar).not.toHaveBeenCalled();
   });
   it("duplicado unknown não reenvia nem aceita", async () => {
-    const d = deps({ claim: async () => ({ reserved: false, id: "r", state: "unknown", messageId: null }) });
+    const d = deps({
+      claim: async () => ({ reserved: false, id: "r", state: "unknown", messageId: null }),
+    });
     const r = await run(envio, d);
     expect(r.status).toBe(409);
     expect(d.enviar).not.toHaveBeenCalled();
   });
   it("timeout/5xx -> unknown, uma tentativa", async () => {
     const finish = vi.fn(async () => true);
-    const d = deps({ finish, enviar: vi.fn(async () => ({ ok: false as const, definitivo: false, code: "outcome_unknown" })) });
+    const d = deps({
+      finish,
+      enviar: vi.fn(async () => ({
+        ok: false as const,
+        definitivo: false,
+        code: "outcome_unknown",
+      })),
+    });
     const r = await run(envio, d);
     expect(r.json["error"]).toBe("outcome_unknown");
     expect(d.enviar).toHaveBeenCalledTimes(1);
@@ -255,7 +406,11 @@ describe("templates", () => {
     expect(dataHoraLisboa("2026-12-02T10:00:00Z").hora).toBe("10:00");
   });
   it("confirm inclui morada; nome saneado", () => {
-    const m = montarMensagem("confirm", { firstName: "Ana<script>", startTime: INICIO, morada: "Rua X" });
+    const m = montarMensagem("confirm", {
+      firstName: "Ana<script>",
+      startTime: INICIO,
+      morada: "Rua X",
+    });
     expect(m).toContain("Morada: Rua X");
     expect(m).not.toContain("<");
   });

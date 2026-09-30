@@ -22,7 +22,11 @@ export function dataHoraLisboa(iso: string): { data: string; hora: string } {
 /** Só letras, espaço, hífen e apóstrofo; máximo 40 caracteres. */
 export function nomeSeguro(nome: string | null | undefined): string | null {
   if (typeof nome !== "string") return null;
-  const limpo = nome.normalize("NFC").replace(/[^\p{L}\s'-]/gu, "").trim().slice(0, 40);
+  const limpo = nome
+    .normalize("NFC")
+    .replace(/[^\p{L}\s'-]/gu, "")
+    .trim()
+    .slice(0, 40);
   return limpo || null;
 }
 
