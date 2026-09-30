@@ -122,11 +122,15 @@ em `supabase/migrations`; o caminho do ficheiro permanece estável porque os tes
 ## Exemplos (placeholders)
 
 ```bash
+# Leitura de consulta
 curl -X POST https://<dominio>/api/public/n8n/bridge \
   -H "Authorization: Bearer <N8N_JORNADA_BRIDGE_TOKEN>" -H "Content-Type: application/json" \
   -d '{"op":"appointment.get","appointmentId":"<APPOINTMENT_ID>"}'
 
--d '{"op":"message.send","appointmentId":"<APPOINTMENT_ID>","contactId":"<CONTACT_ID>","expectedStartTime":"<ISO_START>","kind":"req24"}'
+# Envio (só depois de ativado e configurado)
+curl -X POST https://<dominio>/api/public/n8n/bridge \
+  -H "Authorization: Bearer <N8N_JORNADA_BRIDGE_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"op":"message.send","appointmentId":"<APPOINTMENT_ID>","contactId":"<CONTACT_ID>","expectedStartTime":"<ISO_START>","kind":"req24"}'
 ```
 
 ## Substituição dos 4 nós HTTP do n8n
