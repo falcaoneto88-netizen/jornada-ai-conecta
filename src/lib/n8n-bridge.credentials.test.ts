@@ -262,7 +262,7 @@ describe("autenticação da ponte com credencial por organização", () => {
     ).toBe(503);
     expect((await chamar(base({ resolver: async () => null }), { op: "health" })).status).toBe(503);
     expect(
-      (await chamar({ ...base(), credencial: undefined } as DepsBridge, { op: "health" })).status,
+      (await chamar((({ credencial: _c, ...resto }) => resto)(base()), { op: "health" })).status,
     ).toBe(503);
   });
   it("token de ambiente válido tem precedência: a chave da BD deixa de valer", async () => {
