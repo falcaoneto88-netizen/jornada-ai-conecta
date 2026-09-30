@@ -80,7 +80,7 @@ export async function lerConfigBridge(
   const r = await db
     .from("n8n_bridge_settings")
     .select(
-      "bridge_enabled,live_send_enabled,simulation,calendar_id,channel,clinic_address,fallback_user_id",
+      "bridge_enabled,live_send_enabled,simulation,calendar_id,channel,clinic_address,fallback_user_id,zaptos_provider_id,channel_verified",
     )
     .eq("organization_id", orgId)
     .maybeSingle();
