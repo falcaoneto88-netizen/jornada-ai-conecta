@@ -253,7 +253,12 @@ describe("message.send guards", () => {
     ],
     [
       "whatsapp sem chave WhatsApp",
-      { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: { SMS: { status: "inactive" } } }) }) },
+      {
+        contacto: async () => ({
+          ok: true,
+          data: contactoRaw({ dndSettings: { SMS: { status: "inactive" } } }),
+        }),
+      },
       {},
       "dnd_not_confirmed",
     ],
@@ -266,11 +271,36 @@ describe("message.send guards", () => {
     ["remarcada", {}, { expectedStartTime: "2026-10-02T12:00:00Z" }, "appointment_rescheduled"],
     ["passada", { now: () => Date.parse("2026-10-03T00:00:00Z") }, {}, "appointment_in_past"],
     ["contacto divergente", {}, { contactId: "contact99" }, "contact_mismatch"],
-    ["sms bloqueado (real)", { cfg: { ...PRONTO, channel: "sms", channelVerified: false } }, {}, "sms_route_not_configured"],
-    ["sms bloqueado (simulação)", { cfg: { ...PRONTO, channel: "sms", simulation: true } }, {}, "sms_route_not_configured"],
-    ["provedor em falta", { cfg: { ...PRONTO, zaptosProviderId: null } }, {}, "provider_not_configured"],
-    ["canal não verificado", { cfg: { ...PRONTO, channelVerified: false } }, {}, "channel_not_verified"],
-    ["canal não verificado (simulação)", { cfg: { ...PRONTO, channelVerified: false, simulation: true } }, {}, "channel_not_verified"],
+    [
+      "sms bloqueado (real)",
+      { cfg: { ...PRONTO, channel: "sms", channelVerified: false } },
+      {},
+      "sms_route_not_configured",
+    ],
+    [
+      "sms bloqueado (simulação)",
+      { cfg: { ...PRONTO, channel: "sms", simulation: true } },
+      {},
+      "sms_route_not_configured",
+    ],
+    [
+      "provedor em falta",
+      { cfg: { ...PRONTO, zaptosProviderId: null } },
+      {},
+      "provider_not_configured",
+    ],
+    [
+      "canal não verificado",
+      { cfg: { ...PRONTO, channelVerified: false } },
+      {},
+      "channel_not_verified",
+    ],
+    [
+      "canal não verificado (simulação)",
+      { cfg: { ...PRONTO, channelVerified: false, simulation: true } },
+      {},
+      "channel_not_verified",
+    ],
     ["canal pendente", { cfg: { ...PRONTO, channel: null } }, {}, "channel_not_configured"],
     [
       "morada pendente",

@@ -142,7 +142,11 @@ export async function guardarConfigPonte(
     if (!ok) return { ok: false, message: "O utilizador de reserva não pertence a esta location." };
   }
   const atual = await lerConfigBridge(db, a.org).catch(() => ({ ok: false as const }));
-  if (!atual.ok) return { ok: false, message: "Configuração não guardada: a migração da ponte ainda não está aplicada." };
+  if (!atual.ok)
+    return {
+      ok: false,
+      message: "Configuração não guardada: a migração da ponte ainda não está aplicada.",
+    };
   const mudouCanal =
     atual.cfg.channel !== e.channel || atual.cfg.zaptosProviderId !== e.zaptosProviderId;
   const r = await db.from("n8n_bridge_settings").upsert(

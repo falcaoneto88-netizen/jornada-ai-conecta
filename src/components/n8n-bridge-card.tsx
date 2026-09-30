@@ -172,8 +172,9 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        Guardar não altera o estado de ativação. Mudar canal ou provedor anula a verificação do canal,
-        que só é feita na implantação administrativa. Nenhum canal está escolhido por omissão. O estado “aceite” da API não comprova entrega.
+        Guardar não altera o estado de ativação. Mudar canal ou provedor anula a verificação do
+        canal, que só é feita na implantação administrativa. Nenhum canal está escolhido por
+        omissão. O estado “aceite” da API não comprova entrega.
       </p>
       <Button onClick={gravar} disabled={pending} size="sm">
         {pending ? "A guardar…" : "Guardar configuração"}

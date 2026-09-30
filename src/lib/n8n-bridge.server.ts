@@ -68,7 +68,8 @@ export function configDeLinha(row: Record<string, unknown> | null): ConfigBridge
     channel: canal === "sms" || canal === "whatsapp_zaptos" ? (canal as Canal) : null,
     clinicAddress: typeof row["clinic_address"] === "string" ? row["clinic_address"] : "",
     fallbackUserId: typeof row["fallback_user_id"] === "string" ? row["fallback_user_id"] : null,
-    zaptosProviderId: typeof row["zaptos_provider_id"] === "string" ? row["zaptos_provider_id"] : null,
+    zaptosProviderId:
+      typeof row["zaptos_provider_id"] === "string" ? row["zaptos_provider_id"] : null,
     channelVerified: row["channel_verified"] === true,
   };
 }
