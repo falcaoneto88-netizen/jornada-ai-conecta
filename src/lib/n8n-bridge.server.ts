@@ -30,29 +30,33 @@ export function configGhl(locationId: string): GhlConfig | null {
   return { baseUrl: GHL_ORIGIN, version: GHL_VERSION, token, locationId };
 }
 
-/** Org e location vêm só do servidor: variável de org + secret da location + binding + integração. */
-export async function resolverEscopo(db: ClienteBridge): Promise<Resolucao | null> {
-  const orgId = process.env["JORNADA_AI_ORGANIZATION_ID"];
+/**
+ * Org e location vêm só do servidor: secret da location -> ghl_location_bindings (como
+ * ghl-agenda.server.ts) -> ghl_connections. Se JORNADA_AI_ORGANIZATION_ID existir, tem de
+ * coincidir com o binding; se faltar, vale o binding estabelecido no servidor.
+ */
+export async function resolverEscopo(
+  db: ClienteBridge,
+  env: { orgId?: string | undefined } = { orgId: process.env["JORNADA_AI_ORGANIZATION_ID"] },
+): Promise<Resolucao | null> {
   const { locationId, token } = readGhlSecrets();
-  if (!orgId || !locationId || !token) return null;
-  const b = await db
-    .from("ghl_location_bindings")
-    .select("organization_id")
-    .eq("location_id", locationId)
-    .maybeSingle();
-  if (b.error || (b.data as { organization_id?: string } | null)?.organization_id !== orgId)
-    return null;
+  if (!locationId || !token) return null;
+  const b = await db.from("ghl_location_bindings").select("organization_id").eq("location_id", locationId).maybeSingle();
+  const orgId = (b.data as { organization_id?: unknown } | null)?.organization_id;
+  if (b.error || typeof orgId !== "string" || !orgId) return null;
+  if (env.orgId && env.orgId !== orgId) return null;
   const g = await db
-    .from("ghl_integrations")
+    .from("ghl_connections")
     .select("location_id,status,write_enabled")
     .eq("organization_id", orgId)
     .maybeSingle();
-  const row = g.data as { location_id?: string; status?: string; write_enabled?: boolean } | null;
+  const row = g.data as { location_id?: unknown; status?: unknown; write_enabled?: unknown } | null;
   if (g.error || !row || row.location_id !== locationId) return null;
   return {
     orgId,
     locationId,
     writeEnabled: row.write_enabled === true,
+    // Valor gravado por ghl.functions.ts após teste de ligação bem-sucedido.
     integracaoConectada: row.status === "conectada",
   };
 }

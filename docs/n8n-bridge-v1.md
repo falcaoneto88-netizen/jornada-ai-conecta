@@ -20,8 +20,9 @@ Autenticação: `Authorization: Bearer <N8N_JORNADA_BRIDGE_TOKEN>` (secret novo,
 aleatórios, comparação em tempo constante). Sem secret configurado → `503 bridge_unavailable`.
 Sessão de utilizador não substitui este token.
 
-Organização/location vêm apenas do servidor (`JORNADA_AI_ORGANIZATION_ID` + `GHL_LOCATION_ID` +
-`ghl_location_bindings` + `ghl_integrations`). O corpo não aceita URL, path, token, location, org,
+Organização/location vêm apenas do servidor: `GHL_LOCATION_ID` → `ghl_location_bindings` →
+`ghl_connections` (`location_id` igual, `status = 'conectada'`, `write_enabled`). Se
+`JORNADA_AI_ORGANIZATION_ID` existir tem de coincidir com o binding; se faltar, vale o binding. O corpo não aceita URL, path, token, location, org,
 canal, texto ou menções: campos extra → `400 invalid_request`.
 
 ### Operações (união estrita por `op`)
@@ -69,7 +70,7 @@ Erros (`{error}`): 401 `unauthorized`; 403 `bridge_disabled` / `live_send_disabl
      vendedor de reserva configurado e verificado na location; nunca o médico; sem escolha automática.
    Textos PT-PT fixos, Europe/Lisbon, DD/MM/YYYY HH:mm. `confirm` exige morada.
 5. Envio real exige: `bridge_enabled`, `live_send_enabled`, `simulation=false`,
-   `ghl_integrations.write_enabled`, integração `conectada`, canal verificado.
+   `ghl_connections.write_enabled`, integração `conectada`, canal verificado.
 6. Reserva atómica antes do POST; uma única tentativa. 2xx com `messageId` → `accepted`. Só uma
    recusa HTTP 4xx explícita é `rejected`; timeout, erro de rede, 3xx, 5xx, 2xx sem ID ou
    persistência falhada → `unknown` (reconciliação manual, sem retry). Duplicado só devolve
