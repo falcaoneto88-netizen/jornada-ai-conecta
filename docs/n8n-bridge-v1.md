@@ -1,9 +1,15 @@
 # Ponte n8n → Jornada → GoHighLevel (v1)
 
-Estado: **código e testes prontos; DESLIGADA.** Migração não aplicada em produção, token não criado,
-nenhum nó do n8n ligado, nenhum envio real efetuado. A entrada existente
+Estado: **código e testes preparados; ponte DESLIGADA.** Pendentes: migração, secret do token,
+configuração, deploy e origem dos eventos. O n8n **não está ligado** e o erro `Invalid JWT` do n8n
+**não está resolvido**: só poderá ser declarado resolvido depois de uma leitura autenticada de
+ponta a ponta (n8n → ponte → GHL) verificada. A entrada existente
 `POST /api/public/n8n/confirmacao-consulta` (HMAC com `N8N_JORNADA_SIGNING_SECRET`) mantém-se
 intacta: regista estados de confirmação e **não envia mensagens**.
+
+Estado de verificação: `concurrency_verified = false`. A reserva durável da ponte garante no
+máximo uma tentativa por org+consulta+horário+tipo, mas **não** resolve corridas de estado entre
+execuções do n8n nas suas Data Tables.
 
 ## Endpoint
 
@@ -22,7 +28,7 @@ canal, texto ou menções: campos extra → `400 invalid_request`.
 
 | op | corpo | resposta 200 |
 |---|---|---|
-| `health` | `{}` | `{ok, bridgeEnabled, simulation, liveSendEnabled, writeEnabled, calendarConfigured, channelConfigured, addressConfigured}` |
+| `health` | `{}` | `{ok, bridgeEnabled, simulation, liveSendEnabled, writeEnabled, calendarConfigured, channelConfigured, channelVerified, smsRouteConfigured:false, addressConfigured}` |
 | `contact.get` | `{contactId}` | `{contact:{id,locationId,firstName,phone,assignedTo,dnd,dndSettings}}` |
 | `appointment.get` | `{appointmentId}` | `{event:{id,locationId,calendarId,contactId,startTime,endTime,appointmentStatus}}` |
 | `message.send` | `{appointmentId,contactId,expectedStartTime,kind}` | `{messageId,status:"accepted",duplicate,delivered:false}` |
@@ -34,7 +40,8 @@ Erros (`{error}`): 401 `unauthorized`; 403 `bridge_disabled` / `live_send_disabl
 `calendar_not_configured`, `calendar_mismatch`, `contact_mismatch`, `appointment_rescheduled`,
 `appointment_not_active`, `appointment_in_past`, `channel_not_configured`,
 `address_not_configured`, `contact_phone_missing`, `dnd_not_confirmed`, `contact_not_verified`,
-`appointment_not_verified`, `seller_not_configured`, `seller_not_in_location`,
+`appointment_not_verified`, `sms_route_not_configured`, `provider_not_configured`,
+`channel_not_verified`, `seller_not_configured`, `seller_not_in_location`,
 `send_already_attempted`; 429 `rate_limited`; 502 `ghl_unavailable`, `send_rejected`,
 `outcome_unknown`; 503 `binding_unavailable`, `bridge_schema_unavailable`, `reservation_unavailable`.
 
@@ -43,22 +50,32 @@ Erros (`{error}`): 401 `unauthorized`; 403 `bridge_disabled` / `live_send_disabl
 1. Reconsulta a consulta no GHL: mesma location, agenda configurada, mesmo contacto, `startTime`
    igual ao esperado (normalizado ao segundo), estado `confirmed|new|booked`, futura.
 2. Reconsulta o contacto por pesquisa de ID exato (o GET simples omite DND). DND global `false` e
-   cada canal exigido presente e `inactive` (`sms` → SMS; `whatsapp_zaptos` → SMS e WhatsApp).
-   Ausência nunca é consentimento.
-3. Textos PT-PT fixos no servidor, fuso Europe/Lisbon, DD/MM/YYYY HH:mm. `confirm` exige morada.
-   `escalation`/`handoff` = comentário interno (`InternalComment`) com menção ao responsável
-   comercial do contacto (`assignedTo`), ou ao vendedor de reserva configurado e verificado na
-   location; nunca ao médico da consulta; sem escolha automática.
-4. Envio real exige: `bridge_enabled`, `live_send_enabled`, `simulation=false`,
-   `ghl_integrations.write_enabled`, integração `conectada`.
-5. Reserva atómica (`UNIQUE org+appointmentId+startTime+kind`) antes do POST; uma única tentativa.
-   2xx com `messageId` → `accepted` persistido. Timeout/5xx/2xx sem ID/persistência falhada →
-   `unknown` (reconciliação manual, sem retry). 4xx → `rejected`. Duplicado só devolve `messageId`
-   se `accepted`.
-6. Ambos os canais usam o tipo `SMS` da API (o provedor ZaptosWPP da conta encaminha). `accepted`
-   significa aceitação pela API — **não prova entrega** nem que saiu por SMS real.
+   canais `SMS` e `WhatsApp` presentes e `inactive`. Ausência nunca é consentimento.
+3. Canal (nenhum escolhido por omissão; nada é ativado automaticamente):
+   - `sms` (operadora): **bloqueado na v1** → `409 sms_route_not_configured`, também em simulação.
+     O tipo `SMS` desta conta sai pelo provedor ZaptosWPP; usá-lo como "SMS" seria enviar WhatsApp.
+     Só poderá ser aceite depois de existir uma rota de SMS de operadora configurada e verificada
+     de forma independente.
+   - `whatsapp_zaptos`: exige `zaptos_provider_id` (não secreto, guardado no servidor) e
+     `channel_verified = true`. `channel_verified` nasce `false`, é reposto a `false` sempre que o
+     canal ou o provedor mudam no formulário, e só é marcado `true` pelo fluxo de implantação
+     administrativo (SQL manual) após verificação. Quem chama nunca o define. O envio fixa
+     `conversationProviderId`.
+4. Corpo enviado a `POST /conversations/messages` (API 2021-07-28), com `status: "pending"` e o
+   `appointmentId` da consulta acabada de validar:
+   - mensagem: `{type:"SMS", contactId, message, conversationProviderId, appointmentId, status:"pending"}`
+   - `escalation`/`handoff`: `{type:"InternalComment", contactId, message:"@Responsável<userId>ID</userId> …", mentions:["ID"], appointmentId, status:"pending"}`
+     — menção inline e `mentions` com o mesmo ID do responsável comercial (`assignedTo`) ou do
+     vendedor de reserva configurado e verificado na location; nunca o médico; sem escolha automática.
+   Textos PT-PT fixos, Europe/Lisbon, DD/MM/YYYY HH:mm. `confirm` exige morada.
+5. Envio real exige: `bridge_enabled`, `live_send_enabled`, `simulation=false`,
+   `ghl_integrations.write_enabled`, integração `conectada`, canal verificado.
+6. Reserva atómica antes do POST; uma única tentativa. 2xx com `messageId` → `accepted`. Só uma
+   recusa HTTP 4xx explícita é `rejected`; timeout, erro de rede, 3xx, 5xx, 2xx sem ID ou
+   persistência falhada → `unknown` (reconciliação manual, sem retry). Duplicado só devolve
+   `messageId` se `accepted`. `accepted` = aceite pela API; **não prova entrega**.
 
-Limitação: o formato `InternalComment` + `mentions` não foi validado contra a API real.
+Limitação: estes corpos seguem a documentação oficial mas não foram testados contra a API real.
 
 ## Migração (pendente)
 
@@ -74,12 +91,16 @@ as três tabelas existem com os padrões desligados.
 ## Ativação manual (pendente, por esta ordem)
 
 1. Aplicar a migração.
-2. Adicionar o secret `N8N_JORNADA_BRIDGE_TOKEN` (≥ 32 caracteres aleatórios) em Secrets e a mesma
-   credencial num *Header Auth* do n8n.
+2. Adicionar o secret `N8N_JORNADA_BRIDGE_TOKEN` (≥ 32 caracteres aleatórios) em Secrets e o
+   mesmo valor numa credencial **dedicada** do n8n *Generic Auth → Bearer Auth* (`httpBearerAuth`).
+   Não reutilizar a credencial *Header Auth* do GHL.
 3. No cartão Integrações → “n8n — Confirmação de consultas”: agenda (`nPXR1Fyp0r3CpaMMGSki`),
-   canal, morada, vendedor de reserva opcional.
-4. `update n8n_bridge_settings set bridge_enabled=true` → testar leituras e `message.send` em simulação.
-5. Só depois, com autorização explícita: `simulation=false`, `live_send_enabled=true`.
+   morada, vendedor de reserva opcional. Canal: o utilizador **ainda não escolheu WhatsApp**;
+   `sms` fica bloqueado na v1.
+4. Deploy e verificação de uma leitura autenticada de ponta a ponta.
+5. `update n8n_bridge_settings set bridge_enabled=true` → testar leituras e `message.send` em simulação.
+6. Só depois, com autorização explícita: escolha de canal, verificação do provedor
+   (`channel_verified=true` por SQL), `simulation=false`, `live_send_enabled=true`.
 
 ## Exemplos (placeholders)
 
@@ -93,16 +114,17 @@ curl -X POST https://<dominio>/api/public/n8n/bridge \
 
 ## Substituição dos 4 nós HTTP do n8n
 
-| Nó atual | Novo corpo para `POST /api/public/n8n/bridge` |
+| Nó atual | Corpo para `POST /api/public/n8n/bridge` |
 |---|---|
-| GHL Contacto Inicial | `{"op":"contact.get","contactId":"{{$json.contactId}}"}` |
-| GHL Contacto Atual | `{"op":"contact.get","contactId":"{{$json.contactId}}"}` |
-| GHL Consulta Atual | `{"op":"appointment.get","appointmentId":"{{$json.appointmentId}}"}` |
-| GHL Enviar Mensagem | `{"op":"message.send","appointmentId":"…","contactId":"…","expectedStartTime":"…","kind":"req24"}` |
+| GHL Contacto Inicial | `{"op":"contact.get","contactId":"{{ $json.appointment.contactId }}"}` |
+| GHL Contacto Atual | `{"op":"contact.get","contactId":"{{ $json.envelope.ctx.appointment.contactId }}"}` |
+| GHL Consulta Atual | `{"op":"appointment.get","appointmentId":"{{ $json.envelope.ctx.appointment.appointmentId }}"}` |
+| GHL Enviar Mensagem | `{"op":"message.send","appointmentId":"{{ $json.envelope.ctx.appointment.appointmentId }}","contactId":"{{ $json.envelope.ctx.appointment.contactId }}","expectedStartTime":"{{ $json.envelope.ctx.appointment.startTime }}","kind":"{{ $json.action.type }}"}` |
 
-Todos com credencial *Header Auth* `Authorization: Bearer …`, sem redirects. O n8n deixa de
-precisar do token GHL (o `Invalid JWT` atual desaparece porque o GHL é chamado pelo Jornada).
-Horários (24h/12h), regras e decisões permanecem no n8n; a ponte não agenda nada.
+Configuração de cada nó HTTP Request: autenticação *Generic Credential Type → Bearer Auth*
+(`httpBearerAuth`, credencial dedicada), corpo JSON, `Full Response` ativado, **sem** seguir
+redirecionamentos e **sem** repetição automática (Retry On Fail desligado). Horários (24h/12h),
+regras e decisões permanecem no n8n; a ponte não agenda nada.
 
 ## Origem dos eventos GHL → n8n
 
