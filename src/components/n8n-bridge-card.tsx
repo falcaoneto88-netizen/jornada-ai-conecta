@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ChaveN8nSetup } from "@/components/n8n-bridge-key";
 import { estadoPonteN8n, guardarPonteN8n } from "@/lib/n8n-bridge.functions";
 
 type Canal = "" | "sms" | "whatsapp_zaptos";
@@ -77,16 +78,18 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
         <Badge variant="outline">{data?.bridgeEnabled ? "Ponte ligada" : "Ponte desligada"}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">
-        Ainda não há nenhum endpoint do n8n ligado a esta ponte. A entrada já existente apenas
+        A ligação ao n8n ainda não foi verificada de ponta a ponta. A entrada já existente apenas
         regista estados de confirmação; não envia mensagens. Ativação é manual e feita no servidor.
       </p>
       {data && (
+        <ChaveN8nSetup
+          configurada={data.tokenPresente}
+          podeCriar={data.podeCriarChave}
+          schemaDisponivel={data.credentialSchemaAvailable}
+        />
+      )}
+      {data && (
         <ul className="space-y-1.5">
-          <Linha
-            rotulo="Token da ponte no servidor"
-            ok={data.tokenPresente}
-            texto={data.tokenPresente ? "Presente" : "Em falta"}
-          />
           <Linha
             rotulo="Migração da ponte"
             ok={data.schemaDisponivel}
