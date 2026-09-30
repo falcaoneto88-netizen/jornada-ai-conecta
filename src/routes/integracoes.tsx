@@ -3,6 +3,7 @@ import { FUSO_DEMO, formatarDataHora } from "@/lib/clinic-time";
 import { SyncPendencias } from "@/components/sync-pendencias";
 import { BioreportSetup } from "@/components/bioreport-setup";
 import { FalcaoSiteIntegration } from "@/components/falcao-site-integration";
+import { N8nBridgeCard } from "@/components/n8n-bridge-card";
 import { McpDiagnostics } from "@/components/mcp-diagnostics";
 import { AdNavigatorCard } from "@/components/ad-navigator-card";
 import { JevCard } from "@/components/jev-card";
@@ -658,6 +659,7 @@ function Integracoes() {
             <McpDiagnostics key={`mcp-${escopo}`} allowed={!demo && podeGerir} />
             <AdNavigatorCard key={escopo} escopo={escopo} allowed={!demo && podeGerir} />
             <JevCard key={`jev-${escopo}`} escopo={escopo} allowed={!demo && podeGerir} />
+            <N8nBridgeCard key={`n8n-${escopo}`} allowed={!demo && podeGerir} />
             <div className="surface-card space-y-5 p-6">
               <p className="flex items-start gap-2 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />O token privado,

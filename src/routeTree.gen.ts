@@ -29,6 +29,7 @@ import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl
 import { Route as ApiAdNavigatorV1ExchangeRouteImport } from './routes/api/ad-navigator/v1/exchange'
 import { Route as ApiAdNavigatorV1SummaryRouteImport } from './routes/api/ad-navigator/v1/summary'
 import { Route as ApiPublicHooksSincronizarAgendaRouteImport } from './routes/api/public/hooks/sincronizar-agenda'
+import { Route as ApiPublicN8nBridgeRouteImport } from './routes/api/public/n8n/bridge'
 import { Route as ApiPublicN8nConfirmacaoConsultaRouteImport } from './routes/api/public/n8n/confirmacao-consulta'
 
 const IndexRoute = IndexRouteImport.update({
@@ -134,6 +135,11 @@ const ApiPublicHooksSincronizarAgendaRoute =
     path: '/api/public/hooks/sincronizar-agenda',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicN8nBridgeRoute = ApiPublicN8nBridgeRouteImport.update({
+  id: '/api/public/n8n/bridge',
+  path: '/api/public/n8n/bridge',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicN8nConfirmacaoConsultaRoute =
   ApiPublicN8nConfirmacaoConsultaRouteImport.update({
     id: '/api/public/n8n/confirmacao-consulta',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
   '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
+  '/api/public/n8n/bridge': typeof ApiPublicN8nBridgeRoute
   '/api/public/n8n/confirmacao-consulta': typeof ApiPublicN8nConfirmacaoConsultaRoute
 }
 export interface FileRoutesByTo {
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
   '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
+  '/api/public/n8n/bridge': typeof ApiPublicN8nBridgeRoute
   '/api/public/n8n/confirmacao-consulta': typeof ApiPublicN8nConfirmacaoConsultaRoute
 }
 export interface FileRoutesById {
@@ -209,6 +217,7 @@ export interface FileRoutesById {
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
   '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
+  '/api/public/n8n/bridge': typeof ApiPublicN8nBridgeRoute
   '/api/public/n8n/confirmacao-consulta': typeof ApiPublicN8nConfirmacaoConsultaRoute
 }
 export interface FileRouteTypes {
@@ -234,6 +243,7 @@ export interface FileRouteTypes {
     | '/api/ad-navigator/v1/exchange'
     | '/api/ad-navigator/v1/summary'
     | '/api/public/hooks/sincronizar-agenda'
+    | '/api/public/n8n/bridge'
     | '/api/public/n8n/confirmacao-consulta'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/api/ad-navigator/v1/exchange'
     | '/api/ad-navigator/v1/summary'
     | '/api/public/hooks/sincronizar-agenda'
+    | '/api/public/n8n/bridge'
     | '/api/public/n8n/confirmacao-consulta'
   id:
     | '__root__'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '/api/ad-navigator/v1/exchange'
     | '/api/ad-navigator/v1/summary'
     | '/api/public/hooks/sincronizar-agenda'
+    | '/api/public/n8n/bridge'
     | '/api/public/n8n/confirmacao-consulta'
   fileRoutesById: FileRoutesById
 }
@@ -304,6 +316,7 @@ export interface RootRouteChildren {
   ApiAdNavigatorV1ExchangeRoute: typeof ApiAdNavigatorV1ExchangeRoute
   ApiAdNavigatorV1SummaryRoute: typeof ApiAdNavigatorV1SummaryRoute
   ApiPublicHooksSincronizarAgendaRoute: typeof ApiPublicHooksSincronizarAgendaRoute
+  ApiPublicN8nBridgeRoute: typeof ApiPublicN8nBridgeRoute
   ApiPublicN8nConfirmacaoConsultaRoute: typeof ApiPublicN8nConfirmacaoConsultaRoute
 }
 
@@ -449,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSincronizarAgendaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/n8n/bridge': {
+      id: '/api/public/n8n/bridge'
+      path: '/api/public/n8n/bridge'
+      fullPath: '/api/public/n8n/bridge'
+      preLoaderRoute: typeof ApiPublicN8nBridgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/n8n/confirmacao-consulta': {
       id: '/api/public/n8n/confirmacao-consulta'
       path: '/api/public/n8n/confirmacao-consulta'
@@ -481,6 +501,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdNavigatorV1ExchangeRoute: ApiAdNavigatorV1ExchangeRoute,
   ApiAdNavigatorV1SummaryRoute: ApiAdNavigatorV1SummaryRoute,
   ApiPublicHooksSincronizarAgendaRoute: ApiPublicHooksSincronizarAgendaRoute,
+  ApiPublicN8nBridgeRoute: ApiPublicN8nBridgeRoute,
   ApiPublicN8nConfirmacaoConsultaRoute: ApiPublicN8nConfirmacaoConsultaRoute,
 }
 export const routeTree = rootRouteImport
