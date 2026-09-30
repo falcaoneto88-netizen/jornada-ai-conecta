@@ -9,6 +9,7 @@ export const configEntradaSchema = z
     channel: z.enum(["sms", "whatsapp_zaptos"]).nullable(),
     clinicAddress: z.string().trim().max(240),
     fallbackUserId: idGhl.nullable(),
+    zaptosProviderId: idGhl.nullable(),
   })
   .strict();
 export type ConfigEntrada = z.infer<typeof configEntradaSchema>;

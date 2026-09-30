@@ -39,6 +39,10 @@ export type ConfigBridge = {
   channel: Canal | null;
   clinicAddress: string;
   fallbackUserId: string | null;
+  /** conversationProviderId do ZaptosWPP (não secreto), definido no servidor. */
+  zaptosProviderId: string | null;
+  /** Só a implantação administrativa marca true; nunca quem chama. */
+  channelVerified: boolean;
 };
 export const CONFIG_PADRAO: ConfigBridge = {
   bridgeEnabled: false,
@@ -48,6 +52,8 @@ export const CONFIG_PADRAO: ConfigBridge = {
   channel: null,
   clinicAddress: "",
   fallbackUserId: null,
+  zaptosProviderId: null,
+  channelVerified: false,
 };
 
 export type Resolucao = {
@@ -260,6 +266,8 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
         writeEnabled: res.writeEnabled,
         calendarConfigured: cfg.calendarId !== null,
         channelConfigured: cfg.channel !== null,
+        channelVerified: cfg.channelVerified,
+        smsRouteConfigured: false,
         addressConfigured: cfg.clinicAddress.trim() !== "",
       },
       200,
@@ -303,23 +311,33 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     corpoGhl = {
       type: "InternalComment",
       contactId: c.data.id,
-      message: montarMensagem(pedido.kind, {
+      // API oficial: menção inline E lista mentions, com o mesmo ID.
+      message: `@Responsável<userId>${responsavel}</userId> ${montarMensagem(pedido.kind, {
         firstName: c.data.firstName,
         startTime: atual,
         morada: "",
-      }),
+      })}`,
       mentions: [responsavel],
+      appointmentId: e.id,
+      status: "pending",
     };
   } else {
     if (!cfg.channel) return erro("channel_not_configured", 409);
+    // v1: não existe rota de SMS de operadora verificada; o tipo SMS da conta sai pelo ZaptosWPP.
+    if (cfg.channel === "sms") return erro("sms_route_not_configured", 409);
+    if (!cfg.zaptosProviderId) return erro("provider_not_configured", 409);
+    if (!cfg.channelVerified) return erro("channel_not_verified", 409);
     if (pedido.kind === "confirm" && cfg.clinicAddress.trim() === "")
       return erro("address_not_configured", 409);
     if (!c.data.phone) return erro("contact_phone_missing", 409);
     if (!dndPermite(c.data, cfg.channel)) return erro("dnd_not_confirmed", 409);
     corpoGhl = {
-      // Ambas as escolhas usam o tipo SMS da API; o provedor predefinido (ZaptosWPP) encaminha.
+      // whatsapp_zaptos: tipo SMS com o provedor ZaptosWPP fixado explicitamente.
       type: "SMS",
       contactId: c.data.id,
+      conversationProviderId: cfg.zaptosProviderId,
+      appointmentId: e.id,
+      status: "pending",
       message: montarMensagem(pedido.kind, {
         firstName: c.data.firstName,
         startTime: atual,

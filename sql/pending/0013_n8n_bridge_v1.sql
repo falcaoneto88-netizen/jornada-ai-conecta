@@ -13,8 +13,14 @@ CREATE TABLE IF NOT EXISTS public.n8n_bridge_settings (
   channel text CHECK (channel IS NULL OR channel IN ('sms','whatsapp_zaptos')),
   clinic_address text NOT NULL DEFAULT '' CHECK (char_length(clinic_address) <= 240),
   fallback_user_id text CHECK (fallback_user_id IS NULL OR fallback_user_id ~ '^[A-Za-z0-9_-]{6,64}$'),
+  -- conversationProviderId do ZaptosWPP (não secreto). Sem seleção automática.
+  zaptos_provider_id text CHECK (zaptos_provider_id IS NULL OR zaptos_provider_id ~ '^[A-Za-z0-9_-]{6,64}$'),
+  -- Só a implantação administrativa (SQL manual) marca true após verificação independente.
+  channel_verified boolean NOT NULL DEFAULT false,
   updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid
+  updated_by uuid,
+  -- v1: canal 'sms' (operadora) nunca pode estar verificado.
+  CONSTRAINT n8n_bridge_sms_unverified CHECK (NOT (channel = 'sms' AND channel_verified))
 );
 REVOKE ALL ON public.n8n_bridge_settings FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.n8n_bridge_settings TO service_role;

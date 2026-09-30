@@ -40,6 +40,9 @@ export type EstadoPonteN8n = {
   channel: "sms" | "whatsapp_zaptos" | null;
   clinicAddress: string;
   fallbackUserId: string | null;
+  zaptosProviderId: string | null;
+  channelVerified: boolean;
+  smsRouteConfigured: false;
 };
 
 const NEGADO: EstadoPonteN8n = {
@@ -55,6 +58,9 @@ const NEGADO: EstadoPonteN8n = {
   channel: null,
   clinicAddress: "",
   fallbackUserId: null,
+  zaptosProviderId: null,
+  channelVerified: false,
+  smsRouteConfigured: false,
 };
 
 async function admin() {
@@ -103,6 +109,9 @@ export async function lerEstadoPonte(ctx: Sessao): Promise<EstadoPonteN8n> {
     channel: cfg?.channel ?? null,
     clinicAddress: cfg?.clinicAddress ?? "",
     fallbackUserId: cfg?.fallbackUserId ?? null,
+    zaptosProviderId: cfg?.zaptosProviderId ?? null,
+    channelVerified: cfg?.channelVerified ?? false,
+    smsRouteConfigured: false,
   };
 }
 
@@ -132,8 +141,19 @@ export async function guardarConfigPonte(
       return { ok: false, message: "Não foi possível verificar o utilizador de reserva." };
     if (!ok) return { ok: false, message: "O utilizador de reserva não pertence a esta location." };
   }
+  const atual = await lerConfigBridge(db, a.org).catch(() => ({ ok: false as const }));
+  if (!atual.ok)
+    return {
+      ok: false,
+      message: "Configuração não guardada: a migração da ponte ainda não está aplicada.",
+    };
+  const mudouCanal =
+    atual.cfg.channel !== e.channel || atual.cfg.zaptosProviderId !== e.zaptosProviderId;
   const r = await db.from("n8n_bridge_settings").upsert(
     {
+      zaptos_provider_id: e.zaptosProviderId,
+      // Alterar canal ou provedor invalida qualquer verificação anterior. O formulário nunca marca true.
+      ...(mudouCanal ? { channel_verified: false } : {}),
       organization_id: a.org,
       calendar_id: e.calendarId,
       channel: e.channel,
@@ -149,5 +169,5 @@ export async function guardarConfigPonte(
       ok: false,
       message: "Configuração não guardada: a migração da ponte ainda não está aplicada.",
     };
-  return { ok: true, message: "Configuração guardada. A ponte continua desligada." };
+  return { ok: true, message: "Configuração guardada; estado de ativação não alterado." };
 }
