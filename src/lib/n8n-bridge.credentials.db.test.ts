@@ -20,7 +20,9 @@ afterAll(() => db?.stop());
 
 beforeEach(async () => {
   await db.query("delete from public.n8n_bridge_credentials");
-  await db.query(`insert into public.organizations (id,name) values ('${ORG}','A') on conflict do nothing`);
+  await db.query(
+    `insert into public.organizations (id,name) values ('${ORG}','A') on conflict do nothing`,
+  );
 });
 
 const hex = (i: number) => i.toString(16).padStart(64, "0");

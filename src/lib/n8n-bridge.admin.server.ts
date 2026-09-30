@@ -221,7 +221,11 @@ export async function criarChaveBridge(
   gerar: () => Buffer = () => randomBytes(32),
 ): Promise<ResultadoChave> {
   if (!origemConfiavel(headers))
-    return { ok: false, code: "untrusted_origin", message: "Pedido recusado: origem não confiável." };
+    return {
+      ok: false,
+      code: "untrusted_origin",
+      message: "Pedido recusado: origem não confiável.",
+    };
   const db = dbInjetado ?? (await admin());
   const a = await autorizar(ctx, db);
   if (!a) return { ok: false, code: "forbidden", message: "Acesso reservado a administradores." };
@@ -245,7 +249,11 @@ export async function criarChaveBridge(
       message: "Criação indisponível: a migração das chaves ainda não está aplicada.",
     };
   if (atual.digest !== null)
-    return { ok: false, code: "exists", message: "A chave já foi criada e não pode ser mostrada de novo." };
+    return {
+      ok: false,
+      code: "exists",
+      message: "A chave já foi criada e não pode ser mostrada de novo.",
+    };
   const bytes = gerar();
   if (bytes.length !== 32)
     return { ok: false, code: "failed", message: "Não foi possível criar a chave." };
@@ -263,7 +271,11 @@ export async function criarChaveBridge(
   }
   if (r.error)
     return r.error.code === "23505"
-      ? { ok: false, code: "exists", message: "A chave já foi criada e não pode ser mostrada de novo." }
+      ? {
+          ok: false,
+          code: "exists",
+          message: "A chave já foi criada e não pode ser mostrada de novo.",
+        }
       : { ok: false, code: "failed", message: "Não foi possível guardar a chave." };
   // Confirma a persistência lendo o digest de volta antes de devolver a chave.
   const conf = await lerCredencialBridge(db, a.org).catch(() => ({ ok: false as const }));

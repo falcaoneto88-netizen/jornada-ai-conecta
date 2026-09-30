@@ -135,8 +135,8 @@ export function ChaveN8nSetup({ configurada, podeCriar, schemaDisponivel }: Prop
                 <li>Clique em “Save”.</li>
               </ol>
               <p className="text-xs text-muted-foreground">
-                Depois a mesma credencial guardada será reutilizada nos outros 3 nós HTTP. Nunca cole
-                esta chave no chat nem a envie por mensagem.
+                Depois a mesma credencial guardada será reutilizada nos outros 3 nós HTTP. Nunca
+                cole esta chave no chat nem a envie por mensagem.
               </p>
               <DialogFooter>
                 <Button onClick={fechar}>Já guardei a chave</Button>

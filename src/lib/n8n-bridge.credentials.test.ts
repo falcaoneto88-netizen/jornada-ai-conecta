@@ -148,7 +148,11 @@ describe("criarChaveBridge", () => {
     const a = await criarChaveBridge(sessao(), cab(PROD), cliente(semTabela));
     expect(a.ok).toBe(false);
     expect("key" in a).toBe(false);
-    const b = await criarChaveBridge(sessao(), cab(PROD), cliente(tabelas(), { falhaInsert: true }));
+    const b = await criarChaveBridge(
+      sessao(),
+      cab(PROD),
+      cliente(tabelas(), { falhaInsert: true }),
+    );
     expect(b.ok).toBe(false);
     expect("key" in b).toBe(false);
   });
@@ -246,13 +250,20 @@ describe("autenticação da ponte com credencial por organização", () => {
     expect((await chamar(d, { op: "health" })).status).toBe(503);
   });
   it("tabela em falta, sem credencial ou sem binding: fail-closed 503", async () => {
-    expect((await chamar(base({ credencial: async () => ({ ok: false }) }), { op: "health" })).status).toBe(503);
     expect(
-      (await chamar(base({ credencial: async () => ({ ok: true, digest: null }) }), { op: "health" }))
-        .status,
+      (await chamar(base({ credencial: async () => ({ ok: false }) }), { op: "health" })).status,
+    ).toBe(503);
+    expect(
+      (
+        await chamar(base({ credencial: async () => ({ ok: true, digest: null }) }), {
+          op: "health",
+        })
+      ).status,
     ).toBe(503);
     expect((await chamar(base({ resolver: async () => null }), { op: "health" })).status).toBe(503);
-    expect((await chamar(base({ credencial: undefined }), { op: "health" })).status).toBe(503);
+    expect(
+      (await chamar({ ...base(), credencial: undefined } as DepsBridge, { op: "health" })).status,
+    ).toBe(503);
   });
   it("token de ambiente válido tem precedência: a chave da BD deixa de valer", async () => {
     const env = "e".repeat(40);

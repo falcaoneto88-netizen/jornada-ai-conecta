@@ -25,7 +25,12 @@ export const guardarPonteN8n = createServerFn({ method: "POST" })
 
 export const criarChaveN8n = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ confirm: z.literal(true) }).strict().parse(d))
+  .inputValidator((d: unknown) =>
+    z
+      .object({ confirm: z.literal(true) })
+      .strict()
+      .parse(d),
+  )
   .handler(async ({ context }) => {
     const { criarChaveBridge } = await import("./n8n-bridge.admin.server");
     return criarChaveBridge(
