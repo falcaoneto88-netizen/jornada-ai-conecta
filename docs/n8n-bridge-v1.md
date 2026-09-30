@@ -94,27 +94,27 @@ Erros (`{error}`): 401 `unauthorized`; 403 `bridge_disabled` / `live_send_disabl
 
 Limitação: estes corpos seguem a documentação oficial mas não foram testados contra a API real.
 
-## Migração (pendente)
+## Migração (aplicada)
 
-Fonte única: `sql/pending/0013_n8n_bridge_v1.sql` (não está em `drizzle/migrations` nem em
-`supabase/migrations`). Cria `n8n_bridge_settings`, `n8n_bridge_sends`, `n8n_bridge_rate` e as
-RPCs `n8n_bridge_hit`, `n8n_bridge_claim_send`, `n8n_bridge_finish_send` (SECURITY DEFINER,
-`search_path=''`, só `service_role`; RLS ativo sem concessões a anon/authenticated).
-Sem a migração a ponte responde `503 bridge_schema_unavailable`.
+Fonte única de registo: `sql/pending/0013_n8n_bridge_v1.sql` (não está em `drizzle/migrations` nem
+em `supabase/migrations`; o caminho do ficheiro permanece estável porque os testes o referenciam).
+**Já está aplicada em produção (2026-09-30 ~16:35 UTC) — não reaplicar.** Cria
+`n8n_bridge_settings`, `n8n_bridge_sends`, `n8n_bridge_rate` e as RPCs `n8n_bridge_hit`,
+`n8n_bridge_claim_send`, `n8n_bridge_finish_send` (SECURITY DEFINER, `search_path=''`, só
+`service_role`; RLS ativo sem concessões a anon/authenticated).
 
-Aplicação manual (quando autorizada): executar o ficheiro no editor SQL do backend e confirmar que
-as três tabelas existem com os padrões desligados.
+## Ativação manual (pendências, por esta ordem)
 
-## Ativação manual (pendente, por esta ordem)
-
-1. Aplicar a migração.
+1. ~~Aplicar a migração.~~ **Feita** (2026-09-30; não repetir).
 2. Adicionar o secret `N8N_JORNADA_BRIDGE_TOKEN` (≥ 32 caracteres aleatórios) em Secrets e o
    mesmo valor numa credencial **dedicada** do n8n *Generic Auth → Bearer Auth* (`httpBearerAuth`).
-   Não reutilizar a credencial *Header Auth* do GHL.
-3. No cartão Integrações → “n8n — Confirmação de consultas”: agenda (`nPXR1Fyp0r3CpaMMGSki`),
-   morada, vendedor de reserva opcional. Canal: o utilizador **ainda não escolheu WhatsApp**;
-   `sms` fica bloqueado na v1.
-4. Deploy e verificação de uma leitura autenticada de ponta a ponta.
+   Não reutilizar a credencial *Header Auth* do GHL. — **Pendente** (os nós já usam Bearer Auth,
+   mas a credencial não está configurada).
+3. No cartão Integrações → “n8n — Confirmação de consultas”: agenda (`nPXR1Fyp0r3CpaMMGSki`) e
+   morada já estão guardadas. Falta escolher o canal — o utilizador **ainda não escolheu
+   WhatsApp**; `sms` fica bloqueado na v1 — e, se aplicável, o vendedor de reserva.
+4. Deploy e verificação de uma leitura autenticada de ponta a ponta. — **Pendente** (nenhum
+   cenário sintético conta como teste real).
 5. `update n8n_bridge_settings set bridge_enabled=true` → testar leituras e `message.send` em simulação.
 6. Só depois, com autorização explícita: escolha de canal, verificação do provedor
    (`channel_verified=true` por SQL), `simulation=false`, `live_send_enabled=true`.
