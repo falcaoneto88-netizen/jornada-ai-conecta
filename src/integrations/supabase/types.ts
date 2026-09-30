@@ -1196,6 +1196,132 @@ export type Database = {
           },
         ]
       }
+      n8n_bridge_rate: {
+        Row: {
+          hits: number
+          organization_id: string
+          window_start: string
+        }
+        Insert: {
+          hits?: number
+          organization_id: string
+          window_start: string
+        }
+        Update: {
+          hits?: number
+          organization_id?: string
+          window_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_rate_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      n8n_bridge_sends: {
+        Row: {
+          error_code: string | null
+          finished_at: string | null
+          ghl_appointment_id: string
+          id: string
+          kind: string
+          message_id: string | null
+          organization_id: string
+          reserved_at: string
+          start_time: string
+          state: string
+        }
+        Insert: {
+          error_code?: string | null
+          finished_at?: string | null
+          ghl_appointment_id: string
+          id?: string
+          kind: string
+          message_id?: string | null
+          organization_id: string
+          reserved_at?: string
+          start_time: string
+          state?: string
+        }
+        Update: {
+          error_code?: string | null
+          finished_at?: string | null
+          ghl_appointment_id?: string
+          id?: string
+          kind?: string
+          message_id?: string | null
+          organization_id?: string
+          reserved_at?: string
+          start_time?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_sends_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      n8n_bridge_settings: {
+        Row: {
+          bridge_enabled: boolean
+          calendar_id: string | null
+          channel: string | null
+          channel_verified: boolean
+          clinic_address: string
+          fallback_user_id: string | null
+          live_send_enabled: boolean
+          organization_id: string
+          simulation: boolean
+          updated_at: string
+          updated_by: string | null
+          zaptos_provider_id: string | null
+        }
+        Insert: {
+          bridge_enabled?: boolean
+          calendar_id?: string | null
+          channel?: string | null
+          channel_verified?: boolean
+          clinic_address?: string
+          fallback_user_id?: string | null
+          live_send_enabled?: boolean
+          organization_id: string
+          simulation?: boolean
+          updated_at?: string
+          updated_by?: string | null
+          zaptos_provider_id?: string | null
+        }
+        Update: {
+          bridge_enabled?: boolean
+          calendar_id?: string | null
+          channel?: string | null
+          channel_verified?: boolean
+          clinic_address?: string
+          fallback_user_id?: string | null
+          live_send_enabled?: boolean
+          organization_id?: string
+          simulation?: boolean
+          updated_at?: string
+          updated_by?: string | null
+          zaptos_provider_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opportunities: {
         Row: {
           contact_id: string | null
@@ -2062,6 +2188,29 @@ export type Database = {
           _test_code: string
         }
         Returns: Json
+      }
+      n8n_bridge_claim_send: {
+        Args: {
+          _appointment: string
+          _kind: string
+          _org: string
+          _start: string
+        }
+        Returns: Json
+      }
+      n8n_bridge_finish_send: {
+        Args: {
+          _error: string
+          _id: string
+          _message_id: string
+          _org: string
+          _state: string
+        }
+        Returns: Json
+      }
+      n8n_bridge_hit: {
+        Args: { _limit: number; _org: string }
+        Returns: boolean
       }
       pedido_de_cliente: { Args: never; Returns: boolean }
       receive_bioreport_event: {

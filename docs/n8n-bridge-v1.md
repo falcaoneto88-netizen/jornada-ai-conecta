@@ -1,15 +1,31 @@
 # Ponte n8n → Jornada → GoHighLevel (v1)
 
-Estado: **código e testes preparados; ponte DESLIGADA.** Pendentes: migração, secret do token,
-configuração, deploy e origem dos eventos. O n8n **não está ligado** e o erro `Invalid JWT` do n8n
-**não está resolvido**: só poderá ser declarado resolvido depois de uma leitura autenticada de
-ponta a ponta (n8n → ponte → GHL) verificada. A entrada existente
+Estado: **código, testes e migração aplicados; ponte DESLIGADA.** A migração foi aplicada em
+produção a 2026-09-30 ~16:35 UTC. Pendentes: secret do token, credencial dedicada do n8n, escolha
+de canal, deploy e leitura autenticada de ponta a ponta. O n8n **não está ligado** e o erro
+`Invalid JWT` do n8n **não está resolvido**: só poderá ser declarado resolvido depois de uma
+leitura autenticada de ponta a ponta (n8n → ponte → GHL) verificada. A entrada existente
 `POST /api/public/n8n/confirmacao-consulta` (HMAC com `N8N_JORNADA_SIGNING_SECRET`) mantém-se
 intacta: regista estados de confirmação e **não envia mensagens**.
 
 Estado de verificação: `concurrency_verified = false`. A reserva durável da ponte garante no
 máximo uma tentativa por org+consulta+horário+tipo, mas **não** resolve corridas de estado entre
 execuções do n8n nas suas Data Tables.
+
+## Estado de implantação (2026-09-30)
+
+- Migração aplicada em produção (transação). Verificado: RLS ativo nas três tabelas, 0 concessões
+  a anon/authenticated, `authenticated` não pode executar `n8n_bridge_claim_send`,
+  `n8n_bridge_sends` com 0 linhas.
+- Semeadura mínima: apenas a organização `f07ab3be-7419-4779-a901-ef71c5fc27f0`, agenda
+  `nPXR1Fyp0r3CpaMMGSki` e morada da clínica preenchida pelo utilizador.
+- Configuração verificada: `bridge_enabled=false`, `live_send_enabled=false`, `simulation=true`,
+  `channel=null`, `channel_verified=false`, vendedor de reserva `null`. Nenhum segredo criado.
+- n8n (rascunho `WrDn82MwKBcuM73G`): os 4 nós HTTP já apontam para esta ponte, com corpos estritos
+  por `op`, sem redirecionamentos, sem repetição automática e timeout 120000 ms. A credencial
+  Bearer dedicada **ainda não está configurada**.
+- Testes no n8n: 23 cenários sintéticos, 8 regressões de regras independentes e verificações do
+  adaptador passaram. **Não há teste real de ponta a ponta.**
 
 ## Endpoint
 
@@ -78,27 +94,27 @@ Erros (`{error}`): 401 `unauthorized`; 403 `bridge_disabled` / `live_send_disabl
 
 Limitação: estes corpos seguem a documentação oficial mas não foram testados contra a API real.
 
-## Migração (pendente)
+## Migração (aplicada)
 
-Fonte única: `sql/pending/0013_n8n_bridge_v1.sql` (não está em `drizzle/migrations` nem em
-`supabase/migrations`). Cria `n8n_bridge_settings`, `n8n_bridge_sends`, `n8n_bridge_rate` e as
-RPCs `n8n_bridge_hit`, `n8n_bridge_claim_send`, `n8n_bridge_finish_send` (SECURITY DEFINER,
-`search_path=''`, só `service_role`; RLS ativo sem concessões a anon/authenticated).
-Sem a migração a ponte responde `503 bridge_schema_unavailable`.
+Fonte única de registo: `sql/pending/0013_n8n_bridge_v1.sql` (não está em `drizzle/migrations` nem
+em `supabase/migrations`; o caminho do ficheiro permanece estável porque os testes o referenciam).
+**Já está aplicada em produção (2026-09-30 ~16:35 UTC) — não reaplicar.** Cria
+`n8n_bridge_settings`, `n8n_bridge_sends`, `n8n_bridge_rate` e as RPCs `n8n_bridge_hit`,
+`n8n_bridge_claim_send`, `n8n_bridge_finish_send` (SECURITY DEFINER, `search_path=''`, só
+`service_role`; RLS ativo sem concessões a anon/authenticated).
 
-Aplicação manual (quando autorizada): executar o ficheiro no editor SQL do backend e confirmar que
-as três tabelas existem com os padrões desligados.
+## Ativação manual (pendências, por esta ordem)
 
-## Ativação manual (pendente, por esta ordem)
-
-1. Aplicar a migração.
+1. ~~Aplicar a migração.~~ **Feita** (2026-09-30; não repetir).
 2. Adicionar o secret `N8N_JORNADA_BRIDGE_TOKEN` (≥ 32 caracteres aleatórios) em Secrets e o
    mesmo valor numa credencial **dedicada** do n8n *Generic Auth → Bearer Auth* (`httpBearerAuth`).
-   Não reutilizar a credencial *Header Auth* do GHL.
-3. No cartão Integrações → “n8n — Confirmação de consultas”: agenda (`nPXR1Fyp0r3CpaMMGSki`),
-   morada, vendedor de reserva opcional. Canal: o utilizador **ainda não escolheu WhatsApp**;
-   `sms` fica bloqueado na v1.
-4. Deploy e verificação de uma leitura autenticada de ponta a ponta.
+   Não reutilizar a credencial *Header Auth* do GHL. — **Pendente** (os nós já usam Bearer Auth,
+   mas a credencial não está configurada).
+3. No cartão Integrações → “n8n — Confirmação de consultas”: agenda (`nPXR1Fyp0r3CpaMMGSki`) e
+   morada já estão guardadas. Falta escolher o canal — o utilizador **ainda não escolheu
+   WhatsApp**; `sms` fica bloqueado na v1 — e, se aplicável, o vendedor de reserva.
+4. Deploy e verificação de uma leitura autenticada de ponta a ponta. — **Pendente** (nenhum
+   cenário sintético conta como teste real).
 5. `update n8n_bridge_settings set bridge_enabled=true` → testar leituras e `message.send` em simulação.
 6. Só depois, com autorização explícita: escolha de canal, verificação do provedor
    (`channel_verified=true` por SQL), `simulation=false`, `live_send_enabled=true`.
@@ -106,14 +122,23 @@ as três tabelas existem com os padrões desligados.
 ## Exemplos (placeholders)
 
 ```bash
+# Leitura de consulta
 curl -X POST https://<dominio>/api/public/n8n/bridge \
   -H "Authorization: Bearer <N8N_JORNADA_BRIDGE_TOKEN>" -H "Content-Type: application/json" \
   -d '{"op":"appointment.get","appointmentId":"<APPOINTMENT_ID>"}'
 
--d '{"op":"message.send","appointmentId":"<APPOINTMENT_ID>","contactId":"<CONTACT_ID>","expectedStartTime":"<ISO_START>","kind":"req24"}'
+# Envio (só depois de ativado e configurado)
+curl -X POST https://<dominio>/api/public/n8n/bridge \
+  -H "Authorization: Bearer <N8N_JORNADA_BRIDGE_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"op":"message.send","appointmentId":"<APPOINTMENT_ID>","contactId":"<CONTACT_ID>","expectedStartTime":"<ISO_START>","kind":"req24"}'
 ```
 
 ## Substituição dos 4 nós HTTP do n8n
+
+> Estado: os 4 nós do rascunho `WrDn82MwKBcuM73G` já foram alterados para chamar esta ponte com
+> estes corpos, sem redirecionamentos, sem repetição automática e com timeout 120000 ms. Falta
+> apenas a credencial Bearer dedicada (passo 2 das pendências). 23 cenários sintéticos passaram;
+> nenhum teste real de ponta a ponta foi feito.
 
 | Nó atual | Corpo para `POST /api/public/n8n/bridge` |
 |---|---|
