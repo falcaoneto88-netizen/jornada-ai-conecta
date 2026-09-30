@@ -9,6 +9,8 @@ import { join } from "node:path";
 
 export type Db = {
   query: (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
+  /** Execução assíncrona numa ligação própria (permite concorrência real). */
+  queryAsync?: (sql: string) => Promise<string>;
   stop: () => void;
 };
 
@@ -95,8 +97,17 @@ export async function iniciarDb(): Promise<Db> {
     });
   };
 
+  const queryAsync = (sql: string) =>
+    new Promise<string>((resolve, reject) => {
+      const filho = spawn("psql", ["-h", socket, "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-d", "jornada", "-t", "-A", "-c", sql], { env: ambiente });
+      let out = "";
+      filho.stdout.on("data", (d: Buffer) => (out += d.toString()));
+      filho.on("close", (code) => (code === 0 ? resolve(out.trim()) : reject(new Error(`psql ${code}`))));
+    });
+
   return {
     query,
+    queryAsync,
     stop: () => {
       proc.kill("SIGQUIT");
       if (existsSync(base)) rmSync(base, { recursive: true, force: true });
