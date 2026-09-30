@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
+import { BriefingPaciente } from "@/components/briefing-paciente";
 import { DemoNotice } from "@/components/demo-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -518,6 +519,15 @@ function Jornada() {
                   </Badge>
                 ))}
               </div>
+              <BriefingPaciente
+                contacto={detalhe}
+                etapa={journeyStages.find((s) => s.id === detalhe.etapa)?.nome ?? detalhe.etapa}
+              />
+              {demo && (
+                <p className="text-xs text-muted-foreground">
+                  Em modo demonstração o briefing usa os dados de exemplo desta ficha.
+                </p>
+              )}
               <div>
                 <h3 className="text-sm font-semibold text-heading">Histórico</h3>
                 <ol className="mt-3 space-y-3 border-l border-border pl-4">
