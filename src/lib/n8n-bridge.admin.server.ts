@@ -1,17 +1,20 @@
 /** Leitura/gravação da configuração NÃO secreta da ponte, só para administradores. */
 import type { ConfigEntrada } from "./n8n-bridge.schema";
 
-import { BRIDGE_TOKEN_MIN } from "./n8n-bridge.core";
+import { randomBytes, createHash } from "crypto";
+
+import { envTokenValido } from "./n8n-bridge.core";
 import {
   configGhl,
   lerConfigBridge,
+  lerCredencialBridge,
   resolverEscopo,
   utilizadorNaLocation,
   type ClienteBridge,
 } from "./n8n-bridge.server";
 import { ghlFetch } from "./ghl.server";
 
-type Sessao = {
+export type Sessao = {
   supabase: {
     auth: { getUser: () => Promise<{ data: { user: { id: string } | null }; error: unknown }> };
     rpc: (fn: string, a: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
@@ -29,7 +32,11 @@ type Sessao = {
 
 export type EstadoPonteN8n = {
   autorizado: boolean;
+  /** Token de ambiente válido OU credencial por organização guardada. */
   tokenPresente: boolean;
+  /** Criação guiada disponível: sem token de ambiente, schema presente, sem credencial, binding ok. */
+  podeCriarChave: boolean;
+  credentialSchemaAvailable: boolean;
   schemaDisponivel: boolean;
   bindingOk: boolean;
   writeEnabled: boolean;
@@ -48,6 +55,8 @@ export type EstadoPonteN8n = {
 const NEGADO: EstadoPonteN8n = {
   autorizado: false,
   tokenPresente: false,
+  podeCriarChave: false,
+  credentialSchemaAvailable: false,
   schemaDisponivel: false,
   bindingOk: false,
   writeEnabled: false,
@@ -69,7 +78,7 @@ async function admin() {
 }
 
 /** Sessão real + papel administrador + organização da sessão igual à org da ponte. */
-async function autorizar(ctx: Sessao, db: ClienteBridge) {
+export async function autorizar(ctx: Sessao, db: ClienteBridge) {
   try {
     const { data, error } = await ctx.supabase.auth.getUser();
     if (error || data.user?.id !== ctx.userId) return null;
@@ -89,16 +98,24 @@ async function autorizar(ctx: Sessao, db: ClienteBridge) {
   }
 }
 
-export async function lerEstadoPonte(ctx: Sessao): Promise<EstadoPonteN8n> {
-  const db = await admin();
+export async function lerEstadoPonte(
+  ctx: Sessao,
+  dbInjetado?: ClienteBridge,
+): Promise<EstadoPonteN8n> {
+  const db = dbInjetado ?? (await admin());
   const a = await autorizar(ctx, db);
   if (!a) return NEGADO;
-  const token = process.env["N8N_JORNADA_BRIDGE_TOKEN"];
+  const envRaw = process.env["N8N_JORNADA_BRIDGE_TOKEN"];
+  const envOk = envTokenValido(envRaw);
+  const cred = await lerCredencialBridge(db, a.org).catch(() => ({ ok: false as const }));
+  const credOk = cred.ok && cred.digest !== null;
   const lida = await lerConfigBridge(db, a.org).catch(() => ({ ok: false as const }));
   const cfg = lida.ok ? lida.cfg : null;
   return {
     autorizado: true,
-    tokenPresente: typeof token === "string" && token.length >= BRIDGE_TOKEN_MIN,
+    tokenPresente: envOk || (!envRaw && credOk && a.escopo !== null),
+    podeCriarChave: !envRaw && cred.ok && cred.digest === null && a.escopo !== null,
+    credentialSchemaAvailable: cred.ok,
     schemaDisponivel: lida.ok,
     bindingOk: a.escopo !== null,
     writeEnabled: a.escopo?.writeEnabled ?? false,
@@ -170,4 +187,87 @@ export async function guardarConfigPonte(
       message: "Configuração não guardada: a migração da ponte ainda não está aplicada.",
     };
   return { ok: true, message: "Configuração guardada; estado de ativação não alterado." };
+}
+
+/** Origens de confiança para a mutação (CSRF): produção e pré-visualização exata do projeto. */
+export const ORIGENS_CONFIAVEIS = [
+  "https://jornada-ai-conecta.lovable.app",
+  "https://id-preview--36345211-2616-42f7-bb9e-e78a9d00ca22.lovable.app",
+] as const;
+
+export function origemConfiavel(headers: Headers): boolean {
+  const origin = headers.get("origin");
+  if (!origin || !(ORIGENS_CONFIAVEIS as readonly string[]).includes(origin)) return false;
+  const site = headers.get("sec-fetch-site");
+  return site === null || site === "same-origin";
+}
+
+export type ResultadoChave =
+  | { ok: true; key: string }
+  | {
+      ok: false;
+      code: "forbidden" | "untrusted_origin" | "unavailable" | "exists" | "failed";
+      message: string;
+    };
+
+/**
+ * Cria a credencial por organização (create-only). Persiste só o SHA-256 e devolve a chave em
+ * claro uma única vez. Qualquer falha de persistência -> nenhuma chave devolvida.
+ */
+export async function criarChaveBridge(
+  ctx: Sessao,
+  headers: Headers,
+  dbInjetado?: ClienteBridge,
+  gerar: () => Buffer = () => randomBytes(32),
+): Promise<ResultadoChave> {
+  if (!origemConfiavel(headers))
+    return { ok: false, code: "untrusted_origin", message: "Pedido recusado: origem não confiável." };
+  const db = dbInjetado ?? (await admin());
+  const a = await autorizar(ctx, db);
+  if (!a) return { ok: false, code: "forbidden", message: "Acesso reservado a administradores." };
+  if (!a.escopo)
+    return {
+      ok: false,
+      code: "unavailable",
+      message: "Vínculo GoHighLevel não confirmado no servidor.",
+    };
+  if (process.env["N8N_JORNADA_BRIDGE_TOKEN"])
+    return {
+      ok: false,
+      code: "unavailable",
+      message: "Já existe uma chave configurada no servidor; não é possível criar outra aqui.",
+    };
+  const atual = await lerCredencialBridge(db, a.org).catch(() => ({ ok: false as const }));
+  if (!atual.ok)
+    return {
+      ok: false,
+      code: "unavailable",
+      message: "Criação indisponível: a migração das chaves ainda não está aplicada.",
+    };
+  if (atual.digest !== null)
+    return { ok: false, code: "exists", message: "A chave já foi criada e não pode ser mostrada de novo." };
+  const bytes = gerar();
+  if (bytes.length !== 32)
+    return { ok: false, code: "failed", message: "Não foi possível criar a chave." };
+  const key = bytes.toString("hex");
+  const digest = createHash("sha256").update(key).digest("hex");
+  let r: { error: { code?: string } | null };
+  try {
+    r = await db.from("n8n_bridge_credentials").insert({
+      organization_id: a.org,
+      key_sha256: digest,
+      created_by: ctx.userId,
+    });
+  } catch {
+    return { ok: false, code: "failed", message: "Não foi possível guardar a chave." };
+  }
+  if (r.error)
+    return r.error.code === "23505"
+      ? { ok: false, code: "exists", message: "A chave já foi criada e não pode ser mostrada de novo." }
+      : { ok: false, code: "failed", message: "Não foi possível guardar a chave." };
+  // Confirma a persistência lendo o digest de volta antes de devolver a chave.
+  const conf = await lerCredencialBridge(db, a.org).catch(() => ({ ok: false as const }));
+  if (!conf.ok || conf.digest !== digest)
+    return { ok: false, code: "failed", message: "Não foi possível confirmar a chave guardada." };
+  return { ok: true, key };
 }

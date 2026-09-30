@@ -28,6 +28,7 @@ function cliente(t: Tabelas, lidas: { tabela: string; colunas: string }[] = []):
         return f;
       },
       upsert: async () => ({ data: null, error: null }),
+      insert: async () => ({ data: null, error: null }),
     }),
     rpc: async () => ({ data: null, error: null }),
   };
