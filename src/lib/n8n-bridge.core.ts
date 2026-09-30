@@ -90,8 +90,13 @@ export type Reserva =
   | { reserved: true; id: string }
   | { reserved: false; id: string; state: string; messageId: string | null };
 
+/** Digest SHA-256 (hex minúsculo) guardado em n8n_bridge_credentials; null = sem credencial. */
+export type LeituraCredencial = { ok: true; digest: string | null } | { ok: false };
+
 export type DepsBridge = {
   token: string | undefined;
+  /** Credencial por organização (só usada quando o token de ambiente não está configurado). */
+  credencial?: (orgId: string) => Promise<LeituraCredencial>;
   now: () => number;
   resolver: () => Promise<Resolucao | null>;
   lerConfig: (orgId: string) => Promise<{ ok: true; cfg: ConfigBridge } | { ok: false }>;
@@ -132,6 +137,20 @@ export function tokenIgual(esperado: string, recebido: string): boolean {
 function obj(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
+export const DIGEST_HEX = /^[0-9a-f]{64}$/;
+
+/** Compara sha256(recebido) com um digest hex guardado, em tempo constante e tamanho fixo. */
+export function digestIgual(digestHex: string, recebido: string): boolean {
+  if (!DIGEST_HEX.test(digestHex)) return false;
+  const a = Buffer.from(digestHex, "hex");
+  const b = createHash("sha256").update(recebido).digest();
+  return a.length === 32 && timingSafeEqual(a, b);
+}
+
+export function envTokenValido(t: string | undefined): t is string {
+  return typeof t === "string" && t.length >= BRIDGE_TOKEN_MIN;
+}
+
 const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : null);
 
 /** Resposta da pesquisa por ID exato: um único contacto, na location, com DND explícito. */
@@ -220,11 +239,25 @@ async function lerCorpo(request: Request): Promise<string | null | "grande"> {
 }
 
 export async function processarBridge(request: Request, deps: DepsBridge): Promise<Response> {
-  // Fail-closed: sem token configurado (ou curto) nada é aceite.
-  if (!deps.token || deps.token.length < BRIDGE_TOKEN_MIN) return erro("bridge_unavailable", 503);
+  // Fail-closed. Token de ambiente válido tem precedência; sem ele, vale só a credencial
+  // (hash) da organização resolvida no servidor. Nunca ambas em simultâneo.
   const auth = request.headers.get("authorization") ?? "";
   const m = /^Bearer ([\x21-\x7E]{1,512})$/.exec(auth);
-  if (!m || !tokenIgual(deps.token, m[1]!)) return erro("unauthorized", 401);
+  let resAuth: Resolucao | null = null;
+  if (envTokenValido(deps.token)) {
+    if (!m || !tokenIgual(deps.token, m[1]!)) return erro("unauthorized", 401);
+  } else {
+    if (deps.token || !deps.credencial) return erro("bridge_unavailable", 503);
+    try {
+      resAuth = await deps.resolver();
+    } catch {
+      resAuth = null;
+    }
+    if (!resAuth) return erro("bridge_unavailable", 503);
+    const c = await deps.credencial(resAuth.orgId).catch(() => ({ ok: false as const }));
+    if (!c.ok || !c.digest) return erro("bridge_unavailable", 503);
+    if (!m || !digestIgual(c.digest, m[1]!)) return erro("unauthorized", 401);
+  }
   if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json")
     return erro("invalid_content_type", 415);
   const corpo = await lerCorpo(request);
@@ -240,11 +273,13 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!p.success) return erro("invalid_request", 400);
   const pedido = p.data;
 
-  let res: Resolucao | null;
-  try {
-    res = await deps.resolver();
-  } catch {
-    res = null;
+  let res: Resolucao | null = resAuth;
+  if (!res) {
+    try {
+      res = await deps.resolver();
+    } catch {
+      res = null;
+    }
   }
   if (!res) return erro("binding_unavailable", 503);
 
