@@ -68,6 +68,8 @@ export function configDeLinha(row: Record<string, unknown> | null): ConfigBridge
     channel: canal === "sms" || canal === "whatsapp_zaptos" ? (canal as Canal) : null,
     clinicAddress: typeof row["clinic_address"] === "string" ? row["clinic_address"] : "",
     fallbackUserId: typeof row["fallback_user_id"] === "string" ? row["fallback_user_id"] : null,
+    zaptosProviderId: typeof row["zaptos_provider_id"] === "string" ? row["zaptos_provider_id"] : null,
+    channelVerified: row["channel_verified"] === true,
   };
 }
 
@@ -148,7 +150,8 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
           messageId:
             typeof r.data.messageId === "string" && r.data.messageId ? r.data.messageId : null,
         };
-      return { ok: false, definitivo: r.code !== "outcome_unknown", code: r.code };
+      // Só uma recusa HTTP 4xx explícita é definitiva. Timeout, rede, 3xx e 5xx = resultado desconhecido.
+      return { ok: false, definitivo: r.status >= 400 && r.status < 500, code: r.code };
     },
     claim: async (org, appt, start, kind) => {
       const r = await db.rpc("n8n_bridge_claim_send", {
