@@ -1,5 +1,5 @@
 /** Leitura/gravação da configuração NÃO secreta da ponte, só para administradores. */
-import { z } from "zod";
+import type { ConfigEntrada } from "./n8n-bridge.schema";
 
 import { BRIDGE_TOKEN_MIN } from "./n8n-bridge.core";
 import { configGhl, lerConfigBridge, resolverEscopo, utilizadorNaLocation, type ClienteBridge } from "./n8n-bridge.server";
@@ -88,17 +88,6 @@ export async function lerEstadoPonte(ctx: Sessao): Promise<EstadoPonteN8n> {
     fallbackUserId: cfg?.fallbackUserId ?? null,
   };
 }
-
-const idGhl = z.string().regex(/^[A-Za-z0-9_-]{6,64}$/);
-export const configEntrada = z
-  .object({
-    calendarId: idGhl.nullable(),
-    channel: z.enum(["sms", "whatsapp_zaptos"]).nullable(),
-    clinicAddress: z.string().trim().max(240),
-    fallbackUserId: idGhl.nullable(),
-  })
-  .strict();
-export type ConfigEntrada = z.infer<typeof configEntrada>;
 
 /** Grava apenas campos não secretos. Nunca altera bridge_enabled, live_send_enabled ou simulation. */
 export async function guardarConfigPonte(ctx: Sessao, e: ConfigEntrada): Promise<{ ok: boolean; message: string }> {
