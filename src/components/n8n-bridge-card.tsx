@@ -34,6 +34,7 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
   const [canal, setCanal] = useState<Canal>("");
   const [morada, setMorada] = useState("");
   const [reserva, setReserva] = useState("");
+  const [provedor, setProvedor] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
     setCanal(data.channel ?? "");
     setMorada(data.clinicAddress);
     setReserva(data.fallbackUserId ?? "");
+    setProvedor(data.zaptosProviderId ?? "");
   }, [data]);
 
   if (!allowed || isError || (data && !data.autorizado)) return null;
@@ -55,6 +57,7 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
           channel: canal || null,
           clinicAddress: morada,
           fallbackUserId: reserva.trim() || null,
+          zaptosProviderId: provedor.trim() || null,
         },
       });
       if (r.ok) toast.success(r.message);
@@ -146,7 +149,7 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
             onChange={(e) => setCanal(e.target.value as Canal)}
           >
             <option value="">Por definir</option>
-            <option value="sms">SMS</option>
+            <option value="sms">SMS de operadora (indisponível na v1)</option>
             <option value="whatsapp_zaptos">WhatsApp (ZaptosWPP, via tipo SMS)</option>
           </select>
         </div>
@@ -163,9 +166,14 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
           <Label htmlFor="n8n-reserva">ID do vendedor de reserva (opcional)</Label>
           <Input id="n8n-reserva" value={reserva} onChange={(e) => setReserva(e.target.value)} />
         </div>
+        <div className="space-y-1">
+          <Label htmlFor="n8n-provedor">ID do provedor ZaptosWPP (não secreto)</Label>
+          <Input id="n8n-provedor" value={provedor} onChange={(e) => setProvedor(e.target.value)} />
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        Guardar não liga a ponte nem os envios. O estado “aceite” da API não comprova entrega.
+        Guardar não altera o estado de ativação. Mudar canal ou provedor anula a verificação do canal,
+        que só é feita na implantação administrativa. Nenhum canal está escolhido por omissão. O estado “aceite” da API não comprova entrega.
       </p>
       <Button onClick={gravar} disabled={pending} size="sm">
         {pending ? "A guardar…" : "Guardar configuração"}
