@@ -45,6 +45,15 @@ describe("n8n bridge DB", () => {
     expect(r).toEqual({ c0: "f", c1: "f", c2: "t", c3: null, c4: null, c5: null });
   });
 
+  it("channel_verified nasce false e sms nunca pode estar verificado", async () => {
+    await db.query(`insert into public.n8n_bridge_settings (organization_id) values ('${ORG}')`);
+    const [r] = await db.query("select channel_verified, zaptos_provider_id from public.n8n_bridge_settings");
+    expect(r).toEqual({ c0: "f", c1: null });
+    await expect(
+      db.query("update public.n8n_bridge_settings set channel = 'sms', channel_verified = true"),
+    ).rejects.toThrow();
+  });
+
   it("concorrência real: 12 reservas simultâneas -> exatamente uma", async () => {
     const outs = await Promise.all(Array.from({ length: 12 }, () => db.queryAsync!(claim())));
     const reservados = outs.filter((o) => JSON.parse(o).reserved === true);
