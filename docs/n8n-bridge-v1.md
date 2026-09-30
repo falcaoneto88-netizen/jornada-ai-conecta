@@ -32,9 +32,41 @@ execuções do n8n nas suas Data Tables.
 `POST /api/public/n8n/bridge` — só POST, `Content-Type: application/json`, corpo ≤ 2048 bytes,
 sem CORS, sem redirects, quota 60 pedidos/minuto por organização.
 
-Autenticação: `Authorization: Bearer <N8N_JORNADA_BRIDGE_TOKEN>` (secret novo, ≥ 32 caracteres
-aleatórios, comparação em tempo constante). Sem secret configurado → `503 bridge_unavailable`.
-Sessão de utilizador não substitui este token.
+Autenticação: `Authorization: Bearer <CHAVE>` (contrato HTTP inalterado). Duas fontes, nunca
+ambas válidas ao mesmo tempo:
+
+1. `N8N_JORNADA_BRIDGE_TOKEN` (ambiente, ≥ 32 caracteres) — **tem precedência**. Se existir com
+   tamanho válido, só ele autentica e a criação pela interface fica indisponível. Se existir mas
+   for curto, tudo é recusado (`503`), sem recurso à BD.
+2. Sem token de ambiente: credencial por organização em `public.n8n_bridge_credentials`, criada
+   pelo administrador no cartão (ver “Criação guiada da chave”). A org é resolvida só no servidor
+   (binding abaixo) e a chave tem de pertencer a essa org.
+
+Comparação: SHA-256 de tamanho fixo em tempo constante. Sem fonte configurada, schema em falta ou
+binding indisponível → `503 bridge_unavailable`; chave errada/ausente/de outra org → `401`/`503`.
+`health` autentica mesmo com `bridge_enabled=false`; leituras e envios continuam a exigir
+`bridge_enabled` e os gates de canal/escrita real. Sessão de utilizador não substitui a chave.
+
+### Criação guiada da chave (só administrador)
+
+Integrações → “n8n — Confirmação de consultas” → **Chave de ligação: Por criar/Configurada**.
+“Criar chave para o n8n” abre um diálogo; “Criar chave” é a ação final do utilizador. O servidor
+(`criarChaveN8n`) exige sessão real (`getUser`), papel administrador, organização do perfil igual
+ao binding GHL do servidor, entrada estrita `{confirm:true}` e `Origin` exata de
+`https://jornada-ai-conecta.lovable.app` ou da pré-visualização do projeto (`Sec-Fetch-Site`, se
+enviado, tem de ser `same-origin`). Gera `randomBytes(32)` em hex, grava **só** o SHA-256
+(hex minúsculo) com INSERT simples (PK = organização: criação única; conflito → “já criada”),
+relê o digest para confirmar e só então devolve a chave uma vez. Falha → nenhuma chave devolvida.
+A chave vive só em estado React do diálogo (campo password só de leitura, “Copiar chave” por
+clique, “Já guardei a chave” limpa); nunca storage, URL, cache ou logs; nunca é mostrada de novo.
+Revogação/rotação não implementadas na v1 (exigem SQL administrativo).
+
+Passos para o utilizador: n8n → workflow → nó “GHL Contacto Inicial” → *Connect to Bearer Auth* →
+colar em “Bearer Token” só a chave (sem “Bearer”) → *Save*. A mesma credencial é depois reutilizada
+nos outros 3 nós HTTP. Nenhuma chave deve ser colada no chat.
+
+A prontidão devolve apenas booleanos: `tokenPresente` (ambiente válido ou credencial guardada),
+`podeCriarChave`, `credentialSchemaAvailable` — nunca digest, fingerprint ou chave.
 
 Organização/location vêm apenas do servidor: `GHL_LOCATION_ID` → `ghl_location_bindings` →
 `ghl_connections` (`location_id` igual, `status = 'conectada'`, `write_enabled`). Se
@@ -103,11 +135,18 @@ em `supabase/migrations`; o caminho do ficheiro permanece estável porque os tes
 `n8n_bridge_claim_send`, `n8n_bridge_finish_send` (SECURITY DEFINER, `search_path=''`, só
 `service_role`; RLS ativo sem concessões a anon/authenticated).
 
+### Migração 0014 (pendente)
+
+`sql/pending/0014_n8n_bridge_credentials.sql` — aditiva, **não aplicada**. Cria
+`n8n_bridge_credentials (organization_id PK/FK, key_sha256 CHECK ^[0-9a-f]{64}$, created_by,
+created_at)`, RLS ativo, `REVOKE ALL` de PUBLIC/anon/authenticated, só `service_role`. Até ser
+aplicada, a criação fica indisponível e a autenticação por BD falha fechada.
+
 ## Ativação manual (pendências, por esta ordem)
 
 1. ~~Aplicar a migração.~~ **Feita** (2026-09-30; não repetir).
-2. Adicionar o secret `N8N_JORNADA_BRIDGE_TOKEN` (≥ 32 caracteres aleatórios) em Secrets e o
-   mesmo valor numa credencial **dedicada** do n8n *Generic Auth → Bearer Auth* (`httpBearerAuth`).
+2. Aplicar 0014, fazer deploy e o administrador criar a chave no cartão (alternativa: secret
+   `N8N_JORNADA_BRIDGE_TOKEN`); colar a chave numa credencial **dedicada** do n8n *Generic Auth → Bearer Auth* (`httpBearerAuth`).
    Não reutilizar a credencial *Header Auth* do GHL. — **Pendente** (os nós já usam Bearer Auth,
    mas a credencial não está configurada).
 3. No cartão Integrações → “n8n — Confirmação de consultas”: agenda (`nPXR1Fyp0r3CpaMMGSki`) e
