@@ -135,9 +135,9 @@ em `supabase/migrations`; o caminho do ficheiro permanece estável porque os tes
 `n8n_bridge_claim_send`, `n8n_bridge_finish_send` (SECURITY DEFINER, `search_path=''`, só
 `service_role`; RLS ativo sem concessões a anon/authenticated).
 
-### Migração 0014 (pendente)
+### Migração 0014 (aplicada)
 
-`sql/pending/0014_n8n_bridge_credentials.sql` — aditiva, **não aplicada**. Cria
+`sql/pending/0014_n8n_bridge_credentials.sql` — aditiva, **aplicada em produção a 2026-10-02 (não reaplicar)**. Cria
 `n8n_bridge_credentials (organization_id PK/FK, key_sha256 CHECK ^[0-9a-f]{64}$, created_by,
 created_at)`, RLS ativo, `REVOKE ALL` de PUBLIC/anon/authenticated, só `service_role`. Até ser
 aplicada, a criação fica indisponível e a autenticação por BD falha fechada.
