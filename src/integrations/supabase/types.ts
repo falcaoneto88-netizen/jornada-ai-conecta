@@ -1196,6 +1196,35 @@ export type Database = {
           },
         ]
       }
+      n8n_bridge_credentials: {
+        Row: {
+          created_at: string
+          created_by: string
+          key_sha256: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          key_sha256: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          key_sha256?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_credentials_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       n8n_bridge_rate: {
         Row: {
           hits: number
