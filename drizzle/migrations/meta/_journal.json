@@ -92,6 +92,13 @@
       "when": 1790712676491,
       "tag": "0012_n8n_appointment_events",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790946101066,
+      "tag": "0013_n8n_bridge_credentials",
+      "breakpoints": true
     }
   ]
 }
