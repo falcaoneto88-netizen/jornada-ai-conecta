@@ -1,5 +1,5 @@
 -- n8n bridge: credencial por organização (chave criada pelo administrador no cartão).
--- ESTADO: PENDENTE — NÃO APLICADO. Aditivo; não altera 0013 nem dados existentes.
+-- ESTADO: APLICADO EM PRODUÇÃO a 2026-10-02 (registo drizzle: drizzle/migrations/0013_n8n_bridge_credentials.sql). NÃO REAPLICAR.
 -- Guarda apenas o SHA-256 (hex minúsculo) de uma chave aleatória de 32 bytes gerada no servidor.
 -- Nenhum texto em claro é guardado. Chave primária = organização: criação única e atómica
 -- (INSERT simples; um segundo INSERT falha com 23505; sem upsert/sobrescrita).
