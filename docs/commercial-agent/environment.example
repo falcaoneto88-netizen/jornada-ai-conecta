@@ -1,0 +1,14 @@
+# Documentation only: do not put real values in this tracked file.
+# Configure in Jornada AI provider's secure SERVER environment, never VITE_*.
+COMMERCIAL_AGENT_ENABLED=false
+COMMERCIAL_AGENT_SEND_ENABLED=false
+COMMERCIAL_AGENT_MODEL=gpt-4.1-mini
+COMMERCIAL_AGENT_ENCRYPTION_KEY=
+COMMERCIAL_AGENT_WEBHOOK_SECRET=
+COMMERCIAL_AGENT_WORKER_SECRET=
+OPENAI_API_KEY=
+# Reuse the existing, correctly scoped server integration:
+GHL_PRIVATE_TOKEN=
+GHL_LOCATION_ID=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
