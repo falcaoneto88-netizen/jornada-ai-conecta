@@ -28,7 +28,6 @@ import { useOrganizacao } from "@/lib/organization";
 const navItems = [
   { to: "/", label: "Visão Geral", icon: LayoutDashboard },
   { to: "/caixa-de-entrada", label: "Caixa de Entrada IA", icon: Inbox },
-  { to: "/agente-supervisionado", label: "Agente supervisionado", icon: MessageSquareText },
   { to: "/jornada", label: "Jornada do Cliente", icon: RouteIcon },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/automacoes", label: "Automações", icon: Workflow },

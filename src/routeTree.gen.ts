@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AgendaRouteImport } from './routes/agenda'
-import { Route as AgenteSupervisionadoRouteImport } from './routes/agente-supervisionado'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AutomacoesRouteImport } from './routes/automacoes'
 import { Route as CaixaDeEntradaRouteImport } from './routes/caixa-de-entrada'
@@ -25,8 +24,6 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as ApiVersionRouteImport } from './routes/api/version'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicBioreportEventRouteImport } from './routes/api/public/bioreport-event'
-import { Route as ApiPublicCommercialAgentWebhookRouteImport } from './routes/api/public/commercial-agent-webhook'
-import { Route as ApiPublicCommercialAgentWorkerRouteImport } from './routes/api/public/commercial-agent-worker'
 import { Route as ApiPublicFalcaoLeadRouteImport } from './routes/api/public/falcao-lead'
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
 import { Route as ApiAdNavigatorV1ExchangeRouteImport } from './routes/api/ad-navigator/v1/exchange'
@@ -43,11 +40,6 @@ const IndexRoute = IndexRouteImport.update({
 const AgendaRoute = AgendaRouteImport.update({
   id: '/agenda',
   path: '/agenda',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AgenteSupervisionadoRoute = AgenteSupervisionadoRouteImport.update({
-  id: '/agente-supervisionado',
-  path: '/agente-supervisionado',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -116,18 +108,6 @@ const ApiPublicBioreportEventRoute = ApiPublicBioreportEventRouteImport.update({
   path: '/api/public/bioreport-event',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicCommercialAgentWebhookRoute =
-  ApiPublicCommercialAgentWebhookRouteImport.update({
-    id: '/api/public/commercial-agent-webhook',
-    path: '/api/public/commercial-agent-webhook',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicCommercialAgentWorkerRoute =
-  ApiPublicCommercialAgentWorkerRouteImport.update({
-    id: '/api/public/commercial-agent-worker',
-    path: '/api/public/commercial-agent-worker',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicFalcaoLeadRoute = ApiPublicFalcaoLeadRouteImport.update({
   id: '/api/public/falcao-lead',
   path: '/api/public/falcao-lead',
@@ -170,7 +150,6 @@ const ApiPublicN8nConfirmacaoConsultaRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agenda': typeof AgendaRoute
-  '/agente-supervisionado': typeof AgenteSupervisionadoRoute
   '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
@@ -184,8 +163,6 @@ export interface FileRoutesByFullPath {
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
-  '/api/public/commercial-agent-webhook': typeof ApiPublicCommercialAgentWebhookRoute
-  '/api/public/commercial-agent-worker': typeof ApiPublicCommercialAgentWorkerRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
@@ -197,7 +174,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agenda': typeof AgendaRoute
-  '/agente-supervisionado': typeof AgenteSupervisionadoRoute
   '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
@@ -211,8 +187,6 @@ export interface FileRoutesByTo {
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
-  '/api/public/commercial-agent-webhook': typeof ApiPublicCommercialAgentWebhookRoute
-  '/api/public/commercial-agent-worker': typeof ApiPublicCommercialAgentWorkerRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
@@ -225,7 +199,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agenda': typeof AgendaRoute
-  '/agente-supervisionado': typeof AgenteSupervisionadoRoute
   '/auth': typeof AuthRoute
   '/automacoes': typeof AutomacoesRoute
   '/caixa-de-entrada': typeof CaixaDeEntradaRoute
@@ -239,8 +212,6 @@ export interface FileRoutesById {
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
-  '/api/public/commercial-agent-webhook': typeof ApiPublicCommercialAgentWebhookRoute
-  '/api/public/commercial-agent-worker': typeof ApiPublicCommercialAgentWorkerRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
@@ -254,7 +225,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/agenda'
-    | '/agente-supervisionado'
     | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
@@ -268,8 +238,6 @@ export interface FileRouteTypes {
     | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
-    | '/api/public/commercial-agent-webhook'
-    | '/api/public/commercial-agent-worker'
     | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
     | '/api/ad-navigator/v1/exchange'
@@ -281,7 +249,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/agenda'
-    | '/agente-supervisionado'
     | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
@@ -295,8 +262,6 @@ export interface FileRouteTypes {
     | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
-    | '/api/public/commercial-agent-webhook'
-    | '/api/public/commercial-agent-worker'
     | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
     | '/api/ad-navigator/v1/exchange'
@@ -308,7 +273,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/agenda'
-    | '/agente-supervisionado'
     | '/auth'
     | '/automacoes'
     | '/caixa-de-entrada'
@@ -322,8 +286,6 @@ export interface FileRouteTypes {
     | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
-    | '/api/public/commercial-agent-webhook'
-    | '/api/public/commercial-agent-worker'
     | '/api/public/falcao-lead'
     | '/api/public/ghl-webhook'
     | '/api/ad-navigator/v1/exchange'
@@ -336,7 +298,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgendaRoute: typeof AgendaRoute
-  AgenteSupervisionadoRoute: typeof AgenteSupervisionadoRoute
   AuthRoute: typeof AuthRoute
   AutomacoesRoute: typeof AutomacoesRoute
   CaixaDeEntradaRoute: typeof CaixaDeEntradaRoute
@@ -350,8 +311,6 @@ export interface RootRouteChildren {
   ApiVersionRoute: typeof ApiVersionRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicBioreportEventRoute: typeof ApiPublicBioreportEventRoute
-  ApiPublicCommercialAgentWebhookRoute: typeof ApiPublicCommercialAgentWebhookRoute
-  ApiPublicCommercialAgentWorkerRoute: typeof ApiPublicCommercialAgentWorkerRoute
   ApiPublicFalcaoLeadRoute: typeof ApiPublicFalcaoLeadRoute
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
   ApiAdNavigatorV1ExchangeRoute: typeof ApiAdNavigatorV1ExchangeRoute
@@ -375,13 +334,6 @@ declare module '@tanstack/react-router' {
       path: '/agenda'
       fullPath: '/agenda'
       preLoaderRoute: typeof AgendaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/agente-supervisionado': {
-      id: '/agente-supervisionado'
-      path: '/agente-supervisionado'
-      fullPath: '/agente-supervisionado'
-      preLoaderRoute: typeof AgenteSupervisionadoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -475,20 +427,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicBioreportEventRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/commercial-agent-webhook': {
-      id: '/api/public/commercial-agent-webhook'
-      path: '/api/public/commercial-agent-webhook'
-      fullPath: '/api/public/commercial-agent-webhook'
-      preLoaderRoute: typeof ApiPublicCommercialAgentWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/commercial-agent-worker': {
-      id: '/api/public/commercial-agent-worker'
-      path: '/api/public/commercial-agent-worker'
-      fullPath: '/api/public/commercial-agent-worker'
-      preLoaderRoute: typeof ApiPublicCommercialAgentWorkerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/falcao-lead': {
       id: '/api/public/falcao-lead'
       path: '/api/public/falcao-lead'
@@ -544,7 +482,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgendaRoute: AgendaRoute,
-  AgenteSupervisionadoRoute: AgenteSupervisionadoRoute,
   AuthRoute: AuthRoute,
   AutomacoesRoute: AutomacoesRoute,
   CaixaDeEntradaRoute: CaixaDeEntradaRoute,
@@ -559,8 +496,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiVersionRoute: ApiVersionRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicBioreportEventRoute: ApiPublicBioreportEventRoute,
-  ApiPublicCommercialAgentWebhookRoute: ApiPublicCommercialAgentWebhookRoute,
-  ApiPublicCommercialAgentWorkerRoute: ApiPublicCommercialAgentWorkerRoute,
   ApiPublicFalcaoLeadRoute: ApiPublicFalcaoLeadRoute,
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
   ApiAdNavigatorV1ExchangeRoute: ApiAdNavigatorV1ExchangeRoute,
