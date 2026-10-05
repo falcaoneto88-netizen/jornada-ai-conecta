@@ -682,6 +682,260 @@ export type Database = {
           },
         ]
       }
+      commercial_agent_audit: {
+        Row: {
+          actor_id: string | null
+          code: string
+          created_at: string
+          draft_id: string | null
+          id: number
+          organization_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          code: string
+          created_at?: string
+          draft_id?: string | null
+          id?: never
+          organization_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          code?: string
+          created_at?: string
+          draft_id?: string | null
+          id?: never
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_agent_audit_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_agent_drafts: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          contact_id: string
+          contact_version: number
+          conversation_id: string
+          created_at: string
+          dispatch_id: string | null
+          error_code: string | null
+          event_id: string
+          expires_at: string
+          flags: string[]
+          id: string
+          input_tokens: number
+          location_id: string
+          message_id: string
+          organization_id: string
+          output_tokens: number
+          payload: string
+          policy_hash: string
+          reply_hash: string
+          result_message_id: string | null
+          state: string
+          version: number
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          contact_id: string
+          contact_version: number
+          conversation_id: string
+          created_at?: string
+          dispatch_id?: string | null
+          error_code?: string | null
+          event_id: string
+          expires_at?: string
+          flags?: string[]
+          id?: string
+          input_tokens?: number
+          location_id: string
+          message_id: string
+          organization_id: string
+          output_tokens?: number
+          payload: string
+          policy_hash: string
+          reply_hash: string
+          result_message_id?: string | null
+          state?: string
+          version?: number
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          contact_id?: string
+          contact_version?: number
+          conversation_id?: string
+          created_at?: string
+          dispatch_id?: string | null
+          error_code?: string | null
+          event_id?: string
+          expires_at?: string
+          flags?: string[]
+          id?: string
+          input_tokens?: number
+          location_id?: string
+          message_id?: string
+          organization_id?: string
+          output_tokens?: number
+          payload?: string
+          policy_hash?: string
+          reply_hash?: string
+          result_message_id?: string | null
+          state?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_agent_drafts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "commercial_agent_inbox"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commercial_agent_drafts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_agent_inbox: {
+        Row: {
+          attempts: number
+          contact_id: string
+          contact_version: number
+          created_at: string
+          error_code: string | null
+          event: Json
+          event_type: string
+          id: string
+          lease: string | null
+          lease_until: string | null
+          message_id: string
+          organization_id: string
+          retry_at: string
+          state: string
+        }
+        Insert: {
+          attempts?: number
+          contact_id: string
+          contact_version: number
+          created_at?: string
+          error_code?: string | null
+          event: Json
+          event_type: string
+          id?: string
+          lease?: string | null
+          lease_until?: string | null
+          message_id: string
+          organization_id: string
+          retry_at?: string
+          state?: string
+        }
+        Update: {
+          attempts?: number
+          contact_id?: string
+          contact_version?: number
+          created_at?: string
+          error_code?: string | null
+          event?: Json
+          event_type?: string
+          id?: string
+          lease?: string | null
+          lease_until?: string | null
+          message_id?: string
+          organization_id?: string
+          retry_at?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_agent_inbox_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_agent_sessions: {
+        Row: {
+          contact_id: string
+          opt_out: boolean
+          organization_id: string
+          paused: boolean
+          version: number
+        }
+        Insert: {
+          contact_id: string
+          opt_out?: boolean
+          organization_id: string
+          paused?: boolean
+          version?: number
+        }
+        Update: {
+          contact_id?: string
+          opt_out?: boolean
+          organization_id?: string
+          paused?: boolean
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_agent_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_agent_settings: {
+        Row: {
+          allowed_channels: string[]
+          allowed_contacts: string[]
+          location_id: string
+          mode: string
+          monthly_draft_limit: number
+          organization_id: string
+        }
+        Insert: {
+          allowed_channels?: string[]
+          allowed_contacts?: string[]
+          location_id: string
+          mode?: string
+          monthly_draft_limit?: number
+          organization_id: string
+        }
+        Update: {
+          allowed_channels?: string[]
+          allowed_contacts?: string[]
+          location_id?: string
+          mode?: string
+          monthly_draft_limit?: number
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_agent_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           created_at: string
@@ -1994,6 +2248,10 @@ export type Database = {
       claim_site_lead_welcome: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_welcome_v2: {
         Args: { _source: string; _submission: string }
+        Returns: Json
+      }
+      commercial_agent_command: {
+        Args: { _actor?: string; _data?: Json; _op: string; _org: string }
         Returns: Json
       }
       configure_bioreport_integration: {
