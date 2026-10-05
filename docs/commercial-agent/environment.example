@@ -1,0 +1,21 @@
+# Documentation only: do not put real values in this tracked file.
+# Configure in Jornada AI provider's secure SERVER environment, never VITE_*.
+COMMERCIAL_AGENT_ENABLED=false
+COMMERCIAL_AGENT_SEND_ENABLED=false
+# Existing direct integration (default). Choose the provider explicitly; no automatic fallback.
+COMMERCIAL_AGENT_AI_PROVIDER=openai
+COMMERCIAL_AGENT_MODEL=gpt-4.1-mini
+COMMERCIAL_AGENT_ENCRYPTION_KEY=
+COMMERCIAL_AGENT_WEBHOOK_SECRET=
+COMMERCIAL_AGENT_WORKER_SECRET=
+OPENAI_API_KEY=
+# To reuse the platform credential already used by Jev instead:
+# COMMERCIAL_AGENT_AI_PROVIDER=lovable
+# COMMERCIAL_AGENT_MODEL=openai/gpt-5.4-mini
+# LOVABLE_API_KEY is managed by Lovable and read only on the server.
+# Do not copy it here or into OPENAI_API_KEY. No separate OpenAI key is needed in this mode.
+# Reuse the existing, correctly scoped server integration:
+GHL_PRIVATE_TOKEN=
+GHL_LOCATION_ID=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
