@@ -1450,6 +1450,63 @@ export type Database = {
           },
         ]
       }
+      n8n_bridge_confirmations: {
+        Row: {
+          error_code: string | null
+          finished_at: string | null
+          ghl_appointment_id: string
+          id: string
+          inbound_message_id: string
+          organization_id: string
+          reply_at: string
+          request_send_id: string
+          reserved_at: string
+          start_time: string
+          state: string
+        }
+        Insert: {
+          error_code?: string | null
+          finished_at?: string | null
+          ghl_appointment_id: string
+          id?: string
+          inbound_message_id: string
+          organization_id: string
+          reply_at: string
+          request_send_id: string
+          reserved_at?: string
+          start_time: string
+          state?: string
+        }
+        Update: {
+          error_code?: string | null
+          finished_at?: string | null
+          ghl_appointment_id?: string
+          id?: string
+          inbound_message_id?: string
+          organization_id?: string
+          reply_at?: string
+          request_send_id?: string
+          reserved_at?: string
+          start_time?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_confirmations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "n8n_bridge_confirmations_request_send_id_fkey"
+            columns: ["request_send_id"]
+            isOneToOne: false
+            referencedRelation: "n8n_bridge_sends"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       n8n_bridge_credentials: {
         Row: {
           created_at: string
@@ -1507,6 +1564,7 @@ export type Database = {
       }
       n8n_bridge_sends: {
         Row: {
+          contact_id: string | null
           error_code: string | null
           finished_at: string | null
           ghl_appointment_id: string
@@ -1519,6 +1577,7 @@ export type Database = {
           state: string
         }
         Insert: {
+          contact_id?: string | null
           error_code?: string | null
           finished_at?: string | null
           ghl_appointment_id: string
@@ -1531,6 +1590,7 @@ export type Database = {
           state?: string
         }
         Update: {
+          contact_id?: string | null
           error_code?: string | null
           finished_at?: string | null
           ghl_appointment_id?: string
@@ -2476,13 +2536,41 @@ export type Database = {
         }
         Returns: Json
       }
-      n8n_bridge_claim_send: {
+      n8n_bridge_claim_confirmation: {
         Args: {
-          _appointment: string
-          _kind: string
+          _inbound: string
           _org: string
-          _start: string
+          _reply_at: string
+          _request: string
         }
+        Returns: Json
+      }
+      n8n_bridge_claim_send:
+        | {
+            Args: {
+              _appointment: string
+              _kind: string
+              _org: string
+              _start: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              _appointment: string
+              _contact: string
+              _kind: string
+              _org: string
+              _start: string
+            }
+            Returns: Json
+          }
+      n8n_bridge_confirmation_requests: {
+        Args: { _contact: string; _org: string; _reply_at: string }
+        Returns: Json
+      }
+      n8n_bridge_finish_confirmation: {
+        Args: { _error: string; _id: string; _org: string; _state: string }
         Returns: Json
       }
       n8n_bridge_finish_send: {
