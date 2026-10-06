@@ -8,7 +8,7 @@ import { createFileRoute } from "@tanstack/react-router";
  * de fora, qual a versão publicada. `release` é o identificador do ambiente,
  * quando existe.
  */
-const BUILD = "jornada-integrations-20260926.1";
+const BUILD = "jornada-n8n-confirmation-20261006.1";
 
 export const Route = createFileRoute("/api/version")({
   server: {
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/version")({
             ok: true,
             service: "jornada-ai",
             build: BUILD,
-            api: { "ad-navigator": 1 },
+            api: { "ad-navigator": 1, "n8n-bridge": 3 },
             release:
               typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release)
                 ? release
