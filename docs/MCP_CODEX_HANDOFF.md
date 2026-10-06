@@ -157,3 +157,144 @@ Este complemento prevalece sobre as pendências históricas de publicação acim
 - Navegador recuperado: interface publicada e resultados acima observados. Não há bloqueio permanente de navegador nesta conclusão.
 
 **Estados finais:** implementado e publicado: cartão e diagnóstico; testado localmente: contratos, isolamento, replay, concorrência e persistência em bancos descartáveis; verificado de ponta a ponta: leitura GHL; ainda não verificados de ponta a ponta: pareamento Ad Navigator, evento BioReport e descoberta completa do catálogo OAuth MCP.
+
+## Jornada de agendamento GHL → n8n → Jornada — 05/10/2026
+
+Este complemento registra a revisão atual da automação. As verificações históricas acima permanecem preservadas; não comprovam a publicação do novo backend descrito abaixo.
+
+### Revisões e limites da publicação
+
+- Projeto original: `36345211-2616-42f7-bb9e-e78a9d00ca22` (Jornada AI).
+- Base de código conferida: `9e35e0ca281e1adcc333af16e9f9f3cd8bdfde10`; revisão preparada na branch local `codex/n8n-journey-20261005`. Sem push ou publicação deste backend. O SHA da revisão local é consultável no histórico dessa branch.
+- **Novo backend: implementado e testado localmente; NÃO publicado.** Nenhum SHA publicado correspondente a este patch foi identificado. A revisão de origem e `/api/version` não devem ser tratados como prova de execução deste código novo.
+- **Migração 0014: tentativa BLOQUEADA ANTES DA EXECUÇÃO pela revisão automática de aprovação**, que apontou a proibição inicial do usuário de alterar o banco. A autorização específica assíncrona para `drizzle/migrations/0014_n8n_bridge_confirmations.sql` estava pendente no momento deste registro. **O banco conectado permaneceu inalterado por essa tentativa.** Não confundir os testes SQL em banco descartável com aplicação na produção.
+- No n8n, cinco correções de código foram publicadas **em simulação**, na versão `639c068c-aeb8-4f95-8d64-895d5646609f`, identificada no link de histórico da execução 35. Isso não publica o backend Jornada nem conclui o tratamento de respostas.
+
+### Correções implementadas no backend local
+
+- `src/lib/n8n-bridge.core.ts`: `message.send` consulta o compromisso no GHL e bloqueia `req24`/`req12` se já estiver confirmado, antes da reserva/envio. O agradecimento `kind=confirm` exige status GHL confirmado e evidência durável de confirmação para a mesma organização, consulta e horário. `appointment.get` preserva `dateUpdated` válido da fonte, sem inventar esse horário.
+- `src/lib/n8n-bridge-confirmation.ts` e `src/lib/n8n-bridge.server.ts`: operação adicional `appointment.confirm` pela rota/auth existentes. O servidor deriva o escopo; reconsulta contato, compromisso, mensagem recebida e solicitação enviada. Exige SIM/CONFIRMO inequívoco, uma única consulta candidata e histórico completo da conversa, recusando resposta superada ou intervenção intermediária. Repete as verificações perto do PUT, usa `toNotify:false` e só informa confirmação após releitura do GHL e persistência. A operação não envia mensagem.
+- `drizzle/migrations/0014_n8n_bridge_confirmations.sql`: vínculo de contato nas novas reservas de envio, busca de solicitações por organização/contato e reserva durável única por resposta e por consulta/horário. Mantém RLS e acesso exclusivo de serviço. A assinatura anterior de reserva continua disponível; envios antigos sem vínculo não se tornam evidência por inferência.
+- Timeout/resultado incerto permanece `unknown`, sem repetição automática da escrita. DND, autenticação, vínculos de location e configuração do canal não foram relaxados.
+- Contrato e limites: `docs/n8n-confirmation-v1.md`. Mensagens originadas nos workflows nativos do GHL não possuem, por si, registro na bridge e não autorizam a nova confirmação. O GHL não oferece comparação e troca por versão neste contrato; uma alteração externa após a última leitura continua sendo risco residual, mesmo com releitura posterior.
+
+### Evidências de testes
+
+| Verificação | Resultado e alcance |
+|---|---|
+| Revisão independente local — `n8n-bridge.test.ts`, `n8n-bridge-confirmation.test.ts`, `n8n-bridge-confirmation.adapter.test.ts` | **124/124** aprovados após a guarda adicional do agradecimento, com Vitest **5.0.0** e dependências do checkout atual. Inclui guardas de confirmação, vínculo/ambiguidade, SIM superado, intervenção humana, paginação, timeout, duplicação e preservação dos tipos de mensagem elegíveis. |
+| PostgreSQL temporário — `n8n-bridge-confirmation.db.test.ts` | **9/9** aprovados, incluindo 12 claims concorrentes, isolamento, unicidade, resposta reutilizada e escopo por contato. Execução local autorizada para loopback; nenhuma URL/credencial de produção utilizada. |
+| Gates locais finais | **136 testes focados em cinco arquivos** aprovados em uma execução após a guarda adicional, com dependências instaladas pelo `bun.lock` congelado. TypeScript (`tsc --noEmit --pretty false`) e `npm run build` aprovados. Na execução anterior da suíte completa, **612 testes passaram**; **146 não executados** em nove suítes antigas pela ausência de `initdb` no PATH. A alteração posterior recebeu a regressão focada acima. Isso não invalida os nove testes PostgreSQL dirigidos, executados com binário temporário e banco isolado. |
+| Higiene do patch | `git diff --check` e lint dos arquivos alterados aprovados. Lint global apresenta **2834 erros e 10 avisos em 82 arquivos preexistentes**, sem interseção com os arquivos alterados. O gate global permanece com essa falha registrada. |
+| Encadeamento n8n local | **70/70 testes** em `outputs/n8n-confirmation-wiring-2026-10-05/wiring.test.cjs`, na raiz desta tarefa. Sete campos JS, uma consulta e dois nós adicionais preparados; ainda não aplicados ao n8n. Simulação e resultados incertos não produzem confirmação persistida. O reuso histórico exige novas leituras autenticadas e jamais repete reserva/PUT. |
+| Regressões no n8n publicado — execução **33** | **23 cenários remotos** aprovados em simulação, conforme observação da execução principal. Não comprovam envio real, resposta real ou aplicação do backend novo. |
+| Snapshot autenticado no n8n — execução **35** | Sucesso em **4,799 s**; decisão `recovered_missing_booking`; resultados `[simulated]`. Evento `SIM:workflow-snapshot:35:Xa9VzcQsqi45xmasvzFG`, linha **14**, persistido em `2026-10-05T18:05:44.132Z`. Comprova recuperação/persistência simulada, sem comprovar entrega. |
+
+### Estado conectado observado e configuração sem segredos
+
+- Organização esperada conferida: `f07ab3be-7419-4779-a901-ef71c5fc27f0`; location GHL `ok2UHC2QMZsd8UHsAgEa`; calendário `nPXR1Fyp0r3CpaMMGSki`. Esses IDs servem à conferência; o escopo do servidor continua derivado dos vínculos autenticados.
+- Bridge conectada: `simulation=true`, `live_send_enabled=false`, `channel_verified=false`, `fallback_user_id` ausente. Nenhuma dessas barreiras foi alterada para produzir um teste verde. Configuração/autenticação por `N8N_JORNADA_BRIDGE_TOKEN` ou credencial de organização, `GHL_PRIVATE_TOKEN` e `GHL_LOCATION_ID`; nenhum valor de segredo é registrado aqui.
+- Workflow GHL original `c36e62f5-e92b-4724-bc7c-1b9ae292b9ff`: observado em **rascunho**, switch de publicação **0**. É uma leitura atual, não uma afirmação de que esta revisão o desativou.
+- Encaminhador GHL `4e94283f-c2dc-463c-a52d-8513ace3c1cc`: observado **publicado**, switch **1**, com gatilho de compromisso. **Ainda não encaminha respostas recebidas** por esse gatilho.
+- O novo encadeamento no n8n para `appointment.confirm` → persistência confirmada → agradecimento está **preparado e testado localmente**, em `outputs/n8n-confirmation-wiring-2026-10-05/` na raiz da tarefa. Manifesto, diff e instruções identificam sete campos JS, uma consulta e dois nós adicionais que devem ser aplicados juntos. Não foi aplicado remotamente e não conclui o recebimento das respostas. Não declarar concluída a jornada SIM → confirmação no GHL → agradecimento antes de validar esse encadeamento publicado.
+- As notas de operação do canvas foram atualizadas e a interface voltou a mostrar **Published**, na publicação denominada `Estado verificado e pendencias de ativacao 2026-10-05` (prefixo de revisão `35c15f15`). Essa atualização posterior apenas documenta o estado; a execução 35 comprova a versão de código `639c068c-aeb8-4f95-8d64-895d5646609f`, não um novo teste ponta a ponta.
+- O seletor de variáveis do webhook GHL ofereceu `Message Body`, `Message Subject` e `Message Attachments`, sem ID de mensagem nesse grupo. Não foi presumida uma variável de ID nem publicado encaminhamento de resposta sem comprovação. A coleta do ID real continua dependência.
+- A revisão independente final encontrou e fechou dois defeitos adicionais **no patch local**: histórico antigo podia restaurar `confirmed` local após remarcação; agradecimento podia continuar após nova resposta NÃO/REMARCAR. O wiring agora exige releitura fresca antes de reutilizar confirmação, e a guarda do servidor revalida mensagem/histórico ligados ao registro confirmado antes da reserva e novamente antes do POST do agradecimento, sem repetir o PUT de confirmação. Isso não elimina a janela residual sem CAS nem substitui validação publicada.
+- A homologação precisa caracterizar eventual atividade automática que o próprio PUT registre no histórico: a guarda de resposta mais recente a bloqueia conservadoramente até essa evidência ser entendida. Não remover a guarda apenas para tornar o teste verde.
+- O workflow de diagnóstico foi restaurado e conferido com a URL da bridge Jornada, operação `health` e referência Bearer salva. As execuções citadas não fornecem `messageId` nem prova de envio real.
+
+### URLs e pontos de conferência
+
+| URL | Evidência/limite registrado |
+|---|---|
+| https://lovable.dev/projects/36345211-2616-42f7-bb9e-e78a9d00ca22 | Projeto original e revisão de origem conferidos; novo patch ainda local. |
+| https://jornada-ai-conecta.lovable.app/api/version | Endpoint de revisão; não identifica publicação deste patch local. |
+| https://jornada-ai-conecta.lovable.app/api/public/n8n/bridge | Rota existente reutilizada. O contrato novo não foi validado publicado. |
+| https://jfalcaoneto.app.n8n.cloud/workflow/WrDn82MwKBcuM73G | Workflow Falcão — Agenda e Confirmação V2; cinco correções publicadas em simulação. |
+| https://jfalcaoneto.app.n8n.cloud/workflow/WrDn82MwKBcuM73G/history/639c068c-aeb8-4f95-8d64-895d5646609f | Revisão publicada identificada pela execução 35. |
+| https://jfalcaoneto.app.n8n.cloud/workflow/WrDn82MwKBcuM73G/executions/33 | Regressão remota de 23 cenários em simulação. |
+| https://jfalcaoneto.app.n8n.cloud/workflow/WrDn82MwKBcuM73G/executions/35 | Snapshot autenticado com recuperação e persistência simuladas. |
+| https://jfalcaoneto.app.n8n.cloud/webhook/falcao-agenda-v2-eventos | Destino POST do encaminhador; autenticação preservada. Não chamar como teste irrestrito de escrita. |
+| https://jfalcaoneto.app.n8n.cloud/workflow/AmW70D885JzG1TC9 | Diagnóstico restaurado para `health` da bridge com referência Bearer salva. |
+| https://app.gohighlevel.com/v2/location/ok2UHC2QMZsd8UHsAgEa/automation/workflow/c36e62f5-e92b-4724-bc7c-1b9ae292b9ff | Workflow original observado em rascunho. |
+| https://app.gohighlevel.com/v2/location/ok2UHC2QMZsd8UHsAgEa/automation/workflow/4e94283f-c2dc-463c-a52d-8513ace3c1cc/advanced-canvas | Encaminhador publicado, somente gatilho de compromisso. |
+
+### Cobertura da jornada e ativação
+
+| Etapa | Comprovação atual | O que ainda impede conclusão operacional |
+|---|---|---|
+| Agendamento → entrada no n8n | Webhook autenticado e leitura GHL; execução 35 recuperou e persistiu a consulta em simulação. | Não comprova envio da primeira mensagem. |
+| Pedido de confirmação e lembretes | Regras sintéticas e guarda contra solicitação após confirmação. | Canal/preferências e envio real ainda bloqueados; relógio/esperas não validados em execução real completa. |
+| Resposta SIM/CONFIRMO | Contrato autenticado e persistência implementados/testados localmente. | Migração/backend, encadeamento e recebimento do ID real ainda não implantados. |
+| Agradecimento | Patch exige confirmação GHL e registro durável; simulação não conta como confirmado. | Falta publicação e entrega real verificada por ID, sem resposta mais recente que supere o SIM. |
+| NÃO/REMARCAR/ambígua/sem resposta | Regras encaminham para atendimento humano e testes cobrem os ramos. | Responsável padrão ausente; notificação e atendimento real não comprovados. |
+| Cancelamento/remarcação e reentrega | Correções preservam geração/horário e marcadores de envio; rejeitam evento autenticado antigo. | Estado completo do workflow ainda não possui prova de concorrência/serialização. |
+
+Ordem de implantação: aprovação específica da migração → aplicação transacional e conferência de RLS/funções → backend com revisão identificável em `/api/version` → encadeamento n8n em simulação → encaminhamento autenticado das respostas → validação de canal, responsável e concorrência → teste real restrito ao contato autorizado. Não liberar flags por inferência a partir de testes simulados. Não reativar o workflow nativo em paralelo sem conferir sobreposição de mensagens.
+
+**Pendências para concluir:** autorização específica da migração bloqueada, aplicação da migração antes do backend, publicação verificável, encaminhamento autenticado do ID da resposta e aplicação do encadeamento n8n, comprovação do canal/preferências exigidas, tratamento da concorrência do estado do workflow, definição do responsável por atendimento humano e teste controlado de ponta a ponta. Até essas evidências existirem, o estado é **publicado parcialmente em simulação; confirmação completa ainda não verificada de ponta a ponta**.
+
+
+## Integração local da revisão de confirmações — 06/10/2026
+
+- Base atualizada do projeto original: `08be9f2c77d4539780ab7f13aa012e3d13497223` (`origin/main` no início desta revisão).
+- Patch original `05ac418` aplicado por cherry-pick, sem conflitos, em `codex/n8n-release-20261006`, produzindo `d4b1c68`. Worktree: `work/n8n-release-2026-10-06`. O checkout de 05/10 e suas alterações pendentes no handoff foram preservados.
+- A restauração comercial da base atual não foi substituída. O delta de implementação permanece restrito à ponte n8n, migração de confirmações, testes, marcador de versão e documentação.
+- **Migração 0014 aplicada em 06/10/2026 pela tarefa principal**, após autorização explícita do usuário. Evidência de pós-aplicação informada pela tarefa principal: RLS ativo; sem concessões de acesso público/autenticado; funções executáveis por `service_role`; credencial existente preservada; flags de ativação inalteradas. Este estado supera a pendência de autorização/aplicação registrada em 05/10 acima.
+- A integração deste worktree não executou SQL remoto, push, publicação, mensagens ou alterações de workflows. A versão publicada do backend continuava anterior, conforme leitura da tarefa principal. Não declarar o fluxo como verificado de ponta a ponta a partir da aplicação da migração.
+- `package.json`/`bun.lock` da base nova exigem `@lovable.dev/vite-tanstack-config` 2.25.2 (antes 2.23.1); as dependências foram instaladas para o lock atual, sem reutilizar a árvore incompatível do checkout anterior.
+
+Gates executados nesta integração, na revisão `d4b1c68` e antes de extensões posteriores:
+
+| Verificação local | Evidência de 06/10/2026 |
+|---|---|
+| Suítes focadas da ponte, confirmação, adaptadores e escopo | **136 testes / 5 arquivos aprovados em uma execução** |
+| Migração/concorrência em PostgreSQL descartável | **9 testes aprovados**, usando o runtime existente; nenhuma conexão com produção |
+| TypeScript | `tsc --noEmit --pretty false`, **exit 0** |
+| Compilação | `npm run build`, **exit 0**, com `@lovable.dev/vite-tanstack-config` 2.25.2 |
+| Lint dos arquivos alterados | **exit 0**, incluindo `/api/version` |
+| Revisão independente do cherry-pick | Delta restrito aos 13 arquivos esperados; arquivos de restauração comercial da base preservados; nenhum conflito ou regressão adicional identificado na leitura |
+| Publicação e teste completo | **Não executados por esta integração local**; dependem da implantação e da verificação publicada coordenadas pela tarefa principal |
+
+O checkout anterior `work/n8n-journey-2026-10-05` continua na revisão `05ac418` com sua alteração pendente em `docs/MCP_CODEX_HANDOFF.md`, preservada. Uma extensão posterior, se integrada, exige seus próprios gates e registro; os resultados acima não a validam automaticamente.
+
+
+### Correção da interpretação de DND — 06/10/2026
+
+- Causa comprovada: a ponte exigia entradas `SMS` e `WhatsApp` explicitamente `inactive`, interpretando ausência como bloqueio/ausência de permissão. A tarefa principal reabriu o contato exato Felipe Santos (`2jaCqBm8bWNTdZ6yZqtF`): UI mostrou DND global, mensagens de texto e entrada desligados. A leitura antiga da ponte, via `contacts/search`, devolveu `dnd=false` e `dndSettings={}`; **essa projeção não representa prova completa das preferências atuais**.
+- Uma nova leitura individual autenticada em 06/10, `GET /contacts/2jaCqBm8bWNTdZ6yZqtF`, devolveu global `false`, SMS/Call/Email `inactive` e WhatsApp ausente (`dateUpdated=2026-10-05T16:36:36.465Z`), conforme evidência fornecida pela tarefa principal. A divergência é entre projeções de endpoints, não evidência de alteração de preferência. Nenhuma preferência foi alterada por este patch. O adapter passa a usar exclusivamente [GET Contact](https://marketplace.gohighlevel.com/docs/ghl/contacts/get-contact/index.html), preservando as verificações de ID/location e recusando dados incompletos/malformados; não recorre ao search após falha.
+- A [documentação oficial do GHL](https://marketplace.gohighlevel.com/docs/2021-07-28/webhook/ContactDndUpdate/index.html), consultada nesta revisão, define global `dnd` ausente como `false` em todas as suas APIs. A interpretação de WhatsApp ausente é sustentada pela comparação UI/leitura individual do contato acima, sem transformar ausência em opt-in. Um mapa vazio continua aceito estruturalmente, mas uma projeção de busca vazia não é usada para inferir o estado completo do contato.
+- Correção local: `parseContacto` aceita global omitido como `false`, mantém `{}` sem fabricar chaves, reconhece `active|inactive|permanent` e recusa estrutura/tipos desconhecidos. `dndPermite` representa somente ausência de bloqueio configurado; global `true` ou bloqueio explícito SMS/WhatsApp continua impedindo a rota Zaptos. Um bloqueio válido de outro canal não é transferido para SMS. Configuração malformada, inclusive canal malformado, permanece bloqueada.
+- A correção não cria `smsConsent`, `optIn` ou outra evidência de autorização. O telefone/identidade/organização/location/calendário/horário, flags de simulação e envio, validação do provedor, reserva durável e escopo do teste autorizado continuam controles separados. Nenhum CRM, credencial, flag ou configuração real foi alterado por esse patch. O código de erro legado `dnd_not_confirmed` permanece para bloqueios explícitos, preservando compatibilidade do cliente.
+- Regressão adicionada em `n8n-bridge-dnd.test.ts`: ausência de global/canal, mapa vazio, bloqueio global/active/permanent, dados malformados, isolamento e impossibilidade de transformar ausência de DND em envio real com flags desligadas.
+
+### Descoberta de resposta e gates integrados — 06/10/2026
+
+- Acrescentado `appointment.reply.resolve`, somente leitura, para resolver o ID real da resposta pelo contato autenticado e pelo histórico GHL. O Custom Webhook desperta a leitura, sem fornecer texto/intent/ID de mensagem como prova. Contrato, limites e recusas em `docs/n8n-reply-resolve-v1.md`.
+- A operação reutiliza o ledger de pedidos aceitos e as guardas de histórico da confirmação; consultas/conversas múltiplas, paginação incompleta, resposta superada ou intervenção impedem a associação automática. Não reserva, confirma consulta nem envia mensagem. Não adiciona migração.
+- Marcador de versão preparado: `jornada-n8n-confirmation-20261006.1`, `api.n8n-bridge=3`. Esse marcador no código local não comprova publicação.
+- **Gate final combinado:** 241 testes em 7 arquivos aprovados em uma execução, abrangendo ponte, confirmação, adapters, escopo, 76 casos do resolver e 29 casos de DND. `tsc --noEmit --pretty false`, `npm run build` e ESLint dos 14 arquivos de código/teste da alteração terminaram com **exit 0**. Os 9 testes PostgreSQL isolados já aprovados na integração de 06/10 continuam aplicáveis à mesma migração, que não mudou nesta extensão; não são somados à execução Vitest de 241.
+- Esta revisão local permanece **implementada e testada localmente**. A ligação GHL/n8n, publicação identificável, primeira solicitação real aceita no ledger, recebimento de resposta e entrega de agradecimento ainda exigem evidência publicada coordenada pela tarefa principal. Ausência de DND não comprova autorização nem entrega.
+
+Reprodução do gate integrado, após instalar as dependências do `bun.lock`:
+
+```sh
+./node_modules/.bin/vitest run src/lib/n8n-bridge-confirmation.test.ts src/lib/n8n-bridge-confirmation.adapter.test.ts src/lib/n8n-bridge.test.ts src/lib/n8n-bridge.adapter.test.ts src/lib/n8n-bridge.escopo.test.ts src/lib/n8n-bridge-reply-resolve.test.ts src/lib/n8n-bridge-dnd.test.ts
+./node_modules/.bin/tsc --noEmit --pretty false
+npm run build
+```
+
+Para o teste de concorrência/PostgreSQL, usar o runtime existente indicado por `BIOREPORT_TEST_RUNTIME`, conforme `docs/n8n-confirmation-v1.md`; as dependências auxiliares `embedded-postgres`/`pg` não pertencem ao pacote padrão do app. Não substituir o teste de banco por um resultado unitário ou usar produção para reproduzi-lo.
+
+### Guarda de lembretes e leitura individual — extensão local de 06/10/2026
+
+- `req24`/`req12` agora exigem evidência de envios anteriores aceitos no ledger, histórico completo desde o aviso `booking` e elegibilidade atual. A checagem é repetida após a reserva: resposta, intervenção humana, DND novo, confirmação, cancelamento ou remarcação observados recusam o POST. Detalhes e limites em `docs/n8n-reminder-guards-2026-10-06.md`.
+- A leitura de preferências do contato passou de `POST contacts/search` para `GET contacts/:contactId`, devido à diferença de projeção comprovada pela tarefa principal acima. Testes do adapter verificam que bloqueios retornados pelo GET são preservados, identidade/location continuam obrigatórias e falhas não usam a busca como fallback.
+- **Gate integrado mais recente:** 290 testes aprovados em 8 arquivos, numa única execução após as duas correções; TypeScript, build e lint dos 16 arquivos de código/teste da alteração passaram. Substitui a contagem de 241 como gate do código final desta extensão. SQL, migração e flags permaneceram inalterados; os 9 testes isolados de banco são evidência separada da mesma migração.
+- Nenhuma publicação, envio real ou mudança em CRM/workflows foi executada por esta extensão local. O pacote de transferência contém os arquivos e hashes exatos; deve recusar sobreposição com edições remotas divergentes. Sua aplicação não é um passo de execução de SQL nem de ativação.
+
+```sh
+./node_modules/.bin/vitest run src/lib/n8n-bridge-confirmation.test.ts src/lib/n8n-bridge-confirmation.adapter.test.ts src/lib/n8n-bridge.test.ts src/lib/n8n-bridge.adapter.test.ts src/lib/n8n-bridge.escopo.test.ts src/lib/n8n-bridge-reply-resolve.test.ts src/lib/n8n-bridge-dnd.test.ts src/lib/n8n-bridge-reminders.test.ts
+./node_modules/.bin/tsc --noEmit --pretty false
+npm run build
+```

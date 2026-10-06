@@ -98,8 +98,15 @@ Erros (`{error}`): 401 `unauthorized`; 403 `bridge_disabled` / `live_send_disabl
 
 1. Reconsulta a consulta no GHL: mesma location, agenda configurada, mesmo contacto, `startTime`
    igual ao esperado (normalizado ao segundo), estado `confirmed|new|booked`, futura.
-2. Reconsulta o contacto por pesquisa de ID exato (o GET simples omite DND). DND global `false` e
-   canais `SMS` e `WhatsApp` presentes e `inactive`. Ausência nunca é consentimento.
+2. Reconsulta o contacto por `GET /contacts/:contactId`, validando ID e location no resultado.
+   A projeção de `contacts/search` pode omitir preferências por canal e não é usada como
+   substituta nem fallback dessa leitura. Atualização de 06/10/2026: a API GHL define
+   DND global omitido como `false`; valores globais de outro tipo são recusados. `dndSettings`
+   deve ser um objeto válido. Uma chave de canal ausente nesse objeto significa ausência de
+   bloqueio configurado, sem criar entrada `inactive` e sem representar opt-in. DND global
+   `true`, ou `active`/`permanent` explícito em SMS ou WhatsApp para a rota Zaptos, bloqueia.
+   Dados malformados bloqueiam. A autorização de teste/envio e as flags de ativação continuam
+   separadas. Fonte: [contrato oficial GHL](https://marketplace.gohighlevel.com/docs/2021-07-28/webhook/ContactDndUpdate/index.html).
 3. Canal (nenhum escolhido por omissão; nada é ativado automaticamente):
    - `sms` (operadora): **bloqueado na v1** → `409 sms_route_not_configured`, também em simulação.
      O tipo `SMS` desta conta sai pelo provedor ZaptosWPP; usá-lo como "SMS" seria enviar WhatsApp.

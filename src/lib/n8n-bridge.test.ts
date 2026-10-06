@@ -54,10 +54,93 @@ function eventoRaw(extra: Record<string, unknown> = {}) {
       contactId: "contact01",
       startTime: INICIO,
       endTime: "2026-10-02T11:00:00.000Z",
-      appointmentStatus: "confirmed",
+      appointmentStatus: "new",
       notes: "livre",
       ...extra,
     },
+  };
+}
+
+function acknowledgementEvidence(): NonNullable<DepsBridge["confirmacao"]> {
+  const inbound = {
+    id: "reply001",
+    locationId: LOC,
+    contactId: "contact01",
+    conversationId: "conversation01",
+    dateAdded: "2026-10-01T08:58:00Z",
+    body: "SIM",
+    direction: "inbound",
+    messageType: "TYPE_SMS",
+    contentType: "text/plain",
+  };
+  const outbound = {
+    ...inbound,
+    id: "requestmsg01",
+    dateAdded: "2026-10-01T08:56:00Z",
+    body: "Responda SIM ou NAO",
+    direction: "outbound",
+  };
+  return {
+    confirmedReply: async () => ({
+      ok: true,
+      data: { requestId: "request01", inboundMessageId: inbound.id, replyAt: inbound.dateAdded },
+    }),
+    requests: async () => ({
+      ok: true,
+      data: [
+        {
+          id: "request01",
+          appointmentId: "appt0001",
+          startTime: INICIO,
+          messageId: outbound.id,
+          acceptedAt: "2026-10-01T08:57:00Z",
+        },
+      ],
+    }),
+    message: async (_loc, id) => ({ ok: true, data: id === inbound.id ? inbound : outbound }),
+    conversationMessages: async () => ({
+      ok: true,
+      data: { messages: { nextPage: false, messages: [inbound, outbound] } },
+    }),
+    claim: async () => {
+      throw new Error("ack must not claim appointment confirmation");
+    },
+    finish: async () => false,
+    confirm: async () => {
+      throw new Error("ack must not PUT appointment");
+    },
+  };
+}
+
+function reminderEvidence(): NonNullable<DepsBridge["lembretes"]> {
+  const messages = ["booking", "req24"].map((kind, index) => ({
+    id: `reminder${index}`,
+    locationId: LOC,
+    contactId: "contact01",
+    conversationId: "conversation02",
+    direction: "outbound",
+    messageType: "TYPE_SMS",
+    contentType: "text/plain",
+    body: kind,
+    dateAdded: index ? "2026-10-01T08:56:00Z" : "2026-10-01T08:50:00Z",
+  }));
+  return {
+    sends: async () => ({
+      ok: true,
+      data: messages.map((m, index) => ({
+        kind: index ? ("req24" as const) : ("booking" as const),
+        appointmentId: "appt0001",
+        startTime: INICIO,
+        contactId: "contact01",
+        messageId: m.id,
+        acceptedAt: index ? "2026-10-01T08:57:00Z" : "2026-10-01T08:51:00Z",
+      })),
+    }),
+    message: async (_loc, id) => ({ ok: true, data: messages.find((m) => m.id === id) }),
+    conversationMessages: async () => ({
+      ok: true,
+      data: { messages: { nextPage: false, messages } },
+    }),
   };
 }
 
@@ -67,6 +150,9 @@ function deps(
   const enviar = vi.fn(async () => ({ ok: true as const, messageId: "msg-1" }));
   return {
     token: TOKEN,
+    verifiedConfirmation: async () => true,
+    confirmacao: acknowledgementEvidence(),
+    lembretes: reminderEvidence(),
     now: () => AGORA,
     resolver: async () => ({
       orgId: ORG,
@@ -222,6 +308,98 @@ describe("leituras minimizadas e isolamento", () => {
 });
 
 describe("message.send guards", () => {
+  for (const value of [false, null] as const) {
+    it(`confirm: exige confirmacao duravel (${value})`, async () => {
+      const claim = vi.fn(async () => ({ reserved: true as const, id: "res-1" }));
+      const d = deps({
+        consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) }),
+        verifiedConfirmation: async () => value,
+        claim,
+      });
+      expect((await run({ ...envio, kind: "confirm" }, d)).json["error"]).toBe(
+        value === null ? "confirmation_evidence_unavailable" : "confirmation_not_persisted",
+      );
+      expect(claim).not.toHaveBeenCalled();
+      expect(d.enviar).not.toHaveBeenCalled();
+    });
+  }
+  it("confirm: adaptador de evidencia ausente bloqueia", async () => {
+    const d = deps({
+      consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) }),
+    });
+    delete d.verifiedConfirmation;
+    expect((await run({ ...envio, kind: "confirm" }, d)).json["error"]).toBe(
+      "confirmation_evidence_unavailable",
+    );
+    expect(d.enviar).not.toHaveBeenCalled();
+  });
+
+  for (const appointmentStatus of ["new", "booked"]) {
+    it(`confirm: nao agradece antes da consulta persistida como confirmed (${appointmentStatus})`, async () => {
+      const claim = vi.fn(async () => ({ reserved: true as const, id: "res-1" }));
+      const d = deps({
+        consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus }) }),
+        claim,
+      });
+      expect(await run({ ...envio, kind: "confirm" }, d)).toEqual({
+        status: 409,
+        json: { error: "appointment_not_confirmed" },
+      });
+      expect(claim).not.toHaveBeenCalled();
+      expect(d.enviar).not.toHaveBeenCalled();
+    });
+  }
+  for (const kind of ["req24", "req12"] as const) {
+    for (const simulation of [false, true]) {
+      it(`${kind}: consulta confirmada no GHL bloqueia antes da reserva (simulation=${simulation})`, async () => {
+        const consulta = vi.fn(async () => ({
+          ok: true as const,
+          data: eventoRaw({ appointmentStatus: "confirmed" }),
+        }));
+        const contacto = vi.fn(async () => ({ ok: true as const, data: contactoRaw() }));
+        const claim = vi.fn(async () => ({ reserved: true as const, id: "res-1" }));
+        const d = deps({ cfg: { ...PRONTO, simulation }, consulta, contacto, claim });
+
+        const r = await run({ ...envio, kind }, d);
+
+        expect(r).toEqual({ status: 409, json: { error: "appointment_already_confirmed" } });
+        expect(consulta).toHaveBeenCalledExactlyOnceWith("appt0001");
+        expect(contacto).not.toHaveBeenCalled();
+        expect(claim).not.toHaveBeenCalled();
+        expect(d.enviar).not.toHaveBeenCalled();
+      });
+    }
+
+    for (const appointmentStatus of ["new", "booked"]) {
+      it(`${kind}: preserva o envio elegível para consulta ${appointmentStatus}`, async () => {
+        const claim = vi.fn(async () => ({ reserved: true as const, id: "res-1" }));
+        const d = deps({
+          consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus }) }),
+          claim,
+        });
+
+        const r = await run({ ...envio, kind }, d);
+
+        expect(r).toMatchObject({ status: 200, json: { status: "accepted", messageId: "msg-1" } });
+        expect(claim).toHaveBeenCalledExactlyOnceWith(ORG, "appt0001", INICIO, kind, "contact01");
+        expect(d.enviar).toHaveBeenCalledTimes(1);
+      });
+    }
+  }
+
+  for (const kind of ["booking", "confirm", "escalation", "handoff"] as const) {
+    it(`${kind}: preserva o comportamento para consulta confirmada`, async () => {
+      const d = deps({
+        consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) }),
+      });
+
+      const r = await run({ ...envio, kind }, d);
+
+      expect(r).toMatchObject({ status: 200, json: { status: "accepted", messageId: "msg-1" } });
+      expect(d.enviar).toHaveBeenCalledTimes(1);
+    });
+  }
+
   const casos: [
     string,
     Partial<DepsBridge> & { cfg?: ConfigBridge },
@@ -229,10 +407,10 @@ describe("message.send guards", () => {
     string,
   ][] = [
     [
-      "DND ausente",
-      { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: {} }) }) },
+      "objeto DND ausente",
+      { contacto: async () => ({ ok: true, data: contactoRaw({ dndSettings: undefined }) }) },
       {},
-      "dnd_not_confirmed",
+      "contact_not_verified",
     ],
     [
       "DND ativo",
@@ -246,21 +424,23 @@ describe("message.send guards", () => {
       "dnd_not_confirmed",
     ],
     [
-      "dnd omitido",
-      { contacto: async () => ({ ok: true, data: contactoRaw({ dnd: undefined }) }) },
+      "dnd malformado",
+      { contacto: async () => ({ ok: true, data: contactoRaw({ dnd: "false" }) }) },
       {},
       "contact_not_verified",
     ],
     [
-      "whatsapp sem chave WhatsApp",
+      "whatsapp com status malformado",
       {
         contacto: async () => ({
           ok: true,
-          data: contactoRaw({ dndSettings: { SMS: { status: "inactive" } } }),
+          data: contactoRaw({
+            dndSettings: { SMS: { status: "inactive" }, WhatsApp: { status: "pending" } },
+          }),
         }),
       },
       {},
-      "dnd_not_confirmed",
+      "contact_not_verified",
     ],
     [
       "cancelada",
@@ -304,7 +484,10 @@ describe("message.send guards", () => {
     ["canal pendente", { cfg: { ...PRONTO, channel: null } }, {}, "channel_not_configured"],
     [
       "morada pendente",
-      { cfg: { ...PRONTO, clinicAddress: "" } },
+      {
+        cfg: { ...PRONTO, clinicAddress: "" },
+        consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) }),
+      },
       { kind: "confirm" },
       "address_not_configured",
     ],

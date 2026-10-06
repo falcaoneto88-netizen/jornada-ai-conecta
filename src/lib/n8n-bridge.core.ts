@@ -5,6 +5,14 @@
  */
 import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
+import {
+  processarConfirmacao,
+  validarAgradecimento,
+  type DepsConfirmacao,
+} from "./n8n-bridge-confirmation";
+
+import { resolverResposta } from "./n8n-bridge-reply-resolve";
+import { validarLembrete, type DepsLembretes } from "./n8n-bridge-reminders";
 
 import { KINDS_INTERNOS, N8N_KINDS, montarMensagem, type KindN8n } from "./n8n-bridge.templates";
 
@@ -18,6 +26,16 @@ export const pedidoSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("health") }).strict(),
   z.object({ op: z.literal("contact.get"), contactId: idGhl }).strict(),
   z.object({ op: z.literal("appointment.get"), appointmentId: idGhl }).strict(),
+  z.object({ op: z.literal("appointment.reply.resolve"), contactId: idGhl }).strict(),
+  z
+    .object({
+      op: z.literal("appointment.confirm"),
+      appointmentId: idGhl,
+      contactId: idGhl,
+      expectedStartTime: z.string().datetime({ offset: true }),
+      inboundMessageId: idGhl,
+    })
+    .strict(),
   z
     .object({
       op: z.literal("message.send"),
@@ -63,7 +81,7 @@ export type Resolucao = {
   integracaoConectada: boolean;
 };
 
-export type EstadoDnd = "active" | "inactive";
+export type EstadoDnd = "active" | "inactive" | "permanent";
 export type ContactoBridge = {
   id: string;
   locationId: string;
@@ -81,6 +99,8 @@ export type EventoBridge = {
   startTime: string;
   endTime: string;
   appointmentStatus: string;
+  /** Source timestamp only; absent is never replaced with the current time. */
+  dateUpdated?: string;
 };
 
 export type Ler<T> = { ok: true; data: T } | { ok: false; code: string };
@@ -94,6 +114,13 @@ export type Reserva =
 export type LeituraCredencial = { ok: true; digest: string | null } | { ok: false };
 
 export type DepsBridge = {
+  confirmacao?: DepsConfirmacao;
+  lembretes?: DepsLembretes;
+  verifiedConfirmation?: (
+    orgId: string,
+    appointmentId: string,
+    startTime: string,
+  ) => Promise<boolean | null>;
   token: string | undefined;
   /** Credencial por organização (só usada quando o token de ambiente não está configurado). */
   credencial?: (orgId: string) => Promise<LeituraCredencial>;
@@ -110,6 +137,7 @@ export type DepsBridge = {
     appointmentId: string,
     start: string,
     kind: KindN8n,
+    contactId?: string,
   ) => Promise<Reserva | null>;
   finish: (
     orgId: string,
@@ -153,20 +181,21 @@ export function envTokenValido(t: string | undefined): t is string {
 
 const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : null);
 
-/** Resposta da pesquisa por ID exato: um único contacto, na location, com DND explícito. */
+/** Pesquisa por ID exato e location. DND segue a representação da API GHL; não representa opt-in. */
 export function parseContacto(raw: unknown, id: string, locationId: string): ContactoBridge | null {
   const r = obj(raw);
   const rows = r?.["contacts"];
   if (!r || r["total"] !== 1 || !Array.isArray(rows) || rows.length !== 1) return null;
   const c = obj(rows[0]);
-  if (!c || c["id"] !== id || c["locationId"] !== locationId || typeof c["dnd"] !== "boolean")
-    return null;
+  if (!c || c["id"] !== id || c["locationId"] !== locationId) return null;
+  // GHL documents omitted global dnd as false across its APIs. Null/other types are malformed.
+  if (c["dnd"] !== undefined && typeof c["dnd"] !== "boolean") return null;
   const ds = obj(c["dndSettings"]);
   if (!ds) return null;
   const dndSettings: Record<string, { status: EstadoDnd }> = {};
   for (const [canal, valor] of Object.entries(ds)) {
     const status = obj(valor)?.["status"];
-    if (status !== "active" && status !== "inactive") return null;
+    if (status !== "active" && status !== "inactive" && status !== "permanent") return null;
     dndSettings[canal] = { status };
   }
   const phone = str(c["phone"]);
@@ -179,7 +208,7 @@ export function parseContacto(raw: unknown, id: string, locationId: string): Con
       str(c["assignedTo"]) && idGhl.safeParse(c["assignedTo"]).success
         ? String(c["assignedTo"])
         : null,
-    dnd: c["dnd"] as boolean,
+    dnd: c["dnd"] === true,
     dndSettings,
   };
 }
@@ -195,9 +224,16 @@ export function parseEvento(raw: unknown, id: string, locationId: string): Event
     Number.isNaN(Date.parse(String(e["endTime"])))
   )
     return null;
+  const dateUpdated = e["dateUpdated"];
+  if (
+    dateUpdated !== undefined &&
+    !z.string().datetime({ offset: true }).safeParse(dateUpdated).success
+  )
+    return null;
   return {
     id,
     locationId,
+    ...(typeof dateUpdated === "string" ? { dateUpdated } : {}),
     calendarId: String(e["calendarId"]),
     contactId: String(e["contactId"]),
     startTime: String(e["startTime"]),
@@ -206,16 +242,20 @@ export function parseEvento(raw: unknown, id: string, locationId: string): Event
   };
 }
 
-/** Canais DND que têm de estar explicitamente "inactive" para cada escolha. */
+/** Canais cujos bloqueios explícitos se aplicam à rota escolhida. */
 export const CANAIS_DND: Record<Canal, readonly string[]> = {
   sms: ["SMS"],
   whatsapp_zaptos: ["SMS", "WhatsApp"],
 };
 
-/** Ausência de chave nunca é consentimento. */
+/** Only absence of a configured DND block, never consent or authority to send. */
 export function dndPermite(c: ContactoBridge, canal: Canal): boolean {
-  if (c.dnd !== false) return false;
-  return CANAIS_DND[canal].every((k) => c.dndSettings[k]?.status === "inactive");
+  if (c.dnd !== false || !obj(c.dndSettings)) return false;
+  return CANAIS_DND[canal].every(
+    (k) =>
+      !Object.prototype.hasOwnProperty.call(c.dndSettings, k) ||
+      c.dndSettings[k]?.status === "inactive",
+  );
 }
 
 const ESTADOS_ATIVOS = new Set(["confirmed", "new", "booked"]);
@@ -317,9 +357,18 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   }
 
   if (!cfg.calendarId) return erro("calendar_not_configured", 409);
+  if (pedido.op === "appointment.reply.resolve") {
+    if (!deps.confirmacao) return erro("confirmation_unavailable", 503);
+    return resolverResposta(pedido.contactId, cfg, res, deps, deps.confirmacao);
+  }
   const ev = await lerEvento(deps, res.locationId, pedido.appointmentId, cfg.calendarId);
   if (!ev.ok) return erro(ev.code, ev.status);
   if (pedido.op === "appointment.get") return reply({ event: ev.data }, 200);
+
+  if (pedido.op === "appointment.confirm") {
+    if (!deps.confirmacao) return erro("confirmation_unavailable", 503);
+    return processarConfirmacao(pedido, cfg, res, ev.data, deps, deps.confirmacao);
+  }
 
   // ---- message.send ----
   const e = ev.data;
@@ -329,6 +378,18 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!esperado || esperado !== atual) return erro("appointment_rescheduled", 409);
   if (!ESTADOS_ATIVOS.has(e.appointmentStatus)) return erro("appointment_not_active", 409);
   if (Date.parse(atual) <= deps.now()) return erro("appointment_in_past", 409);
+  // O estado fresco do GHL prevalece sobre lembretes enfileirados antes da confirmação.
+  if (e.appointmentStatus === "confirmed" && (pedido.kind === "req24" || pedido.kind === "req12"))
+    return erro("appointment_already_confirmed", 409);
+
+  if (pedido.kind === "confirm") {
+    if (e.appointmentStatus !== "confirmed") return erro("appointment_not_confirmed", 409);
+    const verified = deps.verifiedConfirmation
+      ? await deps.verifiedConfirmation(res.orgId, e.id, atual).catch(() => null)
+      : null;
+    if (verified === null) return erro("confirmation_evidence_unavailable", 503);
+    if (!verified) return erro("confirmation_not_persisted", 409);
+  }
 
   const c = await lerContacto(deps, res.locationId, pedido.contactId);
   if (!c.ok) return erro(c.code, c.status);
@@ -381,6 +442,26 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     };
   }
 
+  const revalidarLembrete = async () => {
+    if (pedido.kind !== "req24" && pedido.kind !== "req12") return null;
+    if (!deps.lembretes)
+      return { ok: false as const, code: "reminder_evidence_unavailable", status: 503 };
+    const valid = await validarLembrete(pedido.kind, cfg, res, e, deps, deps.lembretes);
+    return valid.ok ? null : valid;
+  };
+  const reminderError = await revalidarLembrete();
+  if (reminderError) return erro(reminderError.code, reminderError.status);
+
+  const revalidarAgradecimento = async () => {
+    if (pedido.kind !== "confirm") return null;
+    if (!deps.confirmacao)
+      return { ok: false as const, code: "confirmation_evidence_unavailable", status: 503 };
+    const valid = await validarAgradecimento(res, e, deps.now(), deps, deps.confirmacao);
+    return valid.ok ? null : valid;
+  };
+  const acknowledgementError = await revalidarAgradecimento();
+  if (acknowledgementError) return erro(acknowledgementError.code, acknowledgementError.status);
+
   if (cfg.simulation) {
     return reply(
       {
@@ -397,7 +478,9 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!cfg.liveSendEnabled || !res.writeEnabled || !res.integracaoConectada)
     return erro("live_send_disabled", 403);
 
-  const reserva = await deps.claim(res.orgId, e.id, atual, pedido.kind).catch(() => null);
+  const reserva = await deps
+    .claim(res.orgId, e.id, atual, pedido.kind, c.data.id)
+    .catch(() => null);
   if (!reserva) return erro("reservation_unavailable", 503);
   if (!reserva.reserved) {
     if (reserva.state === "accepted" && reserva.messageId)
@@ -406,6 +489,23 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
         200,
       );
     return reply({ error: "send_already_attempted", state: reserva.state }, 409);
+  }
+
+  const latestReminderError = await revalidarLembrete();
+  if (latestReminderError) {
+    await deps
+      .finish(res.orgId, reserva.id, "rejected", null, latestReminderError.code)
+      .catch(() => false);
+    return erro(latestReminderError.code, latestReminderError.status);
+  }
+
+  // A reply or human intervention can arrive while the send reservation is being acquired.
+  const latestAcknowledgementError = await revalidarAgradecimento();
+  if (latestAcknowledgementError) {
+    await deps
+      .finish(res.orgId, reserva.id, "rejected", null, latestAcknowledgementError.code)
+      .catch(() => false);
+    return erro(latestAcknowledgementError.code, latestAcknowledgementError.status);
   }
 
   // Única tentativa externa desta reserva.

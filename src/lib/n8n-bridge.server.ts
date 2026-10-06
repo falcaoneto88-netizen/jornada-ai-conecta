@@ -10,6 +10,8 @@ import {
   type LeituraCredencial,
   type Resolucao,
 } from "./n8n-bridge.core";
+import type { DepsLembretes, ReminderEvidence } from "./n8n-bridge-reminders";
+import type { DepsConfirmacao } from "./n8n-bridge-confirmation";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } from "./ghl.server";
 
 type Resp = { data: unknown; error: { code?: string; message?: string } | null };
@@ -127,10 +129,179 @@ export async function utilizadorNaLocation(
   return r.data.users.some((u) => u?.id === userId);
 }
 
+/** GHL calls remain server scoped; no caller-supplied credentials or URL. */
+export function criarDepsConfirmacao(db: ClienteBridge): DepsConfirmacao {
+  return {
+    confirmedReply: async (orgId, appointmentId, startTime) => {
+      const r = await db
+        .from("n8n_bridge_confirmations")
+        .select("request_send_id,inbound_message_id,reply_at")
+        .eq("organization_id", orgId)
+        .eq("ghl_appointment_id", appointmentId)
+        .eq("start_time", startTime)
+        .eq("state", "confirmed")
+        .maybeSingle();
+      if (r.error) return { ok: false, code: "schema_unavailable" };
+      if (!r.data) return { ok: true, data: null };
+      const row = r.data as Record<string, unknown>;
+      if (
+        ["request_send_id", "inbound_message_id", "reply_at"].some(
+          (key) => typeof row[key] !== "string" || !row[key],
+        )
+      )
+        return { ok: false, code: "invalid_evidence" };
+      return {
+        ok: true,
+        data: {
+          requestId: String(row["request_send_id"]),
+          inboundMessageId: String(row["inbound_message_id"]),
+          replyAt: String(row["reply_at"]),
+        },
+      };
+    },
+    message: async (locationId, id) => {
+      const cfg = configGhl(locationId);
+      if (!cfg) return { ok: false, code: "missing_secrets" };
+      const r = await ghlFetch(cfg, `conversations/messages/${encodeURIComponent(id)}`);
+      return r.ok ? { ok: true, data: r.data } : { ok: false, code: r.code };
+    },
+    conversationMessages: async (locationId, conversationId, cursor) => {
+      const cfg = configGhl(locationId);
+      if (!cfg) return { ok: false, code: "missing_secrets" };
+      const r = await ghlFetch(
+        cfg,
+        `conversations/${encodeURIComponent(conversationId)}/messages`,
+        {
+          query: { limit: "100", ...(cursor ? { lastMessageId: cursor } : {}) },
+        },
+      );
+      return r.ok ? { ok: true, data: r.data } : { ok: false, code: r.code };
+    },
+    requests: async (orgId, contactId, replyAt) => {
+      const r = await db.rpc("n8n_bridge_confirmation_requests", {
+        _org: orgId,
+        _reply_at: replyAt,
+        _contact: contactId,
+      });
+      if (r.error || !Array.isArray(r.data)) return { ok: false, code: "schema_unavailable" };
+      const rows = r.data as Record<string, unknown>[];
+      if (
+        rows.some(
+          (x) =>
+            !x ||
+            ["id", "appointment_id", "start_time", "message_id", "accepted_at"].some(
+              (k) => typeof x[k] !== "string" || !x[k],
+            ),
+        )
+      )
+        return { ok: false, code: "invalid_evidence" };
+      return {
+        ok: true,
+        data: rows.map((x) => ({
+          id: String(x["id"]),
+          appointmentId: String(x["appointment_id"]),
+          startTime: String(x["start_time"]),
+          messageId: String(x["message_id"]),
+          acceptedAt: String(x["accepted_at"]),
+        })),
+      };
+    },
+    claim: async (orgId, evidence, inboundMessageId, replyAt) => {
+      const r = await db.rpc("n8n_bridge_claim_confirmation", {
+        _org: orgId,
+        _request: evidence.id,
+        _inbound: inboundMessageId,
+        _reply_at: replyAt,
+      });
+      const d = r.data as Record<string, unknown> | null;
+      if (r.error || !d || typeof d["id"] !== "string") return null;
+      if (d["reserved"] === true) return { reserved: true, id: d["id"] };
+      return typeof d["state"] === "string"
+        ? { reserved: false, id: d["id"], state: d["state"] }
+        : null;
+    },
+    finish: async (orgId, id, state, error) => {
+      const r = await db.rpc("n8n_bridge_finish_confirmation", {
+        _org: orgId,
+        _id: id,
+        _state: state,
+        _error: error,
+      });
+      const d = r.data as Record<string, unknown> | null;
+      return !r.error && d?.["persisted"] === true && d["state"] === state;
+    },
+    confirm: async (locationId, id) => {
+      const cfg = configGhl(locationId);
+      if (!cfg) return { ok: false, definitive: true };
+      const r = await ghlFetch(cfg, `calendars/events/appointments/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: { appointmentStatus: "confirmed", toNotify: false },
+      });
+      return r.ok ? { ok: true } : { ok: false, definitive: r.status >= 400 && r.status < 500 };
+    },
+  };
+}
+
+/** Exact accepted journey sends; no schema change or unscoped contact history query. */
+export function criarDepsLembretes(db: ClienteBridge): DepsLembretes {
+  const read = criarDepsConfirmacao(db);
+  return {
+    message: read.message,
+    conversationMessages: read.conversationMessages,
+    sends: async (orgId, appointmentId, startTime, contactId) => {
+      const rows: ReminderEvidence[] = [];
+      for (const kind of ["booking", "req24", "req12"] as const) {
+        const result = await db
+          .from("n8n_bridge_sends")
+          .select("ghl_appointment_id,start_time,contact_id,message_id,finished_at")
+          .eq("organization_id", orgId)
+          .eq("ghl_appointment_id", appointmentId)
+          .eq("start_time", startTime)
+          .eq("contact_id", contactId)
+          .eq("kind", kind)
+          .eq("state", "accepted")
+          .maybeSingle();
+        if (result.error) return { ok: false, code: "schema_unavailable" };
+        if (!result.data) continue;
+        const row = result.data as Record<string, unknown>;
+        if (
+          ["ghl_appointment_id", "start_time", "contact_id", "message_id", "finished_at"].some(
+            (key) => typeof row[key] !== "string" || !row[key],
+          )
+        )
+          return { ok: false, code: "invalid_evidence" };
+        rows.push({
+          kind,
+          appointmentId: String(row["ghl_appointment_id"]),
+          startTime: String(row["start_time"]),
+          contactId: String(row["contact_id"]),
+          messageId: String(row["message_id"]),
+          acceptedAt: String(row["finished_at"]),
+        });
+      }
+      return { ok: true, data: rows };
+    },
+  };
+}
+
 export function criarDepsBridge(db: ClienteBridge): DepsBridge {
   const cfgDe = (loc: string) => configGhl(loc);
   return {
     token: process.env["N8N_JORNADA_BRIDGE_TOKEN"],
+    confirmacao: criarDepsConfirmacao(db),
+    lembretes: criarDepsLembretes(db),
+    verifiedConfirmation: async (orgId, appointmentId, startTime) => {
+      const r = await db
+        .from("n8n_bridge_confirmations")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("ghl_appointment_id", appointmentId)
+        .eq("start_time", startTime)
+        .eq("state", "confirmed")
+        .maybeSingle();
+      if (r.error) return null;
+      return !!r.data && typeof (r.data as Record<string, unknown>)["id"] === "string";
+    },
     credencial: (org) => lerCredencialBridge(db, org),
     now: () => Date.now(),
     resolver: () => resolverEscopo(db),
@@ -142,17 +313,16 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
     contacto: async (loc, id) => {
       const cfg = cfgDe(loc);
       if (!cfg) return { ok: false, code: "missing_secrets" };
-      // Pesquisa por ID exato: o GET simples omite o DND em contactos recentes.
-      const r = await ghlFetch(cfg, "contacts/search", {
-        method: "POST",
-        body: {
-          locationId: loc,
-          page: 1,
-          pageLimit: 2,
-          filters: [{ field: "id", operator: "eq", value: id }],
-        },
-      });
-      return r.ok ? { ok: true, data: r.data } : { ok: false, code: r.code };
+      // Read the individual contact: search can omit channel-level DND settings.
+      // Normalize only the envelope; parseContacto still verifies identity, location and DND.
+      const r = await ghlFetch(cfg, `contacts/${encodeURIComponent(id)}`);
+      if (!r.ok) return { ok: false, code: r.code };
+      const raw = r.data;
+      const contact =
+        raw && typeof raw === "object" && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)["contact"]
+          : null;
+      return { ok: true, data: { contacts: [contact], total: 1 } };
     },
     consulta: async (id) => {
       const { locationId } = readGhlSecrets();
@@ -182,12 +352,13 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
       // Só uma recusa HTTP 4xx explícita é definitiva. Timeout, rede, 3xx e 5xx = resultado desconhecido.
       return { ok: false, definitivo: r.status >= 400 && r.status < 500, code: r.code };
     },
-    claim: async (org, appt, start, kind) => {
+    claim: async (org, appt, start, kind, contactId) => {
       const r = await db.rpc("n8n_bridge_claim_send", {
         _org: org,
         _appointment: appt,
         _start: start,
         _kind: kind,
+        _contact: contactId,
       });
       const d = r.data as Record<string, unknown> | null;
       if (r.error || !d || typeof d["id"] !== "string") return null;
