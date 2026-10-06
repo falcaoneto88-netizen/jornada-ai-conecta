@@ -298,3 +298,9 @@ Para o teste de concorrência/PostgreSQL, usar o runtime existente indicado por 
 ./node_modules/.bin/tsc --noEmit --pretty false
 npm run build
 ```
+
+### Aplicação no projeto original (Lovable) — 06/10/2026
+
+- Pacote `package-19d5e22` (SHA256 do tar.gz conferido igual ao informado) aplicado sobre `50e417b`. Os hashes de base dos 22 arquivos coincidiram antes da edição (sem divergência). `git apply` não é permitido no ambiente; como todas as bases coincidiam, os 22 arquivos foram copiados byte a byte de `files/` e os 22 hashes finais conferem com o manifesto. Agente comercial e restantes alterações preservados.
+- Gates no sandbox do projeto (teste local, não publicado): 290 testes/8 arquivos aprovados (comando acima); `tsgo --noEmit`, lint dos arquivos de código/teste alterados e build aprovados. O teste SQL `n8n-bridge-confirmation.db.test.ts` (9 testes) não correu aqui: falta `embedded-postgres`, que não foi instalado (sem alteração de dependências).
+- Migração 0014 não reaplicada; nenhuma SQL, chave, flag, dado, mensagem ou workflow alterado. Flags esperadas inalteradas (`simulation=true`, `live_send_enabled=false`, `channel_verified=false`). Não publicado; sem verificação ponta a ponta.
