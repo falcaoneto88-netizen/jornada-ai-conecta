@@ -148,8 +148,12 @@ export class HighLevel {
           locationId: z.string(),
           name: z.string().optional(),
           firstName: z.string().optional(),
-          dnd: z.boolean(),
-          dndSettings: z.record(z.string(), z.object({ status: z.string() })).optional(),
+          // GHL defines omitted global DND as false across its APIs; this does not imply opt-in.
+          // https://marketplace.gohighlevel.com/docs/webhook/ContactDndUpdate/
+          dnd: z.boolean().default(false),
+          dndSettings: z
+            .record(z.string(), z.object({ status: z.enum(["active", "inactive", "permanent"]) }))
+            .optional(),
         }),
       })
       .parse(await this.get(`contacts/${event.contactId}`)).contact;
@@ -166,9 +170,9 @@ export class HighLevel {
       const normalized = normalizarMensagens(raw, event, cursor);
       if (normalized.limitePaginacao) throw new AgentError("history_incomplete");
       for (const m of normalized.mensagens) {
-        if (!m.data || !["inbound", "outbound"].includes(m.direcao))
-          throw new AgentError("history_invalid");
+        if (!m.data) throw new AgentError("history_invalid");
         if (/ACTIVITY|CALL|VOICEMAIL|INTERNAL/i.test(m.tipo)) continue;
+        if (!["inbound", "outbound"].includes(m.direcao)) throw new AgentError("history_invalid");
         all.set(m.id, {
           id: m.id,
           at: m.data,
@@ -189,7 +193,9 @@ export class HighLevel {
         if (messages.at(-1)?.id !== event.messageId) throw new AgentError("newer_message_exists");
         const dnd =
           contact.dnd ||
-          Object.values(contact.dndSettings ?? {}).some((v) => v.status === "active");
+          Object.values(contact.dndSettings ?? {}).some(
+            (v) => v.status === "active" || v.status === "permanent",
+          );
         return {
           event,
           messages,
@@ -286,6 +292,8 @@ export function normalizeChannel(s: string) {
         TYPE_WHATSAPP: "WhatsApp",
         WHATSAPP: "WhatsApp",
         TYPE_SMS: "SMS",
+        // Zaptos and other SMS replacement providers return this canonical GHL type.
+        TYPE_CUSTOM_SMS: "SMS",
         TYPE_INSTAGRAM: "IG",
         Instagram: "IG",
         TYPE_FACEBOOK: "FB",
