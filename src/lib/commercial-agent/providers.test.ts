@@ -46,7 +46,233 @@ const snapshot: Snapshot = {
     },
   ],
 };
+
+function mockContactHistory(
+  contact: Record<string, unknown>,
+  provider?: string,
+  messageType = "TYPE_SMS",
+) {
+  return vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      data: { id: "v-test", contactId: "c-test", locationId: "loc-test" },
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      data: { contact: { id: "c-test", locationId: "loc-test", ...contact } },
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      data: {
+        messages: {
+          messages: [{ ...message, messageType, conversationProviderId: provider }],
+          nextPage: false,
+        },
+      },
+    });
+}
+
+describe("DND no histórico individual do HighLevel", () => {
+  it.each([
+    { label: "campos DND ausentes", contact: {}, blocked: false },
+    {
+      label: "global ausente e configurações vazias",
+      contact: { dndSettings: {} },
+      blocked: false,
+    },
+    {
+      label: "global ausente e canal inativo",
+      contact: { dndSettings: { SMS: { status: "inactive", message: "fictício", code: "101" } } },
+      blocked: false,
+    },
+    { label: "global false", contact: { dnd: false }, blocked: false },
+    {
+      label: "global true com canal inativo",
+      contact: { dnd: true, dndSettings: { SMS: { status: "inactive" } } },
+      blocked: true,
+    },
+    {
+      label: "canal SMS ativo sem global",
+      contact: { dndSettings: { SMS: { status: "active" } } },
+      blocked: true,
+    },
+    {
+      label: "canal SMS permanente com global false",
+      contact: { dnd: false, dndSettings: { SMS: { status: "permanent" } } },
+      blocked: true,
+    },
+    {
+      label: "WhatsApp permanente na rota SMS",
+      contact: { dndSettings: { SMS: { status: "inactive" }, WhatsApp: { status: "permanent" } } },
+      blocked: true,
+    },
+    {
+      label: "Email ativo mantém bloqueio conservador na rota SMS",
+      contact: { dndSettings: { SMS: { status: "inactive" }, Email: { status: "active" } } },
+      blocked: true,
+    },
+    {
+      label: "Email permanente mantém bloqueio conservador na rota SMS",
+      contact: { dndSettings: { SMS: { status: "inactive" }, Email: { status: "permanent" } } },
+      blocked: true,
+    },
+  ])("interpreta $label após validar contato e histórico", async ({ contact, blocked }) => {
+    const call = mockContactHistory(contact);
+    const result = await new HighLevel("fake-key", "loc-test", call).history(event);
+    expect(result).toMatchObject({ event, dnd: blocked });
+    expect(result.messages).toEqual([
+      { ...snapshot.messages[0], at: "2026-10-03T12:00:00.000Z", channel: "SMS" },
+    ]);
+    expect(call.mock.calls.map((entry) => entry[1])).toEqual([
+      "conversations/v-test",
+      "contacts/c-test",
+      "conversations/v-test/messages",
+    ]);
+    expect(call.mock.calls.every((entry) => !entry[2]?.method)).toBe(true);
+  });
+
+  it.each([null, "false", 0, {}, []])(
+    "recusa global DND malformado (%j) antes de ler mensagens",
+    async (dnd) => {
+      const call = mockContactHistory({ dnd, dndSettings: {} });
+      await expect(new HighLevel("fake-key", "loc-test", call).history(event)).rejects.toThrow();
+      expect(call.mock.calls.map((entry) => entry[1])).toEqual([
+        "conversations/v-test",
+        "contacts/c-test",
+      ]);
+    },
+  );
+
+  it.each([
+    null,
+    "inactive",
+    [],
+    { SMS: null },
+    { SMS: "inactive" },
+    { SMS: {} },
+    { SMS: { status: false } },
+    { SMS: { status: "unknown" } },
+    { SMS: { status: "ACTIVE" } },
+  ])("recusa dndSettings malformado (%j) antes de ler mensagens", async (dndSettings) => {
+    const call = mockContactHistory({ dnd: false, dndSettings });
+    await expect(new HighLevel("fake-key", "loc-test", call).history(event)).rejects.toThrow();
+    expect(call.mock.calls.map((entry) => entry[1])).toEqual([
+      "conversations/v-test",
+      "contacts/c-test",
+    ]);
+  });
+
+  it.each([undefined, "provider-ficticio"])(
+    "preserva a rota SMS e seu provedor (%s) depois do parsing sem global DND",
+    async (provider) => {
+      const call = mockContactHistory(
+        { dndSettings: { SMS: { status: "inactive" } } },
+        provider,
+      ).mockResolvedValueOnce({ ok: true, data: { conversationId: "v-test", messageId: "sent" } });
+      const adapter = new HighLevel("fake-key", "loc-test", call);
+      const history = await adapter.history(event);
+      expect(history.messages[0]?.provider).toBe(provider ?? null);
+      const result = await adapter.send(history, "Resposta fictícia aprovada");
+      expect(result.state).toBe("sent");
+      expect(call).toHaveBeenCalledTimes(4);
+      expect(call.mock.calls[3]?.[1]).toBe("conversations/messages");
+      expect(call.mock.calls[3]?.[2]).toEqual({
+        method: "POST",
+        body: {
+          type: "SMS",
+          contactId: "c-test",
+          replyMessageId: "m-test",
+          message: "Resposta fictícia aprovada",
+          status: "pending",
+          ...(provider ? { conversationProviderId: provider } : {}),
+        },
+      });
+    },
+  );
+});
+
 describe("contratos dos provedores", () => {
+  it("atividade sem direction não entra no histórico nem bloqueia rascunho para SMS posterior", async () => {
+    const activity = {
+      id: "activity-test",
+      conversationId: event.conversationId,
+      contactId: event.contactId,
+      locationId: event.locationId,
+      dateAdded: "2026-10-03T11:59:00Z",
+      messageType: "TYPE_ACTIVITY_APPOINTMENT",
+      body: "Atividade interna fictícia",
+    };
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          id: event.conversationId,
+          contactId: event.contactId,
+          locationId: event.locationId,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { contact: { id: event.contactId, locationId: event.locationId, dnd: false } },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          messages: {
+            messages: [activity, { ...message, messageType: "TYPE_SMS" }],
+            nextPage: false,
+          },
+        },
+      });
+    const history = await new HighLevel("fake-key", "loc-test", call).history(event);
+    expect(history.messages).toEqual([
+      { ...snapshot.messages[0], at: "2026-10-03T12:00:00.000Z", channel: "SMS" },
+    ]);
+    const f = vi.fn().mockResolvedValue(
+      Response.json({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  reply: "A consulta custa 50 €.",
+                  flags: [],
+                  handoff: false,
+                  optOut: false,
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const draft = await generateOpenAI(history, "fake-openai", "gpt-4.1-mini", f);
+    expect(draft.decision.reply).toBe("A consulta custa 50 €.");
+    expect(f.mock.calls[0]?.[1].body).not.toContain(activity.body);
+    expect(call).toHaveBeenCalledTimes(3);
+  });
+  it("TYPE_CUSTOM_SMS do Zaptos responde no mesmo provedor através de SMS", async () => {
+    const call = mockContactHistory(
+      { dnd: false },
+      "provider-ficticio",
+      "TYPE_CUSTOM_SMS",
+    ).mockResolvedValueOnce({ ok: true, data: { conversationId: "v-test", messageId: "sent" } });
+    const adapter = new HighLevel("fake-key", "loc-test", call);
+    const history = await adapter.history(event);
+    expect(history.messages[0]?.channel).toBe("SMS");
+    expect((await adapter.send(history, "Resposta fictícia aprovada")).state).toBe("sent");
+    expect(call.mock.calls[3]?.[2]?.body).toMatchObject({
+      type: "SMS",
+      conversationProviderId: "provider-ficticio",
+      contactId: "c-test",
+      replyMessageId: "m-test",
+    });
+  });
   it("criptografia é vinculada ao tenant e rejeita adulteração", () => {
     const key = randomBytes(32).toString("base64"),
       enc = seal({ text: "conteúdo fictício" }, key, "org:job");

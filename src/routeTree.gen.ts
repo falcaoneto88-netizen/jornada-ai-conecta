@@ -25,6 +25,7 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as ApiVersionRouteImport } from './routes/api/version'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicBioreportEventRouteImport } from './routes/api/public/bioreport-event'
+import { Route as ApiPublicCommercialAgentNotificationRouteImport } from './routes/api/public/commercial-agent-notification'
 import { Route as ApiPublicCommercialAgentWebhookRouteImport } from './routes/api/public/commercial-agent-webhook'
 import { Route as ApiPublicCommercialAgentWorkerRouteImport } from './routes/api/public/commercial-agent-worker'
 import { Route as ApiPublicFalcaoLeadRouteImport } from './routes/api/public/falcao-lead'
@@ -116,6 +117,12 @@ const ApiPublicBioreportEventRoute = ApiPublicBioreportEventRouteImport.update({
   path: '/api/public/bioreport-event',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCommercialAgentNotificationRoute =
+  ApiPublicCommercialAgentNotificationRouteImport.update({
+    id: '/api/public/commercial-agent-notification',
+    path: '/api/public/commercial-agent-notification',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCommercialAgentWebhookRoute =
   ApiPublicCommercialAgentWebhookRouteImport.update({
     id: '/api/public/commercial-agent-webhook',
@@ -184,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
+  '/api/public/commercial-agent-notification': typeof ApiPublicCommercialAgentNotificationRoute
   '/api/public/commercial-agent-webhook': typeof ApiPublicCommercialAgentWebhookRoute
   '/api/public/commercial-agent-worker': typeof ApiPublicCommercialAgentWorkerRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
@@ -211,6 +219,7 @@ export interface FileRoutesByTo {
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
+  '/api/public/commercial-agent-notification': typeof ApiPublicCommercialAgentNotificationRoute
   '/api/public/commercial-agent-webhook': typeof ApiPublicCommercialAgentWebhookRoute
   '/api/public/commercial-agent-worker': typeof ApiPublicCommercialAgentWorkerRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
@@ -239,6 +248,7 @@ export interface FileRoutesById {
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/bioreport-event': typeof ApiPublicBioreportEventRoute
+  '/api/public/commercial-agent-notification': typeof ApiPublicCommercialAgentNotificationRoute
   '/api/public/commercial-agent-webhook': typeof ApiPublicCommercialAgentWebhookRoute
   '/api/public/commercial-agent-worker': typeof ApiPublicCommercialAgentWorkerRoute
   '/api/public/falcao-lead': typeof ApiPublicFalcaoLeadRoute
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
+    | '/api/public/commercial-agent-notification'
     | '/api/public/commercial-agent-webhook'
     | '/api/public/commercial-agent-worker'
     | '/api/public/falcao-lead'
@@ -295,6 +306,7 @@ export interface FileRouteTypes {
     | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
+    | '/api/public/commercial-agent-notification'
     | '/api/public/commercial-agent-webhook'
     | '/api/public/commercial-agent-worker'
     | '/api/public/falcao-lead'
@@ -322,6 +334,7 @@ export interface FileRouteTypes {
     | '/api/version'
     | '/.lovable/oauth/consent'
     | '/api/public/bioreport-event'
+    | '/api/public/commercial-agent-notification'
     | '/api/public/commercial-agent-webhook'
     | '/api/public/commercial-agent-worker'
     | '/api/public/falcao-lead'
@@ -350,6 +363,7 @@ export interface RootRouteChildren {
   ApiVersionRoute: typeof ApiVersionRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicBioreportEventRoute: typeof ApiPublicBioreportEventRoute
+  ApiPublicCommercialAgentNotificationRoute: typeof ApiPublicCommercialAgentNotificationRoute
   ApiPublicCommercialAgentWebhookRoute: typeof ApiPublicCommercialAgentWebhookRoute
   ApiPublicCommercialAgentWorkerRoute: typeof ApiPublicCommercialAgentWorkerRoute
   ApiPublicFalcaoLeadRoute: typeof ApiPublicFalcaoLeadRoute
@@ -475,6 +489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicBioreportEventRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/commercial-agent-notification': {
+      id: '/api/public/commercial-agent-notification'
+      path: '/api/public/commercial-agent-notification'
+      fullPath: '/api/public/commercial-agent-notification'
+      preLoaderRoute: typeof ApiPublicCommercialAgentNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/commercial-agent-webhook': {
       id: '/api/public/commercial-agent-webhook'
       path: '/api/public/commercial-agent-webhook'
@@ -559,6 +580,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiVersionRoute: ApiVersionRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicBioreportEventRoute: ApiPublicBioreportEventRoute,
+  ApiPublicCommercialAgentNotificationRoute:
+    ApiPublicCommercialAgentNotificationRoute,
   ApiPublicCommercialAgentWebhookRoute: ApiPublicCommercialAgentWebhookRoute,
   ApiPublicCommercialAgentWorkerRoute: ApiPublicCommercialAgentWorkerRoute,
   ApiPublicFalcaoLeadRoute: ApiPublicFalcaoLeadRoute,

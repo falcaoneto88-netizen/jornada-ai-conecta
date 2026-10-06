@@ -1,8 +1,69 @@
-# Estado da implantação — 05/10/2026
+# Estado da implantação — 06/10/2026
 
-## Reutilização da chave usada pelo Jev — preparada localmente
+## Estado vigente — preparação do piloto SMS/Zaptos, ainda desligado
 
-O Jev e o briefing da Jornada AI já usam `LOVABLE_API_KEY` no servidor. O novo agente agora tem um adaptador opcional para reutilizar essa credencial via `https://ai.gateway.lovable.dev/v1/responses`, com o modelo `openai/gpt-5.4-mini`. Essa alteração está apenas no checkout local, posterior à PR #1; não está publicada nem configurada no ambiente hospedado.
+Base atualizada para `ee7f3463640c992f415a67130c8cbdcfb0e100f0`, preservando as alterações n8n já existentes. Foi configurada somente a allowlist do contato controlado terminado em 7009 e canal `SMS`, com `mode=off`. Nenhuma geração ou envio real foi liberado.
+
+Diagnóstico seguro de 06/10: chave de criptografia presente, mas não decodifica 32 bytes; segredos próprios webhook/worker ausentes. As credenciais existentes HighLevel/Lovable permanecem no servidor. A entrada e o salvamento das três chaves foram entregues ao usuário no painel seguro. Nenhum valor está neste documento.
+
+Inspeção canônica read-only do contato autorizado: contato, pesquisa de conversas, conversa e primeira página de mensagens retornaram HTTP 200. Uma única conversa com IDs de escopo iguais; 24 registros, `nextPage=false`. Tipos observados: 13 `TYPE_CUSTOM_SMS`, 10 atividades e 1 Instagram. O adapter agora trata `TYPE_CUSTOM_SMS` como transporte `SMS`, preservando `conversationProviderId`; atividades não são mensagens comerciais. A verificação não envia mensagem nem demonstra recebimento novo.
+
+A entrada adicional `/api/public/commercial-agent-notification` aceita somente um aviso autenticado com `locationId`/`contactId`, usando o `GHL_WEBHOOK_SECRET` já usado pelo workflow de contatos. Não confia em texto, messageId ou conversationId enviados pelo workflow. Consulta a API canônica e só depois registra os IDs reais. O worker também verifica mensagens enviadas para reconhecer intervenção humana. O caminho Marketplace/segredo próprio anterior permanece separado.
+
+Novo caminho desabilitado por padrão: `COMMERCIAL_AGENT_DISCOVERY_ENABLED=false`. Para homologar, definir início explícito `COMMERCIAL_AGENT_PILOT_SINCE` em ISO com fuso no instante da abertura do piloto, autorizar um único contato no banco e seguir a sequência em `OPERACAO.md`. O modo de descoberta recusa mais de um contato; ampliação requer revisão. Histórico completo limitado a 20 páginas de 50, sem retorno parcial. Nenhuma resposta automática foi acrescentada.
+
+Workflow HighLevel `Jornada AI — Piloto supervisionado V02`, ID `28842f38-999d-44f2-a25d-c5460051045f`, criado e salvo em rascunho com zero inscritos. Gatilho `Cliente Respondido`, filtros canal SMS e etiqueta exclusiva `jornada-piloto-v02`; reentrada já habilitada. Ação aponta a `/api/public/commercial-agent-notification`, preserva o cabeçalho autenticado existente e manda somente locationId/contactId (`{{contact.id}}`, campo já observado no workflow original). Gravação da resposta do webhook desligada. A etiqueta foi criada e aplicada somente ao contato autorizado; a etiqueta anterior foi preservada, confirmado na interface com duas etiquetas. A cópia não altera o workflow original nem o webhook de entrega Zaptos. Nenhum botão de teste/publicação foi executado. O HighLevel identifica essa ação como premium; a execução pode consumir créditos adicionais do contrato atual.
+
+Pendências de ponta a ponta: corrigir/salvar chaves, publicar configuração segura, configurar Vault/worker, finalizar o workflow isolado, iniciar recebimento restrito, mensagem real do contato de teste, rascunho com histórico, aprovação humana, envio único na conversa correta, recibo/entrega, duplicidade e pausa humana. Custos e manutenção seguem descritos em `OPERACAO.md`.
+
+## Registro anterior de 06/10 — IA validada com dados fictícios
+
+Publicado em 06/10/2026, commit Lovable/main `50e417bf5fd8dfb7be0ed251ccd7ec218ff7d5bf`, deployment `0487c4cf-f3ac-412a-b642-cdef7439a9f8`. O cabeçalho do endpoint público confirmou o novo deployment. `GET /api/public/commercial-agent-webhook` retornou HTTP 200, `supervised_only`; `POST {}` retornou HTTP 503, `disabled`. Banco reconferido: `mode=off`, zero contatos/canais permitidos, inbox, rascunhos e jobs. Nenhuma migração ou configuração de envio foi ativada.
+
+Foram salvas no painel seguro as seleções não secretas `COMMERCIAL_AGENT_AI_PROVIDER=lovable` e `COMMERCIAL_AGENT_MODEL=openai/gpt-5.4-mini`, depois publicadas. Uma chamada real no servidor Lovable, usando a credencial gerenciada existente e apenas um cenário fictício, gerou resposta válida: 3.914 tokens de entrada e 76 de saída. Isso valida o adaptador/modelo; não comprova recebimento de mensagens, histórico real, aprovação ou envio. Nenhuma chave foi lida, exportada ou copiada.
+
+Os três segredos próprios ainda estavam ausentes no diagnóstico: `COMMERCIAL_AGENT_ENCRYPTION_KEY`, `COMMERCIAL_AGENT_WEBHOOK_SECRET` e `COMMERCIAL_AGENT_WORKER_SECRET`. O formulário seguro foi preparado com o primeiro nome e valor vazio; a entrada e o salvamento foram entregues ao usuário conforme a regra de segurança do navegador. Não registrar valores no chat ou neste documento.
+
+O usuário indicou o telefone controlado terminado em 7009 e esclareceu que deseja o “SMS” do CRM com entrega pelo WhatsApp existente. O contato foi encontrado por igualdade exata no Jornada AI e no HighLevel, com organização/location corretas e sem DND ativo na interface; ainda não foi incluído na allowlist. Em Sistema telefônico → Definições adicionais, a inspeção de 06/10/2026 confirmou “ZaptosWPP V2 - WhatsAPP like SMS” marcado como “Predefinição”. A inferência anterior de que seria necessário contratar SMS de operadora estava errada: essa contratação e uma troca de canal não são pendências para o fluxo solicitado. O payload deve preservar `type:"SMS"`, que identifica o transporte da API; não renomeá-lo para `WhatsApp`. Nenhum fornecedor foi alterado e nenhum serviço foi contratado. A entrega efetiva pelo WhatsApp ainda precisa ser demonstrada com o contato de teste.
+
+WhatsApp QR e MultiAtendimento mostraram a instância #428, João Falcao / 351926991096, conectada; a instância Luciana #1861 estava desconectada. MultiAtendimento é o serviço externo Zaptos embutido, não o atendimento nativo do HighLevel. Atendentes listou um ADMIN, “joao matos neto”, com acesso a ambos os canais. A atribuição exclusiva estava desligada e não havia regras; “Verificar preparação novamente” retornou “O serviço de atendimento está indisponível”. A sincronização das regras e do repasse humano entre esses serviços ainda precisa ser validada. Essas observações não comprovam funcionamento de ponta a ponta; não houve envio nem mutação do CRM durante a inspeção.
+
+A interface do MultiAtendimento oferece regras por canal/tag, encaminhamento individual ou em rodízio, simulação e prévia antes de aplicar à base. A atribuição exclusiva e a aplicação à base estavam suspensas; não foram habilitadas. Tags automáticas não tinham regras/aplicações listadas. A tela de tags em massa oferece seleção de até 500 contatos, adição sem remoção das tags existentes e revisão antes de aplicar; nenhuma seleção ou aplicação foi feita. A busca pelo telefone exato de homologação não retornou contato no MultiAtendimento, e a busca na lista de conversas por telefone/nome também não retornou resultado; isso não substitui a verificação do destinatário já encontrado no HighLevel nem prova ausência de variantes de identidade. Demonstrar a ligação entre IDs dos sistemas no teste controlado.
+
+O workflow HighLevel “Jornada AI” (`7f2ac268-cc3d-4f11-b336-07f487d97f36`) estava publicado. O construtor mostrou o gatilho “Contacto Criado” e a ação “#2 Jornada AI — Contato criado”. Esse fluxo não comprova recebimento de mensagens do agente comercial. O primeiro carregamento falhou e a leitura funcionou após atualizar a página; nada foi editado, salvo, publicado ou testado com contatos. Não substituir o webhook de entrega do provedor Zaptos pelo webhook de observação do agente: são funções distintas.
+
+Em Conversation AI → Lista de Agentes, “Felps Marcel Harmonização Glútea”, “Assistente Dr. João Falcão”, “Felps Marcel - Agendamentos Harmonização” e “Felps — Assistente Dr. João Falcão” estavam em modo Sugestivo. “Atendimento Dr. João Falcão V02 TESTE” estava Desativado e com canais “Não configurado”, assim como os outros três agentes desativados da lista. O painel tinha atividade recente atribuída a SMS e Instagram, mas isso não comprova envio automático: os modos atuais observados são sugestivos. Nenhum bot foi editado, ativado ou desativado. O agente V02 nativo e o novo serviço supervisionado Jornada AI são instalações distintas; não misturar seus estados nem ativar ambos para o mesmo teste.
+
+Referências técnicas conferidas: [provedor personalizado que substitui SMS](https://marketplace.gohighlevel.com/docs/marketplace-modules/ConversationProviders/), [envio via API](https://marketplace.gohighlevel.com/docs/ghl/conversations/send-a-new-message/), [webhook de entrega ao provedor](https://marketplace.gohighlevel.com/docs/webhook/ProviderOutboundMessage/), [modo sugestivo do Conversation AI](https://help.gohighlevel.com/support/solutions/articles/155000001335). A documentação pública do Zaptos descreve integração e multiatendimento, mas não foi localizado contrato público suficiente de API/eventos para comprovar sincronização de responsáveis, pausa ou arquivamento: [guia do fornecedor](https://zaptoscompany.com/como-integrar-whatsapp-ao-gohighlevel-ghl/).
+
+O diagnóstico remoto acessou a rota sem sessão e confirmou redirecionamento para login. Após esta publicação, uma nova aba do Chrome abriu a rota com a sessão existente: interface “Agente supervisionado”, “Conta ativa”, “Ligação GHL validada” e aviso “O serviço aguarda configuração segura no servidor”. O acesso autenticado à página foi comprovado; carregar e operar a fila ainda depende da configuração. Após cadastrar os segredos e publicá-los no serviço: configurar webhook com IDs estáveis, preparar worker/cron inativo, excluir o contato de automações concorrentes, liberar somente recebimento/geração para esse contato no transporte SMS/Zaptos já escolhido e demonstrar aprovação humana e envio/recibo. Pausa, duplicidade e repasse humano precisam ser comprovados nesse fluxo real antes de ampliar o atendimento.
+
+A alteração recente `08be9f2..50e417b` acrescenta apenas tipos Supabase de recursos n8n; a sobrecarga antiga foi preservada e TypeScript passou com o novo arquivo sobreposto em memória. O custo de referência atualizado para o modelo selecionado está em `OPERACAO.md`.
+
+## Registro de 05/10/2026 — publicação inicial desligada
+
+Após a aprovação do usuário, a instalação foi publicada em `https://jornada-ai-conecta.lovable.app`. Commit integrado no Lovable/main: `b3db32e2580b5585997834a26885f43b8b1b2e8f`; árvore `414d9fd993f54733b32ecc741c00770ec461a7d6`, idêntica ao código local revisado. Deployment `beb7b403-9236-4e0c-b69d-df5e9c0d2333`. O painel confirmou “Seu site foi atualizado”, e o cabeçalho HTTP do endpoint público identificou esse mesmo deployment.
+
+A sincronização anterior `9e35e0c` havia removido os arquivos do agente. Foram restaurados os 44 arquivos exatos a partir da branch revisada `codex/restaurar-agente-lovable` (`91569b8`), preservando as correções recentes de `__root.tsx` e dos tipos Supabase. O Git confirmou igualdade da árvore inteira antes da publicação. Nenhuma migração foi repetida.
+
+Verificações no domínio publicado, em 05/10/2026 às 18:43 UTC, sem credenciais nem dados de contatos:
+
+- `GET /api/public/commercial-agent-webhook`: HTTP 200, `{"service":"commercial-agent-v02","mode":"supervised_only"}`.
+- `POST /api/public/commercial-agent-webhook`, corpo vazio `{}`: HTTP 503, `{"status":"disabled"}`.
+- `POST /api/public/commercial-agent-worker`, sem segredo, corpo `{}`: HTTP 401, `{"error":"unauthorized"}`.
+- Banco reconferido após publicação: `mode=off`, zero contatos/canais autorizados, zero eventos/rascunhos e zero jobs do agente.
+
+As primeiras requisições Python receberam HTTP 403 do provedor; as mesmas verificações via curl atingiram a aplicação e deram os resultados acima. A rota `/agente-supervisionado` foi aberta com o título correto, mas permaneceu em “A carregar…” na observação disponível; a fila autenticada ainda não foi validada. O controle do Chrome foi interrompido por outra interface de extensão durante a preparação do painel de secrets.
+
+Antes desta publicação, 94 testes locais, TypeScript e build passaram. No Lovable, tipos/build passaram e 741 testes passaram, com 20 ignorados; o arquivo de testes PostgreSQL do agente falhou porque o ambiente executa como root. Isso não representa homologação remota do banco nem dos provedores; os testes transacionais locais anteriores permanecem a evidência disponível.
+
+A implementação para reutilizar `LOVABLE_API_KEY` agora está publicada, mas o provedor ainda não foi selecionado nas variáveis do ambiente nem validado com uma chamada real. Permanecem pendentes os três segredos próprios, a configuração explícita do provedor, o contato/canal controlado, o webhook/worker e o ciclo real de recebimento, geração, aprovação e envio. Nenhuma mensagem foi gerada ou enviada pelo novo agente.
+
+Os registros abaixo descrevem etapas anteriores; menções a publicação bloqueada ou código apenas local foram superadas pelo estado vigente acima.
+
+## Reutilização da chave usada pelo Jev — implementação publicada, configuração pendente
+
+O Jev e o briefing da Jornada AI já usam `LOVABLE_API_KEY` no servidor. O novo agente agora tem um adaptador opcional para reutilizar essa credencial via `https://ai.gateway.lovable.dev/v1/responses`, com o modelo `openai/gpt-5.4-mini`. Essa alteração está publicada; a seleção do provedor e a homologação real no ambiente hospedado continuam pendentes.
 
 Para selecionar esse caminho no servidor, definir `COMMERCIAL_AGENT_AI_PROVIDER=lovable` e `COMMERCIAL_AGENT_MODEL=openai/gpt-5.4-mini`. A chave gerenciada pelo Lovable permanece no ambiente existente: não ler, exportar ou copiar para `OPENAI_API_KEY`. Nesse modo, uma chave direta OpenAI não é necessária. Sem seleção explícita, permanece o provedor OpenAI direto; falhas não trocam de provedor automaticamente.
 
@@ -57,7 +118,7 @@ Uma tentativa alternativa de reutilizar a credencial salva para criar um fork fo
 
 A lista de nomes em Cloud → Secrets foi inspecionada sem ler valores. `GHL_PRIVATE_TOKEN` e `GHL_LOCATION_ID` já existem; não foram modificados. Ausentes:
 
-- `OPENAI_API_KEY`: chave de projeto OpenAI com orçamento configurado.
+- `OPENAI_API_KEY`: necessária somente se for escolhido OpenAI direto; dispensada no caminho Lovable solicitado, depois de configurar explicitamente o provedor.
 - `COMMERCIAL_AGENT_ENCRYPTION_KEY`: 32 bytes aleatórios codificados em base64, com cópia protegida para preservar acesso aos rascunhos.
 - `COMMERCIAL_AGENT_WEBHOOK_SECRET`: segredo aleatório exclusivo, mínimo 32 caracteres, para o modo workflow.
 - `COMMERCIAL_AGENT_WORKER_SECRET`: outro segredo aleatório exclusivo, mínimo 32 caracteres.
