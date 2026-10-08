@@ -1536,6 +1536,50 @@ export type Database = {
           },
         ]
       }
+      n8n_bridge_pilot_grants: {
+        Row: {
+          allowed_kinds: string[]
+          contact_id: string
+          enabled: boolean
+          expires_at: string
+          ghl_appointment_id: string
+          organization_id: string
+          start_time: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          allowed_kinds?: string[]
+          contact_id: string
+          enabled?: boolean
+          expires_at: string
+          ghl_appointment_id: string
+          organization_id: string
+          start_time: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          allowed_kinds?: string[]
+          contact_id?: string
+          enabled?: boolean
+          expires_at?: string
+          ghl_appointment_id?: string
+          organization_id?: string
+          start_time?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_pilot_grants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       n8n_bridge_rate: {
         Row: {
           hits: number
