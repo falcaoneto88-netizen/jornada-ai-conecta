@@ -84,7 +84,12 @@ function acknowledgementEvidence(): NonNullable<DepsBridge["confirmacao"]> {
   return {
     confirmedReply: async () => ({
       ok: true,
-      data: { requestId: "request01", inboundMessageId: inbound.id, replyAt: inbound.dateAdded },
+      data: {
+        requestId: "request01",
+        inboundMessageId: inbound.id,
+        replyAt: inbound.dateAdded,
+        finishedAt: new Date(Date.parse(inbound.dateAdded) + 1000).toISOString(),
+      },
     }),
     requests: async () => ({
       ok: true,

@@ -26,7 +26,12 @@ export type RequestEvidence = {
   messageId: string;
   acceptedAt: string;
 };
-export type ConfirmedReply = { requestId: string; inboundMessageId: string; replyAt: string };
+export type ConfirmedReply = {
+  requestId: string;
+  inboundMessageId: string;
+  replyAt: string;
+  finishedAt: string;
+};
 export type ConfirmationReservation =
   { reserved: true; id: string } | { reserved: false; id: string; state: string };
 export type DepsConfirmacao = {
@@ -223,6 +228,61 @@ export async function replyContext(
     : "reply_history_unavailable";
 }
 
+/** ACK only: correlate one technical update; this does not establish its actor. */
+function acknowledgementContext(
+  messages: ReplyHistory,
+  inbound: Message,
+  request: RequestEvidence,
+  event: EventoBridge,
+  finishedAt: string,
+  now: number,
+): string | null {
+  const completed = Date.parse(finishedAt);
+  // PostgreSQL retains microseconds while GHL's observed activity uses milliseconds.
+  // Round the lower bound up, never admit an activity just before completion.
+  const fraction = finishedAt.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1] ?? "";
+  const earliest = completed + (/[1-9]/.test(fraction.slice(3)) ? 1 : 0);
+  const filtered = new Map(messages);
+  let correlated = 0;
+  for (const [id, { time, raw }] of messages) {
+    const activity = object(raw["activity"]);
+    const data = object(activity?.["data"]);
+    if (
+      id === inbound.id ||
+      !/^[A-Za-z0-9_-]{6,64}$/.test(id) ||
+      raw["messageType"] !== "TYPE_ACTIVITY_APPOINTMENT" ||
+      raw["type"] !== 31 ||
+      raw["source"] !== "app" ||
+      raw["direction"] !== "outbound" ||
+      "userId" in raw ||
+      activity?.["type"] !== "appointment_updated" ||
+      Object.keys(activity).some((key) => !["data", "title", "type"].includes(key)) ||
+      ("title" in activity && typeof activity["title"] !== "string") ||
+      data?.["id"] !== event.id ||
+      Object.keys(data).some(
+        (key) =>
+          !["id", "timestamp", "serviceBookingId", "industryType", "appointmentTitle"].includes(
+            key,
+          ),
+      ) ||
+      ("appointmentTitle" in data && typeof data["appointmentTitle"] !== "string") ||
+      data["serviceBookingId"] !== null ||
+      data["industryType"] !== null ||
+      !sourceTimestamp.safeParse(data?.["timestamp"]).success ||
+      Date.parse(String(data?.["timestamp"])) !== Date.parse(event.startTime) ||
+      !sourceTimestamp.safeParse(raw["dateUpdated"]).success ||
+      raw["dateAdded"] !== raw["dateUpdated"] ||
+      time < earliest ||
+      time > completed + 5000 ||
+      time > now
+    )
+      continue;
+    if (++correlated > 1) return "reply_superseded";
+    filtered.delete(id);
+  }
+  return validarContextoResposta(filtered, inbound, request, new Set([request.messageId]));
+}
+
 /** Revalidate the persisted affirmative reply before acknowledgement; never performs PUT. */
 export async function validarAgradecimento(
   scope: Resolucao,
@@ -262,6 +322,13 @@ export async function validarAgradecimento(
     inbound.time > now
   )
     return fail("reply_outside_window");
+  if (
+    !sourceTimestamp.safeParse(record.finishedAt).success ||
+    Date.parse(record.finishedAt) <= inbound.time ||
+    Date.parse(record.finishedAt) > now ||
+    Date.parse(record.finishedAt) >= Date.parse(start)
+  )
+    return fail("confirmation_evidence_invalid");
   const listed = await confirmation
     .requests(scope.orgId, event.contactId, record.replyAt)
     .catch(() => ({ ok: false as const, code: "unavailable" }));
@@ -291,13 +358,15 @@ export async function validarAgradecimento(
     sent.time >= inbound.time
   )
     return fail("confirmation_evidence_invalid");
-  const historyError = await replyContext(
+  const history = await lerHistoricoResposta(
     confirmation,
     scope,
-    inbound,
-    request,
-    new Set([request.messageId]),
+    inbound.contactId,
+    inbound.conversationId,
   );
+  const historyError = history
+    ? acknowledgementContext(history, inbound, request, event, record.finishedAt, now)
+    : "reply_history_unavailable";
   if (historyError) return fail(historyError);
   // The original calendar read can have become stale during evidence/history reads.
   const freshRead = await deps.consulta(event.id).catch(readFailed);
