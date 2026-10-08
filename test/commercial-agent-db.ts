@@ -84,6 +84,9 @@ export async function startCommercialDb() {
       await migration.unsafe(
         readFileSync("supabase/migrations/20261008180000_commercial_agent_receive_all.sql", "utf8"),
       );
+      await migration.unsafe(
+        readFileSync("supabase/migrations/20261008190000_commercial_agent_manual.sql", "utf8"),
+      );
     } finally {
       migration.release();
     }
@@ -94,8 +97,9 @@ export async function startCommercialDb() {
   }
   const store: Store = {
     async command<T>(op: string, org: string, data: Record<string, unknown> = {}, actor?: string) {
-      const rows =
-        await sql`select public.commercial_agent_command(${op},${org}::uuid,${sql.json(data as never)},${actor ?? null}::uuid) as value`;
+      const rows = op.startsWith("manual_")
+        ? await sql`select public.commercial_agent_manual_command(${op},${org}::uuid,${sql.json(data as never)},${actor ?? null}::uuid) as value`
+        : await sql`select public.commercial_agent_command(${op},${org}::uuid,${sql.json(data as never)},${actor ?? null}::uuid) as value`;
       const value = rows[0]?.["value"];
       if (value?.error) throw new AgentError(value.error);
       return value as T;

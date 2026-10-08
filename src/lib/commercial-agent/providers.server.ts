@@ -13,6 +13,8 @@ import {
   AgentError,
   checkReply,
   decisionSchema,
+  eventSchema,
+  id,
   type DraftPayload,
   type Event,
   type Message,
@@ -117,11 +119,122 @@ type Get = (
   path: string,
   init?: { method?: string; body?: unknown; query?: Record<string, string | undefined> },
 ) => Promise<GhlResult<unknown>>;
+
+export type ManualConversationScope = Pick<Event, "locationId" | "contactId" | "conversationId">;
+const manualScopeSchema = eventSchema.pick({
+  locationId: true,
+  contactId: true,
+  conversationId: true,
+});
+const manualInstant = z.iso.datetime({ offset: true });
+function manualTimestamp(value: unknown): number | null {
+  if (typeof value === "number")
+    return Number.isSafeInteger(value) && value >= 0 && Number.isFinite(new Date(value).getTime())
+      ? value
+      : null;
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+    !manualInstant.safeParse(value).success
+  )
+    return null;
+  const at = Date.parse(value);
+  return Number.isFinite(at) && at >= 0 ? at : null;
+}
+// PostgreSQL approval timestamps retain microseconds. Receipt comparisons use
+// milliseconds, truncating extra precision only after validating the full ISO value.
+function manualReceiptTimestamp(value: unknown): number | null {
+  if (typeof value !== "string") return manualTimestamp(value);
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+    !manualInstant.safeParse(value).success
+  )
+    return null;
+  return manualTimestamp(value.replace(/(\.\d{3})\d+(?=Z|[+-]\d{2}:\d{2}$)/, "$1"));
+}
+const manualMessageSchema = z.object({
+  id,
+  locationId: id.optional(),
+  contactId: id.optional(),
+  conversationId: id,
+  dateAdded: z.union([z.string(), z.number()]),
+  body: z.string().max(100_000).nullish(),
+  direction: z.string().optional(),
+  messageType: z.string().max(100).nullish(),
+  type: z.union([z.string().max(100), z.number().int().nonnegative()]).optional(),
+  attachments: z.array(z.unknown()).optional(),
+  contentType: z.string().nullish(),
+  conversationProviderId: id.nullish(),
+});
+const manualReceiptSchema = manualMessageSchema.extend({
+  locationId: id,
+  contactId: id,
+  body: z.string(),
+  status: z.string(),
+});
+const manualReceiptEnvelopeSchema = z
+  .object({ message: manualReceiptSchema, traceId: z.string().optional() })
+  .strict();
+function parseManualReceipt(raw: unknown) {
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && "message" in raw) {
+    const nested = raw.message;
+    // Only one envelope level is supported; mixed flat/enveloped identities or
+    // a second message wrapper are ambiguous and must not reconcile a dispatch.
+    if (nested && typeof nested === "object" && "message" in nested) return null;
+    const envelope = manualReceiptEnvelopeSchema.safeParse(raw);
+    return envelope.success ? envelope.data.message : null;
+  }
+  const flat = manualReceiptSchema.safeParse(raw);
+  return flat.success ? flat.data : null;
+}
+const manualPageSchema = z.object({
+  messages: z.object({
+    messages: z.array(manualMessageSchema).max(50),
+    nextPage: z.boolean(),
+    lastMessageId: id.nullish(),
+  }),
+});
+function latestManualInbound(messages: Message[], now: number): Message {
+  if (!Number.isSafeInteger(now)) throw new AgentError("history_invalid");
+  let latest: Message | undefined;
+  let latestAt = -1;
+  let ambiguous = false;
+  const seen = new Set<string>();
+  for (const message of messages) {
+    const at = manualTimestamp(message.at);
+    if (
+      !id.safeParse(message.id).success ||
+      seen.has(message.id) ||
+      at === null ||
+      at > now ||
+      !["inbound", "outbound"].includes(message.direction)
+    )
+      throw new AgentError("history_invalid");
+    seen.add(message.id);
+    if (message.direction !== "inbound") continue;
+    if (at > latestAt) {
+      latest = message;
+      latestAt = at;
+      ambiguous = false;
+    } else if (at === latestAt) ambiguous = true;
+  }
+  if (!latest) throw new AgentError("inbound_not_verified");
+  if (ambiguous) throw new AgentError("manual_route_ambiguous");
+  if (
+    typeof latest.channel !== "string" ||
+    !latest.channel ||
+    (latest.provider !== null && !id.safeParse(latest.provider).success)
+  )
+    throw new AgentError("history_invalid");
+  return latest;
+}
+
 export class HighLevel {
   constructor(
     private token: string,
     private location: string,
     private call: Get = ghlFetch,
+    private now: () => number = Date.now,
   ) {}
   private async get(path: string, query?: Record<string, string | undefined>) {
     const r = await this.call(
@@ -210,6 +323,207 @@ export class HighLevel {
     }
     throw new AgentError("history_incomplete");
   }
+
+  private async manualGet(path: string, query?: Record<string, string | undefined>) {
+    try {
+      return await this.get(path, query);
+    } catch (error) {
+      throw error instanceof AgentError ? error : new AgentError("ghl_read_failed");
+    }
+  }
+  private async manualConversation(scope: ManualConversationScope) {
+    const parsed = manualScopeSchema.safeParse(scope);
+    if (!parsed.success || parsed.data.locationId !== this.location)
+      throw new AgentError("scope_mismatch");
+    const raw = await this.manualGet(`conversations/${scope.conversationId}`);
+    try {
+      const conversation = confirmarConversa(raw, this.location, scope.conversationId);
+      if (conversation.contactId !== scope.contactId) throw new Error();
+    } catch {
+      throw new AgentError("scope_mismatch");
+    }
+  }
+
+  /** The authenticated backend proves the received conversation; GHL supplies its current route. */
+  async manualHistory(scope: ManualConversationScope): Promise<Snapshot> {
+    await this.manualConversation(scope);
+    const parsedContact = z
+      .object({
+        contact: z.object({
+          id,
+          locationId: id,
+          name: z.string().optional(),
+          firstName: z.string().optional(),
+          dnd: z.boolean().default(false),
+          dndSettings: z
+            .record(z.string(), z.object({ status: z.enum(["active", "inactive", "permanent"]) }))
+            .optional(),
+        }),
+      })
+      .safeParse(await this.manualGet(`contacts/${scope.contactId}`));
+    if (!parsedContact.success) throw new AgentError("history_invalid");
+    const contact = parsedContact.data.contact;
+    if (contact.id !== scope.contactId || contact.locationId !== this.location)
+      throw new AgentError("scope_mismatch");
+    const now = this.now();
+    if (!Number.isSafeInteger(now)) throw new AgentError("history_invalid");
+    const all = new Map<string, Message>();
+    const metadata = new Map<string, string>();
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const parsed = manualPageSchema.safeParse(
+        await this.manualGet(`conversations/${scope.conversationId}/messages`, {
+          limit: "50",
+          ...(cursor === undefined ? {} : { lastMessageId: cursor }),
+        }),
+      );
+      if (!parsed.success) throw new AgentError("history_invalid");
+      const data = parsed.data.messages;
+      const previousCount = metadata.size;
+      for (const raw of data.messages) {
+        if (
+          raw.conversationId !== scope.conversationId ||
+          (raw.locationId !== undefined && raw.locationId !== scope.locationId) ||
+          (raw.contactId !== undefined && raw.contactId !== scope.contactId)
+        )
+          throw new AgentError("scope_mismatch");
+        const at = manualTimestamp(raw.dateAdded);
+        if (at === null || at > now) throw new AgentError("history_invalid");
+        const type = raw.messageType ?? (typeof raw.type === "string" ? raw.type : null);
+        if (!type || !/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) throw new AgentError("history_invalid");
+        const kind = type.replace(/^TYPE_/i, "").toUpperCase();
+        if (!kind) throw new AgentError("history_invalid");
+        const ignored =
+          /^ACTIVITY(?:_|$)|(?:^|_)(?:CALL|VOICEMAIL)(?:_|$)|^INTERNAL(?:_?COMMENT)?$/.test(kind);
+        if (
+          !ignored &&
+          (raw.locationId !== scope.locationId ||
+            raw.contactId !== scope.contactId ||
+            !["inbound", "outbound"].includes(raw.direction ?? ""))
+        )
+          throw new AgentError("history_invalid");
+        const message: Message = {
+          id: raw.id,
+          at: new Date(at).toISOString(),
+          direction: raw.direction as Message["direction"],
+          text: raw.contentType?.includes("html")
+            ? "[Mensagem HTML: revisão no HighLevel]"
+            : (raw.body ?? ""),
+          channel: normalizeChannel(type),
+          attachments: raw.attachments?.length ?? 0,
+          provider: raw.conversationProviderId ?? null,
+        };
+        const fingerprint = sha(
+          JSON.stringify([
+            message,
+            kind,
+            raw.locationId ?? null,
+            raw.contactId ?? null,
+            raw.conversationId,
+            raw.body ?? null,
+            raw.attachments ?? [],
+          ]),
+        );
+        const previous = metadata.get(raw.id);
+        if (previous && previous !== fingerprint) throw new AgentError("history_conflict");
+        metadata.set(raw.id, fingerprint);
+        if (!ignored) all.set(raw.id, message);
+      }
+      if (!data.nextPage) {
+        const messages = [...all.values()].sort(
+          (left, right) =>
+            Date.parse(left.at) - Date.parse(right.at) || left.id.localeCompare(right.id),
+        );
+        const inbound = latestManualInbound(messages, now);
+        return {
+          event: {
+            ...manualScopeSchema.parse(scope),
+            type: "InboundMessage",
+            messageId: inbound.id,
+          },
+          messages,
+          dnd:
+            contact.dnd ||
+            Object.values(contact.dndSettings ?? {}).some(
+              (value) => value.status === "active" || value.status === "permanent",
+            ),
+          name: contact.name ?? contact.firstName ?? "Contato",
+          historyHash: sha(JSON.stringify(messages)),
+        };
+      }
+      const next = data.lastMessageId;
+      if (
+        !next ||
+        !data.messages.some((message) => message.id === next) ||
+        metadata.size === previousCount ||
+        cursors.has(next)
+      )
+        throw new AgentError("history_incomplete");
+      cursors.add(next);
+      cursor = next;
+    }
+    throw new AgentError("history_incomplete");
+  }
+
+  private manualRoute(snapshot: Snapshot): Message {
+    const event = eventSchema.safeParse(snapshot.event);
+    if (
+      !event.success ||
+      event.data.locationId !== this.location ||
+      event.data.type !== "InboundMessage"
+    )
+      throw new AgentError("scope_mismatch");
+    const inbound = latestManualInbound(snapshot.messages, this.now());
+    if (inbound.id !== event.data.messageId) throw new AgentError("manual_route_changed");
+    return inbound;
+  }
+
+  /** Authorization and fresh-history/version checks belong to the authenticated manual service. */
+  async sendManual(snapshot: Snapshot, text: string) {
+    const inbound = this.manualRoute(snapshot);
+    try {
+      const result = await this.send({ ...snapshot, messages: [inbound] }, text);
+      if (result.state === "sent" && !id.safeParse(result.messageId).success)
+        return { state: "unknown" as const, code: "send_receipt_mismatch", messageId: null };
+      return result;
+    } catch {
+      // A transport exception after dispatch is not proof that the provider rejected it.
+      return { state: "unknown" as const, code: "outcome_unknown", messageId: null };
+    }
+  }
+
+  async verifyManualReceipt(
+    snapshot: Snapshot,
+    text: string,
+    messageId: string,
+    approvedAt: string,
+  ): Promise<boolean> {
+    const inbound = this.manualRoute(snapshot);
+    if (!id.safeParse(messageId).success) throw new AgentError("scope_mismatch");
+    const approved = manualReceiptTimestamp(approvedAt);
+    if (approved === null || approved > this.now()) return false;
+    await this.manualConversation(snapshot.event);
+    const receipt = parseManualReceipt(await this.manualGet(`conversations/messages/${messageId}`));
+    if (!receipt) return false;
+    const at = manualReceiptTimestamp(receipt.dateAdded);
+    if (at === null || at > this.now()) return false;
+    const kind = receipt.messageType ?? (typeof receipt.type === "string" ? receipt.type : "");
+    return (
+      receipt.id === messageId &&
+      receipt.locationId === this.location &&
+      receipt.contactId === snapshot.event.contactId &&
+      receipt.conversationId === snapshot.event.conversationId &&
+      receipt.direction === "outbound" &&
+      receipt.body === text &&
+      normalizeChannel(kind) === inbound.channel &&
+      (receipt.conversationProviderId ?? null) === inbound.provider &&
+      ["pending", "sent", "delivered", "read"].includes(receipt.status) &&
+      at - approved >= -5000 &&
+      at - approved <= 300000
+    );
+  }
+
   async send(snapshot: Snapshot, text: string) {
     const last = snapshot.messages.at(-1);
     if (!last) throw new AgentError("history_invalid");

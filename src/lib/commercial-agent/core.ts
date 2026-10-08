@@ -82,7 +82,53 @@ export type Settings = {
   receive_all_contacts?: boolean;
   receive_since?: string | null;
   receive_cursor_until?: string | null;
+  manual_send_all_contacts?: boolean;
 };
+export type ManualScope = { locationId: string; contactId: string; conversationId: string };
+export type ManualConversation = ManualScope & {
+  sessionVersion: number;
+  paused: boolean;
+  optOut: boolean;
+  lastMessageAt: string | null;
+};
+export type ManualDispatchState =
+  "prepared" | "sending" | "sent" | "unknown" | "rejected" | "invalidated";
+export type ManualContext = {
+  snapshot: Snapshot;
+  sessionVersion: number;
+  paused: boolean;
+  optOut: boolean;
+  sendAllowed: boolean;
+  blockedReason: string | null;
+  lastDispatch?: {
+    id: string;
+    state: ManualDispatchState;
+    replyHash: string;
+    messageId: string | null;
+    errorCode: string | null;
+  };
+};
+export type ManualPrepared = {
+  id: string;
+  replyHash: string;
+  text: string;
+  snapshot: Snapshot;
+  expiresAt: string;
+  sessionVersion: number;
+};
+export const manualScopeSchema = z.object({ contactId: id, conversationId: id }).strict();
+export const manualPrepareSchema = manualScopeSchema.extend({
+  expectedVersion: z.number().int().nonnegative(),
+  historyHash: z.string().regex(/^[a-f0-9]{64}$/),
+  text: z.string().trim().min(1).max(1500),
+  requestId: z.string().uuid(),
+});
+export const manualSendSchema = z
+  .object({
+    manualId: z.string().uuid(),
+    replyHash: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
 export type QueueError = {
   id: string;
   state: string;
