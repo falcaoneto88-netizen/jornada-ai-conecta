@@ -823,6 +823,7 @@ export type Database = {
           lease: string | null
           lease_until: string | null
           message_id: string
+          observed_at: string | null
           organization_id: string
           retry_at: string
           state: string
@@ -839,6 +840,7 @@ export type Database = {
           lease?: string | null
           lease_until?: string | null
           message_id: string
+          observed_at?: string | null
           organization_id: string
           retry_at?: string
           state?: string
@@ -855,6 +857,7 @@ export type Database = {
           lease?: string | null
           lease_until?: string | null
           message_id?: string
+          observed_at?: string | null
           organization_id?: string
           retry_at?: string
           state?: string
@@ -862,6 +865,89 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "commercial_agent_inbox_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_agent_manual_dispatches: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          channel: string
+          contact_id: string
+          conversation_id: string
+          created_at: string
+          dispatch_id: string | null
+          error_code: string | null
+          expires_at: string
+          history_hash: string
+          id: string
+          inbound_at: string
+          inbound_id: string
+          location_id: string
+          organization_id: string
+          payload: string
+          prepared_by: string
+          reply_hash: string
+          request_id: string
+          result_message_id: string | null
+          session_version: number
+          state: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          channel: string
+          contact_id: string
+          conversation_id: string
+          created_at?: string
+          dispatch_id?: string | null
+          error_code?: string | null
+          expires_at?: string
+          history_hash: string
+          id?: string
+          inbound_at: string
+          inbound_id: string
+          location_id: string
+          organization_id: string
+          payload: string
+          prepared_by: string
+          reply_hash: string
+          request_id: string
+          result_message_id?: string | null
+          session_version: number
+          state?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          channel?: string
+          contact_id?: string
+          conversation_id?: string
+          created_at?: string
+          dispatch_id?: string | null
+          error_code?: string | null
+          expires_at?: string
+          history_hash?: string
+          id?: string
+          inbound_at?: string
+          inbound_id?: string
+          location_id?: string
+          organization_id?: string
+          payload?: string
+          prepared_by?: string
+          reply_hash?: string
+          request_id?: string
+          result_message_id?: string | null
+          session_version?: number
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_agent_manual_dispatches_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -912,6 +998,7 @@ export type Database = {
           allowed_channels: string[]
           allowed_contacts: string[]
           location_id: string
+          manual_send_all_contacts: boolean
           mode: string
           monthly_draft_limit: number
           organization_id: string
@@ -923,6 +1010,7 @@ export type Database = {
           allowed_channels?: string[]
           allowed_contacts?: string[]
           location_id: string
+          manual_send_all_contacts?: boolean
           mode?: string
           monthly_draft_limit?: number
           organization_id: string
@@ -934,6 +1022,7 @@ export type Database = {
           allowed_channels?: string[]
           allowed_contacts?: string[]
           location_id?: string
+          manual_send_all_contacts?: boolean
           mode?: string
           monthly_draft_limit?: number
           organization_id?: string
@@ -2370,6 +2459,10 @@ export type Database = {
         Returns: Json
       }
       commercial_agent_command: {
+        Args: { _actor?: string; _data?: Json; _op: string; _org: string }
+        Returns: Json
+      }
+      commercial_agent_manual_command: {
         Args: { _actor?: string; _data?: Json; _op: string; _org: string }
         Returns: Json
       }
