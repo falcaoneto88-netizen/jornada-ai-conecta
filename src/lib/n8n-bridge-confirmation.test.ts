@@ -123,6 +123,34 @@ function fixture() {
 }
 
 describe("appointment.confirm evidence and persistence", () => {
+  it("confirms an ordinary SMS reply linked to the exact custom Zaptos request", async () => {
+    const f = fixture();
+    Object.assign(f.cfg, { channel: "whatsapp_zaptos", zaptosProviderId: "provider01" });
+    Object.assign(f.outbound, {
+      messageType: "TYPE_CUSTOM_SMS",
+      type: 20,
+      source: "api",
+      conversationProviderId: "provider01",
+    });
+    expect((await f.run()).body.confirmed).toBe(true);
+    expect(f.conf.confirm).toHaveBeenCalledExactlyOnceWith(LOC, "appoint01");
+  });
+  it.each([undefined, "another-provider"])(
+    "rejects custom provider %s before confirming",
+    async (provider) => {
+      const f = fixture();
+      Object.assign(f.cfg, { channel: "whatsapp_zaptos", zaptosProviderId: "provider01" });
+      Object.assign(f.outbound, {
+        messageType: "TYPE_CUSTOM_SMS",
+        type: 20,
+        source: "api",
+        conversationProviderId: provider,
+      });
+      expect((await f.run()).body.error).toBe("confirmation_evidence_invalid");
+      expect(f.conf.claim).not.toHaveBeenCalled();
+      expect(f.conf.confirm).not.toHaveBeenCalled();
+    },
+  );
   it("persists verified confirmation after one PUT and fresh read", async () => {
     const f = fixture();
     expect(await f.run()).toMatchObject({
@@ -441,6 +469,33 @@ function acknowledgementFixture() {
 }
 
 describe("acknowledgement revalidates the persisted reply", () => {
+  it("acknowledges the SMS reply linked to the configured custom Zaptos request", async () => {
+    const f = acknowledgementFixture();
+    Object.assign(f.outbound, {
+      messageType: "TYPE_CUSTOM_SMS",
+      type: 20,
+      source: "api",
+      conversationProviderId: "provider01",
+    });
+    expect((await f.sendAck()).body.status).toBe("accepted");
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+  });
+  it.each([undefined, "another-provider"])(
+    "blocks acknowledgement for custom provider %s",
+    async (provider) => {
+      const f = acknowledgementFixture();
+      Object.assign(f.outbound, {
+        messageType: "TYPE_CUSTOM_SMS",
+        type: 20,
+        source: "api",
+        conversationProviderId: provider,
+      });
+      expect((await f.sendAck()).body.error).toBe("confirmation_evidence_invalid");
+      expect(f.reserve).not.toHaveBeenCalled();
+      expect(f.send).not.toHaveBeenCalled();
+    },
+  );
   it("valid current SIM permits acknowledgement without repeating appointment PUT", async () => {
     const f = acknowledgementFixture();
     expect((await f.sendAck()).body.status).toBe("accepted");

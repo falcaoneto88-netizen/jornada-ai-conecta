@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { criarDepsConfirmacao, type ClienteBridge } from "./n8n-bridge.server";
+import { parseMessage } from "./n8n-bridge-confirmation";
 const db = {} as ClienteBridge;
 beforeEach(() => {
   vi.stubEnv("GHL_PRIVATE_TOKEN", "synthetic-private-test-token");
@@ -34,6 +35,63 @@ describe("confirmation adapter", () => {
       "https://services.leadconnectorhq.com/conversations/messages/message01",
     );
   });
+  const message = {
+    id: "message01",
+    locationId: "location01",
+    contactId: "contact01",
+    conversationId: "conversation01",
+    dateAdded: "2026-10-08T17:44:28.571Z",
+    direction: "outbound",
+    contentType: "text/plain",
+    body: "Synthetic booking",
+    messageType: "TYPE_SMS",
+  };
+  it.each([message, { message }, { message, traceId: "synthetic-trace" }])(
+    "normalizes a supported authenticated message response without altering fields",
+    async (payload) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json(payload)),
+      );
+      const read = await criarDepsConfirmacao(db).message("location01", "message01");
+      expect(read).toEqual({ ok: true, data: message });
+      expect(
+        read.ok && parseMessage(read.data, "message01", "location01", "outbound"),
+      ).toMatchObject({ id: "message01" });
+    },
+  );
+  it.each([
+    null,
+    [],
+    { message: null },
+    { message: [] },
+    { message: "message01" },
+    { message, traceId: 1 },
+    { message, id: "other-message" },
+    { message, locationId: "another-location" },
+    { message, unknown: true },
+    { message: { ...message, message } },
+  ])("rejects malformed or ambiguous message envelopes", async (payload) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(payload)),
+    );
+    expect(await criarDepsConfirmacao(db).message("location01", "message01")).toEqual({
+      ok: true,
+      data: null,
+    });
+  });
+  it.each([{ id: "other-message" }, { locationId: "another-location" }])(
+    "does not replace conflicting inner identity using request parameters",
+    async (change) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json({ message: { ...message, ...change } })),
+      );
+      const read = await criarDepsConfirmacao(db).message("location01", "message01");
+      expect(read.ok && parseMessage(read.data, "message01", "location01", "outbound")).toBeNull();
+    },
+  );
   it.each([503, 302])("uncertain HTTP %i never retries writes", async (status) => {
     const fetch = vi.fn(async () => new Response("{}", { status }));
     vi.stubGlobal("fetch", fetch);
