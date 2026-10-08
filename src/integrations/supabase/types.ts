@@ -2588,6 +2588,10 @@ export type Database = {
         Returns: boolean
       }
       pedido_de_cliente: { Args: never; Returns: boolean }
+      provision_commercial_worker_secret_once: {
+        Args: { _secret: string }
+        Returns: string
+      }
       receive_bioreport_event: {
         Args: { _body: string; _signature: string }
         Returns: Json
