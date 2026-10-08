@@ -247,6 +247,7 @@ function acknowledgementContext(
   for (const [id, { time, raw }] of messages) {
     const activity = object(raw["activity"]);
     const data = object(activity?.["data"]);
+    const members = data?.["members"];
     if (
       id === inbound.id ||
       !/^[A-Za-z0-9_-]{6,64}$/.test(id) ||
@@ -261,10 +262,19 @@ function acknowledgementContext(
       data?.["id"] !== event.id ||
       Object.keys(data).some(
         (key) =>
-          !["id", "timestamp", "serviceBookingId", "industryType", "appointmentTitle"].includes(
-            key,
-          ),
+          ![
+            "id",
+            "timestamp",
+            "serviceBookingId",
+            "industryType",
+            "appointmentTitle",
+            "members",
+          ].includes(key),
       ) ||
+      ("members" in data &&
+        (!object(members) ||
+          Object.getPrototypeOf(members) !== Object.prototype ||
+          Reflect.ownKeys(members as object).length !== 0)) ||
       ("appointmentTitle" in data && typeof data["appointmentTitle"] !== "string") ||
       data["serviceBookingId"] !== null ||
       data["industryType"] !== null ||

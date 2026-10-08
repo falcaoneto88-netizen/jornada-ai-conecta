@@ -416,3 +416,12 @@ Adendo factual. Registro somente do que foi comprovado por leitura; nada aqui au
 - **Estado:** flags backend OFF (`simulation=true`, `live_send_enabled=false`, `channel_verified=false`); grant revogado `2026-10-08T19:20:48.324613Z`.
 - **Não verificados** (navegador indisponível): limpeza do rascunho n8n da fase manual reply e ID da execução n8n.
 - **Não se afirma** E2E concluído nem envio do agradecimento.
+
+## Adendo 08/10/2026 ~19:55 UTC — agradecimento: capacidade 1 ainda recusava; candidata 2 (não publicada)
+
+- Capacidade 1 (revisão `0f056b9`) publicada no deployment `2ac2a1f4-7593-45f8-b871-8a390dd9ecf8`; GET público `/api/version` às 19:41:40.096Z mostrou `n8nAcknowledgementActivity: 1`. Mesmo assim, a leitura real de `validarAgradecimento` (somente leitura, mutações substituídas por throw) devolveu `reply_superseded` (409).
+- Causa: a atividade `1gd26SA1etNjw7eGN5o7` traz em `activity.data` a chave `members` com valor objeto vazio `{}`, omitida pela primeira inspeção; a allowlist estrita da capacidade 1 recusava a chave. `members` não contém autor, participantes, status nem horário.
+- Candidata 2 (patch SHA-256 `1c1525f5f238705db440c149419fd9629fd6ea01bc88cc96e5fac0d875631d62`, 4 arquivos, base `0f056b9`): aceita `members` só se for objeto simples estritamente vazio; qualquer outro tipo ou propriedade continua bloqueando. Marcador `n8nAcknowledgementActivity: 2`. Nenhuma outra guarda alargada.
+- Resultado somente leitura com a candidata 2 (código executado no ambiente Lovable, não no publicado): `{ ok: true }`. Histórico completo 106 mensagens em 2 páginas; após o CONFIRMO só a atividade correlacionada (1); nenhuma mensagem nova bloqueante. Confirmação SQL `confirmed` concluída 19:18:34.043998Z; GET da consulta `confirmed`, início 10:00Z; req24 `XxdD584xGtbGTQ7HaIAd` `delivered`, escopo e fornecedor conferem. Nenhum PUT/POST/reserva/conclusão/envio.
+- Testes: local (root) 544/13 suítes, tsc, lint, build. Remoto (Lovable): 541 passaram, 23 ignorados; 2 suítes de banco (`n8n-bridge-confirmation.db`, `n8n-bridge-pilot.db`) não executaram por falta de PostgreSQL — não contadas como aprovadas; tsgo 0 erros, ESLint 0 erros, build OK.
+- Estado: grant desativado; `simulation=true`, `live_send_enabled=false`, `channel_verified=false`; ledger ACK 0. Capacidade 2 aguarda publicação pelo root após verificação do diff. Navegador inacessível; limpeza do rascunho manual reply no n8n pendente; nenhuma nova execução. Isto não é ACK entregue nem E2E concluído.

@@ -4,7 +4,9 @@
 
 Após a resposta autêntica CONFIRMO, o backend confirmou o compromisso e persistiu `state=confirmed` às 19:18:34.043998 UTC. O GHL acrescentou à conversa uma atividade às 19:18:34.961 UTC, com tipo `TYPE_ACTIVITY_APPOINTMENT`/31, direção outbound, source `app`, sem `userId`. A validação publicada do agradecimento devolveu `reply_superseded` ao encontrar esse item posterior à resposta. Não havia outro item posterior no histórico autenticado inspecionado.
 
-A lista autenticada expôs `activity.type=appointment_updated` e `activity.data.id`/`timestamp` correspondentes ao compromisso e ao início exatos. `data` também trouxe `serviceBookingId:null`, `industryType:null` e `appointmentTitle:string`. Não expôs status anterior/novo, calendário ou ator. O GET individual não trouxe esse objeto; não se deve fabricar o vínculo a partir do título ou corpo.
+A lista autenticada expôs `activity.type=appointment_updated` e `activity.data.id`/`timestamp` correspondentes ao compromisso e ao início exatos. A inspeção completa identificou seis chaves em `data`: `id`, `timestamp`, `serviceBookingId:null`, `industryType:null`, `appointmentTitle:string` e `members:{}`. Não expôs status anterior/novo, calendário ou ator. O GET individual não trouxe esse objeto; não se deve fabricar o vínculo a partir do título ou corpo.
+
+A primeira inspeção omitiu `members`; por isso a revisão com capacidade 1 continuou recusando a atividade por campo não revisado. A capacidade 2 admite esse campo opcional somente como objeto simples estritamente vazio, reproduzindo o payload observado. Null, arrays, primitivos, protótipos diferentes e qualquer propriedade própria (inclusive não enumerável ou Symbol) são recusados. Não se interpreta nem tolera conteúdo de membros/autores.
 
 ## Correção restrita ao agradecimento
 
@@ -16,7 +18,7 @@ Somente um ID de atividade pode ser desconsiderado na avaliação do agradecimen
 
 - Tipo numérico 31 e `messageType=TYPE_ACTIVITY_APPOINTMENT`, outbound, source `app`, sem propriedade `userId`.
 - `activity` contém apenas `type`, `data` e título opcional. Tipo exatamente `appointment_updated`.
-- `data` contém apenas `id`, `timestamp`, `serviceBookingId`, `industryType` e `appointmentTitle` opcional de tipo string. ID e instante de início são exatos; os dois campos de contexto são null. Campos adicionais de status, old/new, calendário ou autor bloqueiam a exceção.
+- `data` contém apenas `id`, `timestamp`, `serviceBookingId`, `industryType`, `appointmentTitle` opcional de tipo string e `members` opcional estritamente igual a um objeto simples vazio. ID e instante de início são exatos; os dois campos de contexto são null. Campos adicionais de status, old/new, calendário ou autor bloqueiam a exceção.
 - `dateAdded` e `dateUpdated` são iguais e válidos, não futuros, entre a conclusão persistida e no máximo cinco segundos depois. Como o banco conserva microssegundos, o limite inicial é arredondado para cima e o final para baixo à precisão de milissegundos; não se amplia a janela.
 - O GET fresco do compromisso ainda comprova status `confirmed` e os mesmos IDs, contato, calendário e início. Os bloqueios de autenticação, DND, grant e reservas continuam necessários.
 
@@ -30,7 +32,7 @@ Não há filtro global de `TYPE_ACTIVITY_*`, remoção de mensagens no CRM ou al
 
 ## Verificação
 
-Gates locais concluídos: **528 testes em 13 suítes**, TypeScript sem erros, lint dos arquivos alterados sem erros e build exit0. A revisão independente não encontrou bloqueador novo depois de restringir as chaves estruturadas. Os avisos existentes do build foram preservados. SQL não mudou e seus testes não foram reexecutados.
+Gates locais concluídos para a capacidade 2: **544 testes em 13 suítes**, TypeScript sem erros, lint dos arquivos alterados sem erros e build exit0. A revisão independente não encontrou bloqueador novo depois de restringir as chaves estruturadas. Os avisos existentes do build foram preservados. SQL não mudou e seus testes não foram reexecutados.
 
 ```sh
 node_modules/.bin/vitest run src/lib/n8n-bridge-confirmation.test.ts src/lib/n8n-bridge-confirmation.adapter.test.ts src/lib/n8n-bridge.test.ts
@@ -38,4 +40,4 @@ node_modules/.bin/tsc --noEmit
 npm run build
 ```
 
-O marcador público aditivo é `capabilities.n8nAcknowledgementActivity: 1`; build e demais capacidades permanecem. A integração precisa preservar o remoto atual. Publicação do código, grant/flags habilitados e recebimento do agradecimento são verificações distintas. Este incremento local não publica, não habilita flags e não envia mensagens.
+O marcador público é `capabilities.n8nAcknowledgementActivity: 2`; build e demais capacidades permanecem. A integração precisa preservar o remoto atual. Antes de publicar, a revisão candidata deve passar pela leitura real de `validarAgradecimento` sem acionar reserva, envio ou PUT. Publicação do código, grant/flags habilitados e recebimento do agradecimento são verificações distintas. Este incremento local não publica, não habilita flags e não envia mensagens.
