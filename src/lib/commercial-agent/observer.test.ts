@@ -56,6 +56,7 @@ function fixture(changes: Partial<Settings> = {}) {
   const receive = vi.fn().mockResolvedValue({ status: "accepted", id: "private-row-id" });
   const receiver = vi.fn(() => ({ receive }));
   const discover = vi.fn().mockResolvedValue([event]);
+  const discoverLocation = vi.fn().mockResolvedValue([]);
   const call = vi.fn();
   const deps = {
     env,
@@ -63,10 +64,21 @@ function fixture(changes: Partial<Settings> = {}) {
     config: { ...config },
     receiver,
     discover,
+    discoverLocation,
     call,
     now: () => now,
   };
-  return { deps, env, command, receive, receiver, discover, call, observer: createObserver(deps) };
+  return {
+    deps,
+    env,
+    command,
+    receive,
+    receiver,
+    discover,
+    discoverLocation,
+    call,
+    observer: createObserver(deps),
+  };
 }
 
 function canonicalReads() {
@@ -94,6 +106,129 @@ function canonicalReads() {
 beforeEach(() => {
   vi.clearAllMocks();
   production.runtime.mockReturnValue({ receive: production.receive });
+});
+
+describe("recebimento geral separado do envio", () => {
+  const broad = { receive_all_contacts: true, receive_since: since, receive_cursor_until: null };
+  const newEvent = { ...event, contactId: "new-contact" };
+  const observedAt = "2026-10-06T12:55:00Z";
+
+  it("recebe contatos novos com data canônica, sem ampliar a lista de envio", async () => {
+    const f = fixture(broad);
+    f.discoverLocation.mockResolvedValue([{ event: newEvent, observedAt }]);
+    expect(await f.observer.observerPilot(org, locationId)).toMatchObject({ accepted: 1 });
+    expect(f.discover).not.toHaveBeenCalled();
+    expect(f.receive).toHaveBeenCalledWith(org, newEvent, observedAt);
+    expect(f.command).toHaveBeenLastCalledWith("receive_advance", org, {
+      until: new Date(now).toISOString(),
+    });
+    expect(settings.allowed_contacts).toEqual([contactId]);
+    expect(f.command.mock.calls.every(([op]) => ["settings", "receive_advance"].includes(op))).toBe(
+      true,
+    );
+  });
+
+  it("callback de contato novo usa filtro canônico e não avança o cursor global", async () => {
+    const f = fixture(broad);
+    f.discoverLocation.mockResolvedValue([{ event: newEvent, observedAt }]);
+    await f.observer.observerContact(org, locationId, newEvent.contactId);
+    expect(f.discoverLocation.mock.calls[0]?.[0]).toEqual({
+      locationId,
+      contactId: newEvent.contactId,
+      since: new Date(since).toISOString(),
+      until: new Date(now).toISOString(),
+    });
+    expect(f.command).toHaveBeenCalledTimes(1);
+  });
+
+  it("varredura usa sobreposição sem voltar antes da ativação e avança mesmo sem mensagens", async () => {
+    const f = fixture({ ...broad, receive_cursor_until: "2026-10-06T12:58:00Z" });
+    expect(await f.observer.observerPilot(org, locationId)).toMatchObject({ status: "idle" });
+    expect(f.discoverLocation.mock.calls[0]?.[0].since).toBe("2026-10-06T12:48:00.000Z");
+    expect(f.command).toHaveBeenLastCalledWith("receive_advance", org, {
+      until: new Date(now).toISOString(),
+    });
+    expect(f.receiver).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { ...newEvent, locationId: "foreign-location" },
+    { ...newEvent, contactId: "other-contact" },
+  ])("todo o lote deve pertencer ao callback antes do primeiro ingresso", async (badEvent) => {
+    const f = fixture(broad);
+    f.discoverLocation.mockResolvedValue([
+      { event: newEvent, observedAt },
+      { event: badEvent, observedAt },
+    ]);
+    await expect(f.observer.observerContact(org, locationId, newEvent.contactId)).rejects.toThrow(
+      "scope_mismatch",
+    );
+    expect(f.receive).not.toHaveBeenCalled();
+  });
+
+  it.each(["2026-10-06T11:59:59Z", "2026-10-06T13:00:01Z"])(
+    "data canônica %s fora da janela não é persistida",
+    async (badDate) => {
+      const f = fixture(broad);
+      f.discoverLocation.mockResolvedValue([{ event: newEvent, observedAt: badDate }]);
+      await expect(f.observer.observerPilot(org, locationId)).rejects.toThrow("scope_mismatch");
+      expect(f.receive).not.toHaveBeenCalled();
+      expect(f.command).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("falha parcial não confirma cursor; nova tentativa pode usar deduplicação durável", async () => {
+    const f = fixture(broad);
+    f.discoverLocation.mockResolvedValue([
+      { event: newEvent, observedAt },
+      { event: { ...newEvent, messageId: "later" }, observedAt: "2026-10-06T12:56:00Z" },
+    ]);
+    f.receive
+      .mockResolvedValueOnce({ status: "accepted" })
+      .mockRejectedValueOnce(new AgentError("storage_unavailable"));
+    await expect(f.observer.observerPilot(org, locationId)).rejects.toThrow("storage_unavailable");
+    expect(f.command).toHaveBeenCalledTimes(1);
+    f.receive
+      .mockResolvedValueOnce({ status: "duplicate" })
+      .mockResolvedValueOnce({ status: "accepted" });
+    expect(await f.observer.observerPilot(org, locationId)).toMatchObject({
+      accepted: 1,
+      duplicates: 1,
+    });
+    expect(f.command).toHaveBeenLastCalledWith("receive_advance", org, {
+      until: new Date(now).toISOString(),
+    });
+  });
+
+  it("desativação durante ingresso não confirma cursor nem continua", async () => {
+    const f = fixture(broad);
+    f.discoverLocation.mockResolvedValue([{ event: newEvent, observedAt }]);
+    f.receive.mockResolvedValue({ status: "disabled" });
+    expect(await f.observer.observerPilot(org, locationId)).toMatchObject({ status: "disabled" });
+    expect(f.command).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([null, "invalid", "2026-10-06T14:00:00Z"])(
+    "ativação inválida %j bloqueia descoberta",
+    async (receive_since) => {
+      const f = fixture({ ...broad, receive_since });
+      await expect(f.observer.observerPilot(org, locationId)).rejects.toThrow(
+        "discovery_since_invalid",
+      );
+      expect(f.discoverLocation).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["invalid", "2026-10-06T14:00:00Z", "2026-10-06T11:00:00Z"])(
+    "cursor inválido %s bloqueia descoberta",
+    async (receive_cursor_until) => {
+      const f = fixture({ ...broad, receive_cursor_until });
+      await expect(f.observer.observerPilot(org, locationId)).rejects.toThrow(
+        "discovery_cursor_invalid",
+      );
+      expect(f.discoverLocation).not.toHaveBeenCalled();
+    },
+  );
 });
 afterEach(() => vi.unstubAllEnvs());
 

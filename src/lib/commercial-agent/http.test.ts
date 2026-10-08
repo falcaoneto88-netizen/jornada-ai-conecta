@@ -41,6 +41,7 @@ beforeEach(() => {
   f.resolve.mockResolvedValue("org-test");
   f.receive.mockResolvedValue({ status: "accepted" });
   f.work.mockResolvedValue({ status: "idle" });
+  f.purge.mockResolvedValue(undefined);
   f.pilot.mockResolvedValue({ status: "observed", discovered: 0 });
   f.observe.mockResolvedValue({ status: "observed", discovered: 1 });
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -75,6 +76,16 @@ describe("fronteira HTTP do agente", () => {
     expect((await agentWebhook(request({ ...event, body: "x".repeat(33000) }))).status).toBe(422);
     expect(f.receive).not.toHaveBeenCalled();
   });
+  it("recebimento geral não confia na data nem no ID alegado pelo callback", async () => {
+    f.purge.mockResolvedValue({ receive_all_contacts: true });
+    const response = await agentWebhook(
+      request({ ...event, observedAt: "2026-10-08T15:00:00Z", body: "texto não confiável" }),
+    );
+    expect(response.status).toBe(202);
+    expect(f.observe).toHaveBeenCalledWith("org-test", "loc-test", "c-test");
+    expect(f.receive).not.toHaveBeenCalled();
+    expect(f.work).not.toHaveBeenCalled();
+  });
   it("worker exige segredo próprio e executa processamento e retenção", async () => {
     expect((await agentWorker(request())).status).toBe(401);
     expect(f.work).not.toHaveBeenCalled();
@@ -89,6 +100,22 @@ describe("fronteira HTTP do agente", () => {
     expect((await agentWorker(request({}, { "x-worker-secret": secret }))).status).toBe(503);
     expect(f.work).not.toHaveBeenCalled();
     expect(f.purge).toHaveBeenCalledWith("purge", "org-test");
+  });
+  it("recebimento geral processa lote limitado de rascunhos, sem mecanismo de envio", async () => {
+    f.purge.mockResolvedValue({ receive_all_contacts: true });
+    f.work.mockResolvedValue({ status: "ready" });
+    const response = await agentWorker(request({}, { "x-worker-secret": secret }));
+    expect(response.status).toBe(200);
+    expect(f.work).toHaveBeenCalledTimes(5);
+    expect(await response.json()).toMatchObject({ status: "processed", jobs: 5 });
+    expect(f.receive).not.toHaveBeenCalled();
+  });
+  it("lote termina ao esvaziar a fila", async () => {
+    f.purge.mockResolvedValue({ receive_all_contacts: true });
+    f.work.mockResolvedValueOnce({ status: "ready" }).mockResolvedValue({ status: "idle" });
+    const response = await agentWorker(request({}, { "x-worker-secret": secret }));
+    expect(f.work).toHaveBeenCalledTimes(2);
+    expect(await response.json()).toMatchObject({ status: "processed", jobs: 1 });
   });
   it("notificação exige segredo do workflow existente sem aceitar o segredo alternativo", async () => {
     expect((await agentNotification(request())).status).toBe(401);
