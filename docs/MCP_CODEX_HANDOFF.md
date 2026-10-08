@@ -361,3 +361,20 @@ Evidências locais: `outputs/n8n-runtime-fix-2026-10-08/README.md`, `runtime-fix
 - Efeito: `guardarPilotoN8n` devolve `contact_preferences_not_verified` quando a identidade exata é comprovada mas faltam/são inválidas as preferências DND, e `contact_not_verified` para identidade não comprovada. `parseContacto` continua a rejeitar `dndSettings` ausente; nada é normalizado para `{}` nem autorizado.
 - Gates locais: vitest (ponte n8n, confirmação, controle do piloto, agente comercial, sem banco) 19 arquivos / 624 testes exit 0; `tsgo` exit 0; ESLint dos 6 arquivos alterados exit 0; build exit 0; `git diff --check` limpo. Sem SQL.
 - Estado: guard e UI do piloto publicados anteriormente; este diagnóstico **ainda não publicado** até implantação comprovada. Nenhuma alteração GHL de DND foi feita; contato `fCzYtbsUvclTHKGeHIrR` continua sem `dndSettings`; preferência pendente de aprovação específica. Sem grant, flags, canal, n8n ou envios alterados.
+
+## Adendo — diagnóstico publicado e verificado na UI, 08/10/2026
+
+Evidências verificadas por Root nesta sessão; registro factual, sem nova execução de código, SQL, flags ou contatos.
+
+- **Publicação comprovada.** A revisão do diagnóstico `bc297d49ea796a33050434bed2feb1ba1331249f` foi publicada: deployment `22bb1d56-2295-4431-b1de-a3f504331c0e`, solicitado às 16:49 UTC.
+- **Verificação na UI.** Em sessão administrativa atual, `/integracoes` às 16:51 UTC retornou efetivamente o novo erro: "O contato foi localizado na subconta correta, mas o GHL não retornou preferências de bloqueio (DND) verificáveis. A autorização não foi guardada." Nenhuma autorização ativa.
+- **Status do diagnóstico:** implementado, testado (624 testes), publicado e verificado na UI. O teste de mensagem **não** é ponta a ponta.
+- **Publicação anterior do guard/UI** `2cfa8499`, deployment `4b56dbc7-02fe-4cb8-84df-448860619cb4`, comprovada por `/api/version` às 16:36:40Z com capability `pilotAuthorization 1` (build anterior preservado, `release=null`); UI observada às 16:37.
+- **n8n — importação/exportação:** 79 nós, com parâmetros, nomes, webhook IDs, tabelas, credenciais e conexões preservados; IDs visuais regenerados e posições alteradas. 23/23 cenários sintéticos com sucesso em 32.053s.
+- **n8n — publicação observada** versão `2fbeb139-8b5b-48d1-a604-70ed3f50528e` às 16:34Z; não foi possível atribuir quem a acionou.
+- **Execução 102** às 16:47:02Z: `contact_not_verified` em "Conferir resposta" resolvida; parou antes do envio; a identidade do input não foi investigada.
+- **GHL:** na UI, DND geral e SMS desmarcados; a API omite as preferências.
+- **Contatos e consulta:** o usuário confirmou que ambos os contatos são seus. Consulta antiga `SVDr...` cancelada, `deleted=false`; nova `ofHr3ecQ1EDs4YQkvwgB` (ID correto, sem espaço), receptor `fCzYtbsUvclTHKGeHIrR`, 09/10/2026 11h Lisboa, estado `new`.
+- **NÃO houve PUT de DND:** o auto-review rejeitou por falta de autorização específica; a pergunta continua pendente.
+- **Último SELECT de grants:** 0 linhas.
+- **Backend:** `simulation=true`, `live_send=false`, `channel_verified=false`; webhooks n8n simulados, modo manual desativado, `concurrency=false`.
