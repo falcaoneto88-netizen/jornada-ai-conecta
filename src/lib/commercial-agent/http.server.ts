@@ -1,4 +1,4 @@
-import { eventSchema, AgentError } from "./core";
+import { eventSchema, AgentError, type Settings } from "./core";
 import { verifyMarketplace, verifyWorkflowSecret } from "./providers.server";
 import { createStore, resolveAgentLocation, runtime } from "./runtime.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -42,6 +42,12 @@ export async function agentWebhook(request: Request) {
     if (!valid) return json({ error: "unauthorized" }, 401);
     const event = eventSchema.parse(JSON.parse(raw));
     const org = await resolveAgentLocation(event.locationId);
+    const store = createStore(supabaseAdmin as unknown as Parameters<typeof createStore>[0]);
+    const settings = await store.command<Settings>("settings", org);
+    // A signed callback does not establish the message timestamp. Broad receipt
+    // treats it only as a wake-up and fetches canonical IDs/dates with the cutoff.
+    if (settings?.receive_all_contacts === true)
+      return json(await observerContact(org, event.locationId, event.contactId), 202);
     const result = await runtime(event.locationId).receive(org, event);
     return json(result, 202);
   } catch (e) {
@@ -105,9 +111,22 @@ export async function agentWorker(request: Request) {
     await store.command("purge", org);
     // Discover both directions first: human intervention must invalidate old drafts
     // even when no workflow notification was delivered. This never sends a reply.
-    await observerPilot(org, location);
-    const result = await runtime(location).work(org);
-    return json(result);
+    const discovery = await observerPilot(org, location);
+    const settings = await store.command<Settings>("settings", org);
+    const agent = runtime(location);
+    if (settings?.receive_all_contacts !== true) return json(await agent.work(org));
+    // Drain a bounded batch without sending. Existing SQL leases and the monthly
+    // generation ceiling apply to every job, including overlapping cron runs.
+    const deadline = Date.now() + 45_000;
+    let jobs = 0;
+    let lastStatus = "idle";
+    for (let i = 0; i < 5 && Date.now() < deadline; i++) {
+      const result = await agent.work(org);
+      lastStatus = String((result as { status?: string })?.status ?? "processed");
+      if (["idle", "disabled"].includes(lastStatus)) break;
+      jobs++;
+    }
+    return json({ status: jobs ? "processed" : lastStatus, jobs, discovery });
   } catch (e) {
     const code = e instanceof AgentError ? e.code : "worker_failed";
     console.warn(JSON.stringify({ component: "commercial_agent", code }));

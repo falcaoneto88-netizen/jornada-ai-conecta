@@ -81,6 +81,9 @@ export async function startCommercialDb() {
       await migration.unsafe(
         readFileSync("supabase/migrations/20261003120000_commercial_agent_supervised.sql", "utf8"),
       );
+      await migration.unsafe(
+        readFileSync("supabase/migrations/20261008180000_commercial_agent_receive_all.sql", "utf8"),
+      );
     } finally {
       migration.release();
     }

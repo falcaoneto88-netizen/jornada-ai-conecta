@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { GHL_ORIGIN, GHL_VERSION, type GhlConfig } from "../ghl.server";
 import { AgentError, eventSchema, id, type Event } from "./core";
 import { discoverContactEvents, type DiscoveryGet } from "./discovery.server";
+import { discoverLocationEvents } from "./location-discovery.server";
 import { createStore, runtime } from "./runtime.server";
 import type { Store } from "./service.server";
 
@@ -17,8 +18,11 @@ export type ObserverDependencies = {
   env: Record<string, string | undefined>;
   store: Store;
   config: GhlConfig;
-  receiver: (locationId: string) => { receive(org: string, event: Event): Promise<unknown> };
+  receiver: (locationId: string) => {
+    receive(org: string, event: Event, observedAt?: string): Promise<unknown>;
+  };
   discover?: typeof discoverContactEvents;
+  discoverLocation?: typeof discoverLocationEvents;
   call?: DiscoveryGet;
   now?: () => number;
 };
@@ -29,6 +33,9 @@ const settingsSchema = z.object({
   mode: z.enum(["off", "supervised"]),
   allowed_contacts: z.array(id),
   allowed_channels: z.array(z.string()),
+  receive_all_contacts: z.boolean().optional(),
+  receive_since: z.string().nullable().optional(),
+  receive_cursor_until: z.string().nullable().optional(),
 });
 const ingressSchema = z.object({
   status: z.enum(["accepted", "duplicate", "own_message", "disabled"]),
@@ -43,6 +50,76 @@ const empty = (status: ObserverResult["status"]): ObserverResult => ({
 
 /** Discovery only enqueues canonical IDs; generation and human-approved sends remain elsewhere. */
 export function createObserver(deps: ObserverDependencies) {
+  async function observeLocation(
+    org: string,
+    locationId: string,
+    settings: z.infer<typeof settingsSchema>,
+    requestedContact?: string,
+  ): Promise<ObserverResult> {
+    const now = (deps.now ?? Date.now)();
+    const since = z.iso.datetime({ offset: true }).safeParse(settings.receive_since);
+    if (!since.success || !Number.isFinite(now) || Date.parse(since.data) > now)
+      throw new AgentError("discovery_since_invalid");
+    const cursor = settings.receive_cursor_until;
+    if (
+      cursor != null &&
+      (!z.iso.datetime({ offset: true }).safeParse(cursor).success ||
+        Date.parse(cursor) > now ||
+        Date.parse(cursor) < Date.parse(since.data))
+    )
+      throw new AgentError("discovery_cursor_invalid");
+    // A complete fixed interval is replayable after crashes. Ten minutes of overlap
+    // absorb delayed indexing; SQL deduplicates stable message IDs. Contact wake-ups
+    // can recover older delayed messages without moving the location-wide watermark.
+    const lower =
+      requestedContact === undefined && cursor
+        ? Math.max(Date.parse(since.data), Date.parse(cursor) - 10 * 60_000)
+        : Date.parse(since.data);
+    const until = new Date(now).toISOString();
+    const rows = z
+      .array(z.object({ event: eventSchema, observedAt: z.iso.datetime({ offset: true }) }))
+      .max(40_000)
+      .safeParse(
+        await (deps.discoverLocation ?? discoverLocationEvents)(
+          {
+            locationId,
+            since: new Date(lower).toISOString(),
+            until,
+            ...(requestedContact !== undefined ? { contactId: requestedContact } : {}),
+          },
+          { config: deps.config, ...(deps.call ? { call: deps.call } : {}), now: () => now },
+        ),
+      );
+    if (!rows.success) throw new AgentError("discovery_history_invalid");
+    if (
+      rows.data.some(
+        ({ event, observedAt }) =>
+          event.locationId !== locationId ||
+          (requestedContact !== undefined && event.contactId !== requestedContact) ||
+          Date.parse(observedAt) < lower ||
+          Date.parse(observedAt) > now,
+      )
+    )
+      throw new AgentError("scope_mismatch");
+    const result = {
+      ...empty(rows.data.length ? "observed" : "idle"),
+      discovered: rows.data.length,
+    };
+    if (rows.data.length) {
+      const receiver = deps.receiver(locationId);
+      for (const { event, observedAt } of rows.data) {
+        const response = ingressSchema.safeParse(await receiver.receive(org, event, observedAt));
+        if (!response.success) throw new AgentError("observer_ingress_invalid");
+        if (response.data.status === "disabled") return { ...result, status: "disabled" };
+        if (response.data.status === "accepted") result.accepted++;
+        if (response.data.status === "duplicate") result.duplicates++;
+        if (response.data.status === "own_message") result.ownMessages++;
+      }
+    }
+    if (requestedContact === undefined) await deps.store.command("receive_advance", org, { until });
+    return result;
+  }
+
   async function observe(
     org: string,
     locationId: string,
@@ -70,6 +147,8 @@ export function createObserver(deps: ObserverDependencies) {
     if (settings.organization_id !== org || settings.location_id !== locationId)
       throw new AgentError("scope_mismatch");
     if (settings.mode !== "supervised") return empty("disabled");
+    if (settings.receive_all_contacts === true)
+      return observeLocation(org, locationId, settings, requestedContact);
     const contacts = [...new Set(settings.allowed_contacts)];
     if (requestedContact !== undefined && !contacts.includes(requestedContact))
       throw new AgentError("contact_not_allowed");

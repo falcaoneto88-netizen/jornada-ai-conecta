@@ -3,6 +3,7 @@ import {
   checkReply,
   checkSend,
   classifySafety,
+  eventSchema,
   type DraftPayload,
   type DraftRow,
   type Event,
@@ -48,9 +49,14 @@ export class CommercialAgent {
   constructor(private d: Dependencies) {
     this.now = d.now ?? Date.now;
   }
-  async receive(org: string, event: Event) {
+  async receive(org: string, event: Event, observedAt?: string) {
     if (!this.d.enabled) return { status: "disabled" };
-    return this.d.store.command("ingress", org, event);
+    // Only canonical server-side discovery supplies this metadata. It is not
+    // part of the callback Event or the persisted deduplication identity.
+    return this.d.store.command("ingress", org, {
+      ...eventSchema.parse(event),
+      ...(observedAt === undefined ? {} : { observedAt }),
+    });
   }
   async work(org: string) {
     if (!this.d.enabled) return { status: "disabled" };
@@ -58,11 +64,29 @@ export class CommercialAgent {
     if (!job) return { status: "idle" };
     try {
       const config = await this.d.store.command<Settings>("settings", org);
-      if (config.mode !== "supervised" || !config.allowed_contacts.includes(job.event.contactId))
+      if (
+        config.mode !== "supervised" ||
+        config.organization_id !== org ||
+        config.location_id !== job.event.locationId ||
+        (config.receive_all_contacts !== true &&
+          !config.allowed_contacts.includes(job.event.contactId))
+      )
         throw new AgentError("contact_not_allowed");
       const snapshot = await this.d.provider.history(job.event);
       const latest = snapshot.messages.at(-1);
       if (!latest) throw new AgentError("history_invalid");
+      const observedAt = latest.at;
+      if (config.receive_all_contacts === true) {
+        const since = Date.parse(config.receive_since ?? "");
+        const observed = Date.parse(observedAt);
+        if (!Number.isFinite(since) || since > this.now())
+          throw new AgentError("receive_since_invalid");
+        // Recheck the canonical history, rather than trusting ingress metadata
+        // alone, before paying for a model response to a new contact.
+        if (!Number.isFinite(observed) || observed > this.now())
+          throw new AgentError("observed_at_invalid");
+        if (observed < since) throw new AgentError("before_receive_since");
+      }
       const safety = classifySafety(latest.text);
       // An older STOP may have arrived just before this message. Never let a
       // superseded queue item erase that refusal; clearing it needs a separate
@@ -70,7 +94,8 @@ export class CommercialAgent {
       safety.optOut ||= snapshot.messages.some(
         (message) => message.direction === "inbound" && classifySafety(message.text).optOut,
       );
-      if (!config.allowed_channels.includes(latest.channel))
+      const unsupportedChannel = !config.allowed_channels.includes(latest.channel);
+      if (unsupportedChannel && config.receive_all_contacts !== true)
         throw new AgentError("unsupported_channel");
       // Safety events do not need an external model call; still never auto-send.
       let payload: DraftPayload;
@@ -92,7 +117,22 @@ export class CommercialAgent {
             optOut: safety.optOut || snapshot.dnd,
           },
         };
+      } else if (unsupportedChannel) {
+        payload = {
+          snapshot,
+          policyHash: POLICY_HASH,
+          model: "deterministic_manual_review",
+          inputTokens: 0,
+          outputTokens: 0,
+          decision: {
+            reply: "Este canal precisa de revisão pela equipe da clínica.",
+            flags: ["unsupported_action"],
+            handoff: true,
+            optOut: false,
+          },
+        };
       } else payload = await this.d.generate(snapshot);
+      if (unsupportedChannel) payload.decision.flags.push("unsupported_action");
       if (latest.attachments > 0) payload.decision.flags.push("unsupported_attachment");
       if (checkReply(payload.decision.reply).length)
         payload.decision.flags.push("unsupported_action");
@@ -106,6 +146,7 @@ export class CommercialAgent {
         inputTokens: payload.inputTokens,
         outputTokens: payload.outputTokens,
         flags: payload.decision.flags,
+        observedAt,
         pause: payload.decision.handoff || payload.decision.optOut,
         optOut: payload.decision.optOut,
       });

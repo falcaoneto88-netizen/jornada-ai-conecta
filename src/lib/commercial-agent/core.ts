@@ -79,6 +79,9 @@ export type Settings = {
   mode: "off" | "supervised";
   allowed_contacts: string[];
   allowed_channels: string[];
+  receive_all_contacts?: boolean;
+  receive_since?: string | null;
+  receive_cursor_until?: string | null;
 };
 export type QueueError = {
   id: string;
@@ -87,7 +90,14 @@ export type QueueError = {
   attempts: number;
   created_at: string;
 };
-export type SessionRow = { contact_id: string; version: number; paused: boolean; opt_out: boolean };
+export type SessionRow = {
+  contact_id: string;
+  version: number;
+  paused: boolean;
+  opt_out: boolean;
+  last_event_at?: string | null;
+  last_event_id?: string | null;
+};
 export type Job = { id: string; lease: string; contact_version: number; event: Event };
 export class AgentError extends Error {
   constructor(public code: string) {

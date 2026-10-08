@@ -14,6 +14,7 @@ import {
   type DraftPayload,
   type DraftRow,
   type QueueError,
+  type Settings,
 } from "@/lib/commercial-agent/core";
 
 export type QueueItem = Omit<DraftRow, "payload"> & { content: DraftPayload | null };
@@ -22,6 +23,7 @@ export type QueueView = {
   sendEnabled: boolean;
   items: QueueItem[];
   errors: QueueError[];
+  settings?: Settings;
 };
 export type QueueActions = {
   refresh(): Promise<void>;
@@ -69,16 +71,39 @@ export function CommercialAgentQueue({
   const row = view.items.find((x) => x.id === selected) ?? view.items[0];
   const content = row?.content;
   const expired = row ? Date.parse(row.expires_at) <= clock : true;
-  const blocked =
-    !view.enabled ||
-    !view.sendEnabled ||
-    !row ||
-    !content ||
-    row.state !== "pending" ||
-    row.paused ||
-    row.opt_out ||
-    expired ||
-    Boolean(content?.decision.flags.length);
+  function sendAllowed(item: QueueItem) {
+    const settings = view.settings;
+    if (!settings) return demo;
+    const channel = item.content?.snapshot.messages.at(-1)?.channel;
+    return (
+      settings.mode === "supervised" &&
+      settings.organization_id === item.organization_id &&
+      settings.location_id === item.location_id &&
+      settings.allowed_contacts.includes(item.contact_id) &&
+      Boolean(channel && settings.allowed_channels.includes(channel))
+    );
+  }
+  function approvalBlocked(item: QueueItem | undefined) {
+    return (
+      !view.enabled ||
+      !view.sendEnabled ||
+      !item ||
+      !item.content ||
+      !sendAllowed(item) ||
+      item.state !== "pending" ||
+      item.paused ||
+      item.opt_out ||
+      Date.parse(item.expires_at) <= clock ||
+      Boolean(item.content.decision.flags.length)
+    );
+  }
+  const blocked = approvalBlocked(row);
+  const currentConfirm = confirm ? view.items.find((item) => item.id === confirm.id) : undefined;
+  const confirmationBlocked =
+    !currentConfirm ||
+    currentConfirm.version !== confirm?.version ||
+    currentConfirm.reply_hash !== confirm?.reply_hash ||
+    approvalBlocked(currentConfirm);
   async function act(fn: () => Promise<void>) {
     setBusy(true);
     setNotice("");
@@ -110,6 +135,20 @@ export function CommercialAgentQueue({
           <p className="text-sm text-muted-foreground">
             Revise o histórico, o destinatário e a resposta. Cada envio exige sua aprovação.
           </p>
+          {view.settings?.receive_all_contacts && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Recebimento geral{" "}
+              {view.enabled && view.settings.mode === "supervised" ? "ativo" : "desativado"}. Novas
+              mensagens individuais desta clínica entram para revisão. Respostas sugeridas nos
+              canais: {view.settings.allowed_channels.join(", ") || "nenhum canal autorizado"}.
+              Outros canais exigem revisão manual. O envio continua restrito a{" "}
+              {view.settings.allowed_contacts.length}{" "}
+              {view.settings.allowed_contacts.length === 1
+                ? "contato autorizado"
+                : "contatos autorizados"}
+              .
+            </p>
+          )}
           {demo && (
             <p className="mt-2 text-sm font-medium">
               HighLevel e OpenAI simulados. Nenhuma mensagem sai para pacientes.
@@ -237,6 +276,19 @@ export function CommercialAgentQueue({
                   : "Agente pausado para este contato, em todos os seus canais."}
               </p>
             )}
+            {!sendAllowed(row) && (
+              <p role="status" className="mt-4 text-sm font-medium">
+                {!view.settings && !demo
+                  ? "Não foi possível verificar quais destinatários e canais têm envio liberado. Atualize a fila antes de aprovar."
+                  : "Esta entrada está em revisão. O envio não está liberado para este destinatário ou canal."}
+              </p>
+            )}
+            {row.state === "invalidated" && (
+              <p role="status" className="mt-4 text-sm font-medium">
+                Este rascunho ficou desatualizado e não pode ser enviado. Retomar o agente não
+                reativa respostas antigas. Uma nova mensagem do contato poderá gerar outro rascunho.
+              </p>
+            )}
             {expired && row.state === "pending" && (
               <p className="mt-3 text-sm">
                 Rascunho expirado. Reavalie a conversa antes de responder.
@@ -345,9 +397,9 @@ export function CommercialAgentQueue({
               Voltar à revisão
             </Button>
             <Button
-              disabled={busy || !confirm}
+              disabled={busy || !confirm || confirmationBlocked}
               onClick={() => {
-                if (confirm)
+                if (confirm && !confirmationBlocked)
                   void act(async () => {
                     const state = await actions.approve(confirm);
                     setNotice(
