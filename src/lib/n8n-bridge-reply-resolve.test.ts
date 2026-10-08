@@ -134,6 +134,34 @@ function fixture() {
 }
 
 describe("appointment.reply.resolve authenticates a contact-only wakeup without side effects", () => {
+  it("resolves an ordinary SMS reply to the configured custom Zaptos request", async () => {
+    const f = fixture();
+    Object.assign(f.cfg, { channel: "whatsapp_zaptos", zaptosProviderId: "provider01" });
+    Object.assign(f.outbound, {
+      messageType: "TYPE_CUSTOM_SMS",
+      type: 20,
+      source: "api",
+      conversationProviderId: "provider01",
+    });
+    expect((await f.run()).body).toMatchObject({
+      status: "resolved",
+      reply: { intent: "confirm", inboundMessageId: "inbound01" },
+    });
+  });
+  it.each([undefined, "another-provider"])(
+    "does not resolve request with custom provider %s",
+    async (provider) => {
+      const f = fixture();
+      Object.assign(f.cfg, { channel: "whatsapp_zaptos", zaptosProviderId: "provider01" });
+      Object.assign(f.outbound, {
+        messageType: "TYPE_CUSTOM_SMS",
+        type: 20,
+        source: "api",
+        conversationProviderId: provider,
+      });
+      expect((await f.run()).body.error).toBe("confirmation_evidence_invalid");
+    },
+  );
   it("returns minimum real identity, intent and fresh appointment; never body/name/phone", async () => {
     const f = fixture();
     expect(await f.run()).toEqual({

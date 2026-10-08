@@ -11,7 +11,7 @@ import {
   type Resolucao,
 } from "./n8n-bridge.core";
 import type { DepsLembretes, ReminderEvidence } from "./n8n-bridge-reminders";
-import type { DepsConfirmacao } from "./n8n-bridge-confirmation";
+import { normalizarMensagemGhl, type DepsConfirmacao } from "./n8n-bridge-confirmation";
 import type { PilotRead } from "./n8n-bridge-pilot";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } from "./ghl.server";
 
@@ -164,7 +164,7 @@ export function criarDepsConfirmacao(db: ClienteBridge): DepsConfirmacao {
       const cfg = configGhl(locationId);
       if (!cfg) return { ok: false, code: "missing_secrets" };
       const r = await ghlFetch(cfg, `conversations/messages/${encodeURIComponent(id)}`);
-      return r.ok ? { ok: true, data: r.data } : { ok: false, code: r.code };
+      return r.ok ? { ok: true, data: normalizarMensagemGhl(r.data) } : { ok: false, code: r.code };
     },
     conversationMessages: async (locationId, conversationId, cursor) => {
       const cfg = configGhl(locationId);

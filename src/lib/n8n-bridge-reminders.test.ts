@@ -126,6 +126,63 @@ function fixture() {
 }
 
 describe("reminders cannot rely on stale n8n pending state", () => {
+  it.each(["req24", "req12"])("accepts own custom Zaptos evidence for %s", async (kind) => {
+    const f = fixture();
+    for (const message of [f.booking, f.request])
+      Object.assign(message, {
+        messageType: "TYPE_CUSTOM_SMS",
+        type: 20,
+        source: "api",
+        conversationProviderId: "provider01",
+      });
+    // Real provider time precedes finished_at; retain fractional database precision.
+    f.booking["dateAdded"] = "2026-10-06T08:00:00.571Z";
+    f.rows[0]!.acceptedAt = "2026-10-06T08:00:01.780323+00:00";
+    expect((await f.run(kind)).body.status).toBe("accepted");
+    expect(f.deps.enviar).toHaveBeenCalledTimes(1);
+  });
+  it.each([undefined, "another-provider"])(
+    "rejects custom provider %s before reminder reservation",
+    async (provider) => {
+      const f = fixture();
+      Object.assign(f.booking, {
+        messageType: "TYPE_CUSTOM_SMS",
+        type: 20,
+        source: "api",
+        conversationProviderId: provider,
+      });
+      expect((await f.run("req24")).body.error).toBe("reminder_evidence_invalid");
+      expect(f.deps.claim).not.toHaveBeenCalled();
+      expect(f.deps.enviar).not.toHaveBeenCalled();
+    },
+  );
+  it("still rejects a later reply following a valid custom booking", async () => {
+    const f = fixture();
+    Object.assign(f.booking, {
+      messageType: "TYPE_CUSTOM_SMS",
+      type: 20,
+      source: "api",
+      conversationProviderId: "provider01",
+    });
+    f.add("NÃO");
+    expect((await f.run("req24")).body.error).toBe("reminder_reply_or_intervention");
+    expect(f.deps.claim).not.toHaveBeenCalled();
+    expect(f.deps.enviar).not.toHaveBeenCalled();
+  });
+  it("still rejects custom evidence whose provider time is after ledger acceptance", async () => {
+    const f = fixture();
+    Object.assign(f.booking, {
+      messageType: "TYPE_CUSTOM_SMS",
+      type: 20,
+      source: "api",
+      conversationProviderId: "provider01",
+      dateAdded: "2026-10-06T08:00:01.781Z",
+    });
+    f.rows[0]!.acceptedAt = "2026-10-06T08:00:01.780323+00:00";
+    expect((await f.run("req24")).body.error).toBe("reminder_evidence_invalid");
+    expect(f.deps.claim).not.toHaveBeenCalled();
+    expect(f.deps.enviar).not.toHaveBeenCalled();
+  });
   it.each(["req24", "req12"])("sends eligible %s once after two complete checks", async (kind) => {
     const f = fixture();
     expect((await f.run(kind)).body.status).toBe("accepted");

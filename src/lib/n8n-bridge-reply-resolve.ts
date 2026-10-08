@@ -73,7 +73,7 @@ export async function resolverResposta(
       return fail("confirmation_evidence_invalid");
     const read = await evidence.message(scope.locationId, row.messageId).catch(unavailable);
     if (!read.ok) return fail("confirmation_evidence_unavailable", 502);
-    const sent = parseMessage(read.data, row.messageId, scope.locationId, "outbound");
+    const sent = parseMessage(read.data, row.messageId, scope.locationId, "outbound", cfg);
     if (
       !sent ||
       sent.contactId !== contactId ||
@@ -103,7 +103,7 @@ export async function resolverResposta(
   if (!id.test(latestId)) return fail("reply_not_verified");
   if (sorted[1]?.[1].time === latest.time) return fail("reply_superseded");
   if (latest.raw["direction"] !== "inbound") return fail("reply_missing");
-  const candidate = parseMessage(latest.raw, latestId, scope.locationId, "inbound");
+  const candidate = parseMessage(latest.raw, latestId, scope.locationId, "inbound", cfg);
   if (!candidate || candidate.channel !== sent.channel) return fail("reply_not_verified");
   if (
     candidate.time <= Date.parse(linked.acceptedAt) ||
@@ -117,7 +117,7 @@ export async function resolverResposta(
   // Message endpoint is authoritative; history alone never fabricates a reply ID or body.
   const direct = await evidence.message(scope.locationId, candidate.id).catch(unavailable);
   if (!direct.ok) return fail("message_unavailable", 502);
-  const inbound = parseMessage(direct.data, candidate.id, scope.locationId, "inbound");
+  const inbound = parseMessage(direct.data, candidate.id, scope.locationId, "inbound", cfg);
   if (
     !inbound ||
     inbound.contactId !== contactId ||
