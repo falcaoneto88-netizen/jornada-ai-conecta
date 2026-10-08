@@ -325,3 +325,11 @@ Esta seção substitui somente os estados antigos de importação/publicação, 
 Evidências locais: `outputs/n8n-runtime-fix-2026-10-08/README.md`, `runtime-fix.test.cjs` e `outputs/n8n-projection-cas-2026-10-08/README.md`. URLs verificadas: app /api/version; workflow n8n original/execuções42,43,45,46; relay GHL e contato exato na locationautorizada.
 
 **Estado:** código backend implementado/testado/publicado; revisão n8n corrigida e publicada em simulação; transporte e leituras autenticadas comprovados. **Ainda não verificado ponta a ponta:** canal para o cadastro canônico, pedido real aceito, SIM novo vinculado, confirmação persistida e entrega do agradecimento. Próximas ações dependem de resolver identidade e concluir os controles restantes; não reutilizar SIMs antigos nem o agendamento expirado07/10.
+
+## Adendo — respostas sem pedido ativo, 08/10/2026
+
+- Aplicados apenas os campos JavaScript de `Conferir resposta resolvida` e `Normalizar Evento Bruto`, preservando os 74 nós, a correção de `Próximo Envio`, autenticação e flags de simulação. O caso exato HTTP 409 com corpo `{"error":"confirmation_request_missing"}` passa a registrar `ignored` e seu motivo; o normalizador encerra com zero itens antes das Data Tables e do CRM. 401/403/5xx, outros 409 e dados inválidos continuam falhando.
+- 54 testes locais aprovados no pacote `outputs/n8n-reply-ignore-2026-10-08`. Revisão publicada no n8n: `99b58d73-7077-4237-a87c-4a5ddd0c6e6e`, “Resposta sem pedido: ignorar com motivo — simulação 2026-10-08”.
+- Execução 88, repetição da 43 com a versão atual a partir do nó com erro, em 08/10 às 15:53:56 UTC: **Succeeded**, 1,824 s. A árvore termina em `Normalizar Evento Bruto`, com **0 itens**. É uma validação do tratamento de uma resposta sem pedido aceito, não uma confirmação nem entrega de mensagem.
+- URL verificada: https://jfalcaoneto.app.n8n.cloud/workflow/WrDn82MwKBcuM73G/executions/88 .
+- O servidor atual não possui allowlist por contato/consulta para a ponte n8n: habilitar o envio real é uma configuração por organização/calendário. A allowlist do agente comercial é independente e não limita a ponte. Não foi criada exceção nem declarada concorrência verificada. Permanecem pendentes identidade do contato receptor, validação do canal, controle de concorrência e teste real completo.
