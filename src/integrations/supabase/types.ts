@@ -872,6 +872,8 @@ export type Database = {
       commercial_agent_sessions: {
         Row: {
           contact_id: string
+          last_event_at: string | null
+          last_event_id: string | null
           opt_out: boolean
           organization_id: string
           paused: boolean
@@ -879,6 +881,8 @@ export type Database = {
         }
         Insert: {
           contact_id: string
+          last_event_at?: string | null
+          last_event_id?: string | null
           opt_out?: boolean
           organization_id: string
           paused?: boolean
@@ -886,6 +890,8 @@ export type Database = {
         }
         Update: {
           contact_id?: string
+          last_event_at?: string | null
+          last_event_id?: string | null
           opt_out?: boolean
           organization_id?: string
           paused?: boolean
@@ -909,6 +915,9 @@ export type Database = {
           mode: string
           monthly_draft_limit: number
           organization_id: string
+          receive_all_contacts: boolean
+          receive_cursor_until: string | null
+          receive_since: string | null
         }
         Insert: {
           allowed_channels?: string[]
@@ -917,6 +926,9 @@ export type Database = {
           mode?: string
           monthly_draft_limit?: number
           organization_id: string
+          receive_all_contacts?: boolean
+          receive_cursor_until?: string | null
+          receive_since?: string | null
         }
         Update: {
           allowed_channels?: string[]
@@ -925,6 +937,9 @@ export type Database = {
           mode?: string
           monthly_draft_limit?: number
           organization_id?: string
+          receive_all_contacts?: boolean
+          receive_cursor_until?: string | null
+          receive_since?: string | null
         }
         Relationships: [
           {
