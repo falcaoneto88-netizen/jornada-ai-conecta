@@ -425,3 +425,18 @@ Adendo factual. Registro somente do que foi comprovado por leitura; nada aqui au
 - Resultado somente leitura com a candidata 2 (código executado no ambiente Lovable, não no publicado): `{ ok: true }`. Histórico completo 106 mensagens em 2 páginas; após o CONFIRMO só a atividade correlacionada (1); nenhuma mensagem nova bloqueante. Confirmação SQL `confirmed` concluída 19:18:34.043998Z; GET da consulta `confirmed`, início 10:00Z; req24 `XxdD584xGtbGTQ7HaIAd` `delivered`, escopo e fornecedor conferem. Nenhum PUT/POST/reserva/conclusão/envio.
 - Testes: local (root) 544/13 suítes, tsc, lint, build. Remoto (Lovable): 541 passaram, 23 ignorados; 2 suítes de banco (`n8n-bridge-confirmation.db`, `n8n-bridge-pilot.db`) não executaram por falta de PostgreSQL — não contadas como aprovadas; tsgo 0 erros, ESLint 0 erros, build OK.
 - Estado: grant desativado; `simulation=true`, `live_send_enabled=false`, `channel_verified=false`; ledger ACK 0. Capacidade 2 aguarda publicação pelo root após verificação do diff. Navegador inacessível; limpeza do rascunho manual reply no n8n pendente; nenhuma nova execução. Isto não é ACK entregue nem E2E concluído.
+
+## Adendo 08/10/2026 19:55 UTC — capacidade 2 publicada e validada em leitura; ACK ainda não entregue
+
+Registro factual do marco final desta etapa. Nada aqui autoriza novo envio, SQL, flag, grant, execução n8n ou publicação.
+
+- **Publicação comprovada da capacidade 2.** Revisão de código `90824ef880cd4fea4de7ffad831431fd547baf03` implantada pelo deploy `b7f05038-13be-4970-a2c0-0223f8fcea91`. `GET` público a `https://jornada-ai-conecta.lovable.app/api/version` em `2026-10-08T19:55:20.384Z` retornou HTTP 200 com `build=jornada-n8n-confirmation-20261006.1`, `api.n8n-bridge=3`, `pilotAuthorization=1`, `n8nMessageEvidence=2`, `n8nAcknowledgementActivity=2`, `release=null`. O marcador publicado está comprovado; a rota não expõe o SHA.
+- **Verificação prévia do delta.** Os quatro arquivos do delta foram conferidos exatamente, por leitura de ficheiro, contra a base local `876a55b8aa66473f8024947bafe689184935986a` antes de publicar.
+- **Validação real em leitura, no candidato aprovado.** `validarAgradecimento` devolveu `{ ok: true }`. Histórico completo 106 mensagens em 2 páginas; depois do `CONFIRMO` apenas a atividade correlacionada; nenhuma mensagem nova bloqueante. **Isto não é envio nem ponta a ponta.**
+- **Releitura SQL após a publicação:** `simulation=true`, `live_send_enabled=false`, `channel_verified=false`, `pilot_enabled=false`, contagem de ACK no ledger `0`.
+- **Grant permanece revogado**, sem nova concessão.
+- **Consulta** `ofHr3ecQ1EDs4YQkvwgB`, 09/10/2026 11h Lisboa, permanece `confirmed`. Não reenviar `booking` nem `req24`, nem novo `PUT`.
+- **n8n:** navegador continua inacessível. O rascunho com `manual_pilot_enabled=true` e fase `reply` precisa de ser restaurado depois da inspeção; o ID da execução das 19:18 continua desconhecido.
+- **Candidato n8n preparado SOMENTE LOCAL** (ack-only): 79 nós, nove blocos de `jsCode`, 264 testes mais revisão independente, hash `438a709198ec0670eccefd1b00816333ad5d539bf1084b4420a79bcb693ce2a4`. **Não** foi importado, aplicado nem publicado.
+- **Próximo passo, só após recuperar o navegador:** ler execução, estado e histórico; repor o modo manual; comparar os `jsCode`; aplicar a retomada apenas se as pré-condições validarem. Grant futuro **apenas** `confirm`, na mesma tupla, SQL **sem** `claim`; executar uma vez, verificar aceitação e entrega, e desligar os controlos.
+- **Pendentes:** agradecimento, limpeza do rascunho n8n, webhook, timers e concorrência geral.
