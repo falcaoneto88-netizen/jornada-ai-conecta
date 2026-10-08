@@ -615,12 +615,46 @@ function technicalActivity(): Record<string, unknown> {
         serviceBookingId: null,
         industryType: null,
         appointmentTitle: "Not used as proof",
+        members: {},
       },
     },
   };
 }
 
 describe("acknowledgement tolerates only one narrowly correlated technical activity", () => {
+  it("continues accepting the previously supported payload without members", async () => {
+    const f = acknowledgementFixture(),
+      activity = technicalActivity();
+    delete (activity["activity"] as { data: Record<string, unknown> }).data["members"];
+    f.history.push(activity);
+    expect((await f.sendAck()).body.status).toBe("accepted");
+    expect(f.send).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    null,
+    undefined,
+    [],
+    ["member01"],
+    0,
+    "",
+    "{}",
+    { actor: "human01" },
+    { status: "cancelled" },
+    { userId: "human01" },
+    { count: 0 },
+    new Date("2026-10-06T12:01:00Z"),
+    Object.create({ actor: "human01" }),
+    Object.defineProperty({}, "actor", { value: "human01", enumerable: false }),
+    { [Symbol("actor")]: "human01" },
+  ])("refuses members unless it is an empty plain object (%j)", async (members) => {
+    const f = acknowledgementFixture(),
+      activity = technicalActivity();
+    (activity["activity"] as { data: Record<string, unknown> }).data["members"] = members;
+    f.history.push(activity);
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
   it("accepts one exact update after durable confirmation, preserving two checks and no PUT", async () => {
     const f = acknowledgementFixture();
     f.history.push(technicalActivity());

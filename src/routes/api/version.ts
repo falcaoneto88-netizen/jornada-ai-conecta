@@ -24,7 +24,7 @@ export const Route = createFileRoute("/api/version")({
             capabilities: {
               pilotAuthorization: 1,
               n8nMessageEvidence: 2,
-              n8nAcknowledgementActivity: 1,
+              n8nAcknowledgementActivity: 2,
             },
             release:
               typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release)
