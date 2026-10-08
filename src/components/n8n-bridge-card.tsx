@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { N8nPilotControl } from "@/components/n8n-pilot-control";
 import { ChaveN8nSetup } from "@/components/n8n-bridge-key";
 import { estadoPonteN8n, guardarPonteN8n } from "@/lib/n8n-bridge.functions";
 
@@ -26,7 +27,7 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoPonteN8n);
   const guardar = useServerFn(guardarPonteN8n);
   const qc = useQueryClient();
-  const { data, isError } = useQuery({
+  const { data, isError, isFetching, refetch } = useQuery({
     queryKey: ["n8n-bridge"],
     enabled: allowed,
     queryFn: () => ler(),
@@ -47,7 +48,20 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
     setProvedor(data.zaptosProviderId ?? "");
   }, [data]);
 
-  if (!allowed || isError || (data && !data.autorizado)) return null;
+  if (!allowed || (data && !data.autorizado)) return null;
+  if (isError)
+    return (
+      <div className="surface-card space-y-3 p-6">
+        <p className="font-medium">n8n — Confirmação de consultas</p>
+        <p role="alert" className="text-sm text-destructive">
+          Não foi possível verificar o estado da ponte e do piloto. Atualize a leitura antes de
+          configurar.
+        </p>
+        <Button size="sm" disabled={isFetching} onClick={() => void refetch()}>
+          Atualizar estado
+        </Button>
+      </div>
+    );
 
   async function gravar() {
     setPending(true);
@@ -78,8 +92,8 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
         <Badge variant="outline">{data?.bridgeEnabled ? "Ponte ligada" : "Ponte desligada"}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">
-        A ligação ao n8n ainda não foi verificada de ponta a ponta. A entrada já existente apenas
-        regista estados de confirmação; não envia mensagens. Ativação é manual e feita no servidor.
+        O estado da ponte mostra a configuração disponível. A execução de ponta a ponta depende de
+        um teste com o contato e o agendamento autorizados. Ativação é manual e feita no servidor.
       </p>
       {data && (
         <ChaveN8nSetup
@@ -182,6 +196,15 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
       <Button onClick={gravar} disabled={pending} size="sm">
         {pending ? "A guardar…" : "Guardar configuração"}
       </Button>
+      {data && (
+        <N8nPilotControl
+          state={data}
+          refreshing={isFetching}
+          refresh={async () => {
+            await qc.invalidateQueries({ queryKey: ["n8n-bridge"] });
+          }}
+        />
+      )}
     </div>
   );
 }

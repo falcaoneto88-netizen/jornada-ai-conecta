@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { guardarPilotoBridge } from "./n8n-bridge-pilot.admin.server";
-import type { Sessao } from "./n8n-bridge.admin.server";
+import { lerEstadoPonte, type Sessao } from "./n8n-bridge.admin.server";
 import type { ClienteBridge } from "./n8n-bridge.server";
 
 const ORG = "11111111-1111-4111-8111-111111111111",
@@ -139,6 +139,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 describe("administrative pilot setup", () => {
   it("persists only the verified scoped grant; no flag, credential, CRM mutation", async () => {
@@ -268,5 +269,52 @@ describe("administrative pilot setup", () => {
       .mockReturnValue(Date.parse(input.expiresAt));
     expect(await f.run(input, headers(), clock)).toMatchObject({ code: "invalid_window" });
     expect(f.writes).toHaveLength(0);
+  });
+});
+
+describe("authenticated pilot state for existing integration card", () => {
+  it("reads the persisted grant through the admin session without credentials or GHL effects", async () => {
+    const f = fixture();
+    await f.run();
+    f.fetch.mockClear();
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const state = await lerEstadoPonte(f.session, f.db);
+    expect(state).toMatchObject({
+      autorizado: true,
+      simulation: true,
+      liveSendEnabled: false,
+      pilot: {
+        status: "active",
+        contactId: "contact01",
+        appointmentId: "appoint01",
+        expectedStartTime: "2026-10-09T10:00:00.000Z",
+      },
+    });
+    expect(state.pilotCheckedAt).toEqual(expect.any(String));
+    expect(state).not.toHaveProperty("token");
+    expect(state).not.toHaveProperty("updated_by");
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(f.writes).toHaveLength(1);
+  });
+  it("returns off for no grant and unavailable for failed grant read", async () => {
+    const f = fixture();
+    expect((await lerEstadoPonte(f.session, f.db)).pilot.status).toBe("off");
+    f.fail("n8n_bridge_pilot_grants");
+    expect((await lerEstadoPonte(f.session, f.db)).pilot.status).toBe("unavailable");
+  });
+  it("does not reveal an existing grant to a non-admin or a mismatched org", async () => {
+    const f = fixture();
+    await f.run();
+    f.role.mockResolvedValue({ data: false, error: null });
+    expect(await lerEstadoPonte(f.session, f.db)).toMatchObject({
+      autorizado: false,
+      pilot: { contactId: null, appointmentId: null },
+    });
+    f.role.mockResolvedValue({ data: true, error: null });
+    f.profile.organization_id = OTHER;
+    expect(await lerEstadoPonte(f.session, f.db)).toMatchObject({
+      bindingOk: false,
+      pilot: { status: "unavailable", contactId: null },
+    });
   });
 });

@@ -7,12 +7,14 @@ import { envTokenValido } from "./n8n-bridge.core";
 import {
   configGhl,
   lerConfigBridge,
+  lerPilotoBridge,
   lerCredencialBridge,
   resolverEscopo,
   utilizadorNaLocation,
   type ClienteBridge,
 } from "./n8n-bridge.server";
 import { ghlFetch } from "./ghl.server";
+import { estadoPiloto, type PilotStatus } from "./n8n-bridge-pilot";
 
 export type Sessao = {
   supabase: {
@@ -31,6 +33,8 @@ export type Sessao = {
 };
 
 export type EstadoPonteN8n = {
+  pilot: PilotStatus;
+  pilotCheckedAt: string | null;
   autorizado: boolean;
   /** Token de ambiente válido OU credencial por organização guardada. */
   tokenPresente: boolean;
@@ -53,6 +57,15 @@ export type EstadoPonteN8n = {
 };
 
 const NEGADO: EstadoPonteN8n = {
+  pilot: {
+    status: "unavailable",
+    contactId: null,
+    appointmentId: null,
+    expectedStartTime: null,
+    expiresAt: null,
+    allowedKinds: [],
+  },
+  pilotCheckedAt: null,
   autorizado: false,
   tokenPresente: false,
   podeCriarChave: false,
@@ -111,7 +124,12 @@ export async function lerEstadoPonte(
   const credOk = cred.ok && cred.digest !== null;
   const lida = await lerConfigBridge(db, a.org).catch(() => ({ ok: false as const }));
   const cfg = lida.ok ? lida.cfg : null;
+  const pilot = a.escopo
+    ? await estadoPiloto({ lerPiloto: (org) => lerPilotoBridge(db, org), now: Date.now }, a.org)
+    : NEGADO.pilot;
   return {
+    pilot,
+    pilotCheckedAt: new Date().toISOString(),
     autorizado: true,
     tokenPresente: envOk || (!envRaw && credOk && a.escopo !== null),
     podeCriarChave: !envRaw && cred.ok && cred.digest === null && a.escopo !== null,
