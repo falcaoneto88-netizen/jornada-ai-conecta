@@ -21,6 +21,7 @@ export const Route = createFileRoute("/api/version")({
             service: "jornada-ai",
             build: BUILD,
             api: { "ad-navigator": 1, "n8n-bridge": 3 },
+            capabilities: { pilotAuthorization: 1 },
             release:
               typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release)
                 ? release

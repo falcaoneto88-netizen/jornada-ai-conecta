@@ -4,6 +4,20 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { configEntradaSchema } from "./n8n-bridge.schema";
+import { pilotInputSchema } from "./n8n-bridge-pilot.schema";
+
+/** Separate explicit admin action; never toggles existing live/channel/simulation flags. */
+export const guardarPilotoN8n = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => pilotInputSchema.parse(d))
+  .handler(async ({ context, data }) => {
+    const { guardarPilotoBridge } = await import("./n8n-bridge-pilot.admin.server");
+    return guardarPilotoBridge(
+      { supabase: context.supabase as never, userId: context.userId },
+      getRequest().headers,
+      data,
+    );
+  });
 
 export const estadoPonteN8n = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

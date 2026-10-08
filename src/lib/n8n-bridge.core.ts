@@ -12,6 +12,7 @@ import {
 } from "./n8n-bridge-confirmation";
 
 import { resolverResposta } from "./n8n-bridge-reply-resolve";
+import { autorizarPiloto, estadoPiloto, type PilotRead } from "./n8n-bridge-pilot";
 import { validarLembrete, type DepsLembretes } from "./n8n-bridge-reminders";
 
 import { KINDS_INTERNOS, N8N_KINDS, montarMensagem, type KindN8n } from "./n8n-bridge.templates";
@@ -114,6 +115,7 @@ export type Reserva =
 export type LeituraCredencial = { ok: true; digest: string | null } | { ok: false };
 
 export type DepsBridge = {
+  lerPiloto?: (orgId: string) => Promise<PilotRead>;
   confirmacao?: DepsConfirmacao;
   lembretes?: DepsLembretes;
   verifiedConfirmation?: (
@@ -332,6 +334,7 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!cabe) return erro("rate_limited", 429);
 
   if (pedido.op === "health") {
+    const pilot = await estadoPiloto(deps, res.orgId);
     return reply(
       {
         ok: true,
@@ -344,6 +347,7 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
         channelVerified: cfg.channelVerified,
         smsRouteConfigured: false,
         addressConfigured: cfg.clinicAddress.trim() !== "",
+        pilot,
       },
       200,
     );
@@ -478,6 +482,16 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!cfg.liveSendEnabled || !res.writeEnabled || !res.integracaoConectada)
     return erro("live_send_disabled", 403);
 
+  const revalidarPiloto = () =>
+    autorizarPiloto(deps, res.orgId, {
+      contactId: e.contactId,
+      appointmentId: e.id,
+      startTime: atual,
+      kind: pedido.kind,
+    });
+  const pilot = await revalidarPiloto();
+  if (!pilot.ok) return erro(pilot.code, pilot.status);
+
   const reserva = await deps
     .claim(res.orgId, e.id, atual, pedido.kind, c.data.id)
     .catch(() => null);
@@ -509,6 +523,11 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   }
 
   // Única tentativa externa desta reserva.
+  const latestPilot = await revalidarPiloto();
+  if (!latestPilot.ok) {
+    await deps.finish(res.orgId, reserva.id, "rejected", null, latestPilot.code).catch(() => false);
+    return erro(latestPilot.code, latestPilot.status);
+  }
   const envio = await deps
     .enviar(corpoGhl)
     .catch((): EnvioGhl => ({ ok: false, definitivo: false, code: "outcome_unknown" }));

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CONFIG_PADRAO, processarBridge, type DepsBridge } from "./n8n-bridge.core";
 import { criarDepsLembretes, type ClienteBridge } from "./n8n-bridge.server";
 import type { ReminderEvidence } from "./n8n-bridge-reminders";
+import { testPilot } from "../../test/n8n-pilot-fixture";
 const LOC = "location01",
   ORG = "org01",
   CAL = "calendar01",
@@ -84,6 +85,7 @@ function fixture() {
   };
   const deps: DepsBridge = {
     token: "synthetic-reminder-test-token-only-32-characters",
+    lerPiloto: testPilot(ORG, CONTACT, "appoint01", START),
     now: () => NOW,
     resolver: async () => ({
       orgId: ORG,
