@@ -183,13 +183,23 @@ export function envTokenValido(t: string | undefined): t is string {
 
 const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : null);
 
-/** Pesquisa por ID exato e location. DND segue a representação da API GHL; não representa opt-in. */
-export function parseContacto(raw: unknown, id: string, locationId: string): ContactoBridge | null {
+/** Identity only, never DND verification or permission to send. Shared by strict parsing and diagnostics. */
+export function parseIdentidadeContacto(
+  raw: unknown,
+  id: string,
+  locationId: string,
+): Record<string, unknown> | null {
   const r = obj(raw);
   const rows = r?.["contacts"];
   if (!r || r["total"] !== 1 || !Array.isArray(rows) || rows.length !== 1) return null;
   const c = obj(rows[0]);
-  if (!c || c["id"] !== id || c["locationId"] !== locationId) return null;
+  return c && c["id"] === id && c["locationId"] === locationId ? c : null;
+}
+
+/** Pesquisa por ID exato e location. DND segue a representação da API GHL; não representa opt-in. */
+export function parseContacto(raw: unknown, id: string, locationId: string): ContactoBridge | null {
+  const c = parseIdentidadeContacto(raw, id, locationId);
+  if (!c) return null;
   // GHL documents omitted global dnd as false across its APIs. Null/other types are malformed.
   if (c["dnd"] !== undefined && typeof c["dnd"] !== "boolean") return null;
   const ds = obj(c["dndSettings"]);

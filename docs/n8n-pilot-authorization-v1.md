@@ -91,3 +91,9 @@ npm run build
 ## Incremento de interface — 08/10/2026
 
 Incremento local separado sobre `f90d8edae4ac2457ade805c6acf61f0d2efefbc9`: seção no cartão existente, leitura de grant por sessão administrativa e testes DOM do formulário/integração. Não inclui migração adicional, ativação ou envio. Tsc, lint e build locais não equivalem à validação visual/publicada; a abertura da página real e o uso da sessão administrativa devem ser verificados após implantação. Uma gravação só mostra sucesso após a função servidor comprovar persistência; a interface mantém o estado lido e exibe bloqueios de envio separadamente.
+
+## Diagnóstico de preferências — candidato local de 08/10/2026
+
+`guardarPilotoN8n` distingue `contact_not_verified` (falha de leitura, envelope ou ID/location divergente) de `contact_preferences_not_verified` (identidade exata comprovada, mas os campos necessários ao parser DND estão ausentes ou malformados). A interface explica a segunda situação e informa que o grant não foi guardado. A ausência de `dndSettings` não é convertida em objeto vazio, consentimento ou ausência de bloqueio. Identidade divergente tem precedência mesmo quando faltam preferências.
+
+A extração do validador de identidade é reutilizada por `parseContacto`, cuja exigência de preferências permanece igual. O novo código não altera os erros nem as condições das operações de envio; não altera CRM, flags, grant, SQL ou credenciais. O comportamento anterior para `dnd` global omitido com `dndSettings` válido permanece coberto por regressão. Testes locais após este diagnóstico: 408 testes em 11 suítes; SQL não mudou e não foi reexecutado. Trata-se de diagnóstico mais preciso, não de resolução do dado que o provedor omitiu.

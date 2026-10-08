@@ -353,3 +353,11 @@ Evidências locais: `outputs/n8n-runtime-fix-2026-10-08/README.md`, `runtime-fix
 - Controle "Piloto de um agendamento" no cartão n8n existente em /integracoes usa `guardarPilotoN8n` com sessão administrativa; guarda/revoga o grant exato e mostra estado, hora da leitura e bloqueios. Sem SQL nova.
 - Gates locais: vitest (ponte n8n, confirmação, controle do piloto, agente comercial, sem banco) 19 arquivos / 611 testes, exit 0; `tsgo` exit 0; build exit 0; `git diff --check` limpo; ESLint (incl. prettier) 0 erros nos 5 arquivos de código alterados.
 - Estado: não publicado; tabela de grants vazia; nenhum grant, flag, chave, GHL ou envio alterado; `concurrency_verified=false`; sem prova ponta a ponta nem visual da sessão publicada.
+
+## Diagnóstico de preferências DND do piloto — integrado em 08/10/2026
+
+- Pacote `package-938b00d.tar.gz` (SHA256 `a46c01d32c7fc40ac2a4583137016b24213d39eb0ad8266e8fcee6ae0eabc9b3`; manifest `504b026ce175bebc79fdcefd2968a338f428fd86215fdc71ea483e94adc62312`; base `3b3a75f`, head `938b00d`), aplicado sobre `2cfa8499c9f54503fb465e5159b226d97be004b6`.
+- 6 arquivos de código/teste com base conferida e hash final igual ao manifest. `docs/n8n-pilot-authorization-v1.md` divergia pela correção de ACL `sandbox_exec` já feita; essa correção foi preservada e só a nova seção "Diagnóstico de preferências" foi acrescentada (texto idêntico ao pacote).
+- Efeito: `guardarPilotoN8n` devolve `contact_preferences_not_verified` quando a identidade exata é comprovada mas faltam/são inválidas as preferências DND, e `contact_not_verified` para identidade não comprovada. `parseContacto` continua a rejeitar `dndSettings` ausente; nada é normalizado para `{}` nem autorizado.
+- Gates locais: vitest (ponte n8n, confirmação, controle do piloto, agente comercial, sem banco) 19 arquivos / 624 testes exit 0; `tsgo` exit 0; ESLint dos 6 arquivos alterados exit 0; build exit 0; `git diff --check` limpo. Sem SQL.
+- Estado: guard e UI do piloto publicados anteriormente; este diagnóstico **ainda não publicado** até implantação comprovada. Nenhuma alteração GHL de DND foi feita; contato `fCzYtbsUvclTHKGeHIrR` continua sem `dndSettings`; preferência pendente de aprovação específica. Sem grant, flags, canal, n8n ou envios alterados.

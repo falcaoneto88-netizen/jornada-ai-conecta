@@ -137,6 +137,19 @@ describe("pilot administration in existing n8n card", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("gravação não foi comprovada");
     expect(screen.queryByRole("status")).toBeNull();
   });
+  it("explains verified identity but unverified DND without claiming a grant or permission to send", async () => {
+    mocked.save.mockResolvedValue({ ok: false, code: "contact_preferences_not_verified" });
+    render(<N8nPilotControl state={state()} refreshing={false} refresh={vi.fn()} />);
+    fill();
+    fireEvent.click(screen.getByLabelText("Mensagem inicial (booking)"));
+    fireEvent.click(button("Guardar autorização do piloto"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("localizado na subconta correta");
+    expect(alert.textContent).toContain("não retornou preferências de bloqueio (DND) verificáveis");
+    expect(alert.textContent).toContain("autorização não foi guardada");
+    expect(screen.getByText("Sem autorização ativa")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
   it("unavailable schema blocks setup and revoke; retry only refreshes state", () => {
     const refresh = vi.fn(async () => {});
     const data = state();
