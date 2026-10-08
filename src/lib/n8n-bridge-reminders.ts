@@ -70,7 +70,7 @@ export async function validarLembrete(
       return fail("reminder_evidence_invalid");
     const read = await evidence.message(scope.locationId, row.messageId).catch(unavailable);
     if (!read.ok) return fail("reminder_evidence_unavailable", 502);
-    const sent = parseMessage(read.data, row.messageId, scope.locationId, "outbound");
+    const sent = parseMessage(read.data, row.messageId, scope.locationId, "outbound", cfg);
     if (!sent || sent.contactId !== event.contactId || sent.time > Date.parse(row.acceptedAt))
       return fail("reminder_evidence_invalid");
     byKind.set(row.kind, row);

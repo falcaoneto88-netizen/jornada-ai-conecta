@@ -470,7 +470,7 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     if (pedido.kind !== "confirm") return null;
     if (!deps.confirmacao)
       return { ok: false as const, code: "confirmation_evidence_unavailable", status: 503 };
-    const valid = await validarAgradecimento(res, e, deps.now(), deps, deps.confirmacao);
+    const valid = await validarAgradecimento(res, e, deps.now(), deps, deps.confirmacao, cfg);
     return valid.ok ? null : valid;
   };
   const acknowledgementError = await revalidarAgradecimento();

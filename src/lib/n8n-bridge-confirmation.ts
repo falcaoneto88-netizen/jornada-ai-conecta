@@ -72,6 +72,20 @@ const object = (value: unknown): Record<string, unknown> | null =>
 const sourceTimestamp = z.string().datetime({ offset: true });
 const messageTypes = new Set(["SMS", "TYPE_SMS", "WHATSAPP", "TYPE_WHATSAPP"]);
 
+/** Normalize only the authenticated GET-message response shapes; never merge identities. */
+export function normalizarMensagemGhl(raw: unknown): Record<string, unknown> | null {
+  const envelope = object(raw);
+  if (!envelope) return null;
+  if (!("message" in envelope)) return envelope;
+  if (
+    Object.keys(envelope).some((key) => key !== "message" && key !== "traceId") ||
+    ("traceId" in envelope && typeof envelope["traceId"] !== "string")
+  )
+    return null;
+  const message = object(envelope["message"]);
+  return message && !("message" in message) ? message : null;
+}
+
 export type Message = {
   id: string;
   contactId: string;
@@ -85,8 +99,21 @@ export function parseMessage(
   id: string,
   locationId: string,
   direction: "inbound" | "outbound",
+  route?: Pick<ConfigBridge, "channel" | "zaptosProviderId">,
 ): Message | null {
   const m = object(raw);
+  // Authenticated custom-provider outbound is SMS transport in GHL. Its inbound
+  // replies remain TYPE_SMS and need not carry a provider ID. No custom inbound
+  // or provider inferred from the caller/response is admitted by this exception.
+  const customOutbound =
+    direction === "outbound" &&
+    m?.["messageType"] === "TYPE_CUSTOM_SMS" &&
+    m["type"] === 20 &&
+    m["source"] === "api" &&
+    route?.channel === "whatsapp_zaptos" &&
+    typeof route.zaptosProviderId === "string" &&
+    route.zaptosProviderId.length > 0 &&
+    m["conversationProviderId"] === route.zaptosProviderId;
   if (
     !m ||
     m["id"] !== id ||
@@ -97,7 +124,7 @@ export function parseMessage(
     !m["conversationId"] ||
     !sourceTimestamp.safeParse(m["dateAdded"]).success ||
     typeof m["body"] !== "string" ||
-    !messageTypes.has(String(m["messageType"])) ||
+    (!messageTypes.has(String(m["messageType"])) && !customOutbound) ||
     m["contentType"] !== "text/plain"
   )
     return null;
@@ -203,6 +230,7 @@ export async function validarAgradecimento(
   now: number,
   deps: Pick<DepsBridge, "consulta">,
   confirmation: DepsConfirmacao,
+  cfg: ConfigBridge,
 ): Promise<{ ok: true } | { ok: false; code: string; status: number }> {
   const fail = (code: string, status = 409) => ({ ok: false as const, code, status });
   const start = normalizarInstante(event.startTime);
@@ -223,6 +251,7 @@ export async function validarAgradecimento(
     record.inboundMessageId,
     scope.locationId,
     "inbound",
+    cfg,
   );
   if (!inbound || inbound.contactId !== event.contactId) return fail("reply_not_verified");
   if (!/^(SIM|CONFIRMO)$/i.test(inbound.body.trim())) return fail("reply_not_confirmation");
@@ -253,7 +282,7 @@ export async function validarAgradecimento(
     .message(scope.locationId, request.messageId)
     .catch(readFailed);
   if (!sentRead.ok) return fail("confirmation_evidence_unavailable", 502);
-  const sent = parseMessage(sentRead.data, request.messageId, scope.locationId, "outbound");
+  const sent = parseMessage(sentRead.data, request.messageId, scope.locationId, "outbound", cfg);
   if (
     !sent ||
     sent.contactId !== event.contactId ||
@@ -315,6 +344,7 @@ export async function processarConfirmacao(
     pedido.inboundMessageId,
     scope.locationId,
     "inbound",
+    cfg,
   );
   if (!inbound || inbound.contactId !== pedido.contactId) return failure("reply_not_verified");
   if (!/^(SIM|CONFIRMO)$/i.test(inbound.body.trim())) return failure("reply_not_confirmation");
@@ -344,7 +374,7 @@ export async function processarConfirmacao(
       .message(scope.locationId, request.messageId)
       .catch(readFailed);
     if (!sentRead.ok) return failure("confirmation_evidence_unavailable", 502);
-    const sent = parseMessage(sentRead.data, request.messageId, scope.locationId, "outbound");
+    const sent = parseMessage(sentRead.data, request.messageId, scope.locationId, "outbound", cfg);
     if (!sent || sent.time > accepted || sent.time >= inbound.time)
       return failure("confirmation_evidence_invalid");
     if (sent.contactId !== pedido.contactId || sent.conversationId !== inbound.conversationId)
