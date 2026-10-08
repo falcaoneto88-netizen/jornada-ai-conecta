@@ -378,3 +378,13 @@ Evidências verificadas por Root nesta sessão; registro factual, sem nova execu
 - **NÃO houve PUT de DND:** o auto-review rejeitou por falta de autorização específica; a pergunta continua pendente.
 - **Último SELECT de grants:** 0 linhas.
 - **Backend:** `simulation=true`, `live_send=false`, `channel_verified=false`; webhooks n8n simulados, modo manual desativado, `concurrency=false`.
+
+## 08/10/2026 — piloto booking/req24 e correção de evidência de mensagem
+
+- **DND:** autorização específica do usuário; SMS e WhatsApp `inactive` no contato `fCzYtbsUvclTHKGeHIrR`, persistido 17:34:33Z (GET posterior confirmou; DND global e outros canais intactos).
+- **Grant temporário:** criado 17:35:59Z, revogado 17:52:28Z.
+- **Execução n8n 105:** 17:44:18Z, 15.534s, `Succeeded`. Apenas `booking` aceito e `delivered` (messageId `zABSLArXccufjcEO5gyL`). `req24` recebeu HTTP 409 `reminder_evidence_invalid` às 17:44:34Z, sem reserva nem envio.
+- **Causa:** GET individual GHL envelopado em `{ message, traceId }` e `TYPE_CUSTOM_SMS` (Zaptos, `type=20`, `source=api`) fora dos tipos aceitos. Ver `docs/n8n-message-evidence-2026-10-08.md`.
+- **Correção:** implementada e testada localmente; **ainda não publicada**. Verificação somente leitura com a mensagem real: parser aceita (canal `sms`) e `validarLembrete("req24")` retornou `ok` com dependências reais em leitura, sem `processarBridge`, reserva ou envio.
+- **Estado restaurado (não reativar):** backend `simulation=true`, `live_send_enabled=false`, `channel_verified=false`; n8n draft `manual=false`, rules/booking restaurados.
+- **Retomada:** após publicação autorizada, conferir `/api/version` `capabilities.n8nMessageEvidence: 2`; reler ledger, estado n8n, grant e consulta antes de qualquer req24; não repetir o `booking` já aceito.
