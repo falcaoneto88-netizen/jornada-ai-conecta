@@ -221,6 +221,40 @@ describe("administrative pilot setup", () => {
       expect(f.writes).toHaveLength(0);
     },
   );
+  it.each(["omitted", "null", "array", "invalid-status"])(
+    "distinguishes exact identity from unverified preferences: %s",
+    async (reason) => {
+      const f = fixture();
+      if (reason === "omitted") {
+        Reflect.deleteProperty(f.contact, "dnd");
+        Reflect.deleteProperty(f.contact, "dndSettings");
+        Reflect.deleteProperty(f.contact, "inboundDndSettings");
+      } else
+        Object.assign(f.contact, {
+          dndSettings:
+            reason === "null" ? null : reason === "array" ? [] : { SMS: { status: "unknown" } },
+        });
+      expect(await f.run()).toEqual({ ok: false, code: "contact_preferences_not_verified" });
+      expect(f.writes).toHaveLength(0);
+      expect(f.fetch).toHaveBeenCalledTimes(1); // No appointment reads or remote writes after rejection.
+    },
+  );
+  it.each([{ id: "other001" }, { locationId: "other001" }])(
+    "identity failure takes precedence even when preferences are omitted %#",
+    async (change) => {
+      const f = fixture();
+      Object.assign(f.contact, change);
+      Reflect.deleteProperty(f.contact, "dnd");
+      Reflect.deleteProperty(f.contact, "dndSettings");
+      expect(await f.run()).toEqual({ ok: false, code: "contact_not_verified" });
+      expect(f.writes).toHaveLength(0);
+    },
+  );
+  it("keeps the existing valid-settings contract when only global dnd is omitted", async () => {
+    const f = fixture();
+    Reflect.deleteProperty(f.contact, "dnd");
+    expect(await f.run()).toEqual({ ok: true });
+  });
   it.each([
     { id: "other001" },
     { locationId: "other001" },

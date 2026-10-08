@@ -4,6 +4,7 @@ import {
   CONFIG_PADRAO,
   dndPermite,
   parseContacto,
+  parseIdentidadeContacto,
   processarBridge,
   type DepsBridge,
 } from "./n8n-bridge.core";
@@ -185,4 +186,31 @@ describe("absence of DND does not authorize a real send", () => {
       expect(f.send).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("contact identity diagnostics do not authorize DND", () => {
+  it("identifies exact contact while the full parser still rejects omitted preferences", () => {
+    const payload = { total: 1, contacts: [{ id: CONTACT, locationId: LOC }] };
+    expect(parseIdentidadeContacto(payload, CONTACT, LOC)).toMatchObject({
+      id: CONTACT,
+      locationId: LOC,
+    });
+    expect(parseContacto(payload, CONTACT, LOC)).toBeNull();
+    expect(payload.contacts[0]).not.toHaveProperty("dndSettings");
+  });
+  it.each([
+    { total: 0, contacts: [] },
+    { total: 1, contacts: [{ id: "other001", locationId: LOC }] },
+    { total: 1, contacts: [{ id: CONTACT, locationId: "other001" }] },
+    {
+      total: 2,
+      contacts: [
+        { id: CONTACT, locationId: LOC },
+        { id: CONTACT, locationId: LOC },
+      ],
+    },
+  ])("cannot infer identity from a wrong/ambiguous envelope %#", (payload) => {
+    expect(parseIdentidadeContacto(payload, CONTACT, LOC)).toBeNull();
+    expect(parseContacto(payload, CONTACT, LOC)).toBeNull();
+  });
 });

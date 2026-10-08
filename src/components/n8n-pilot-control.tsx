@@ -23,6 +23,8 @@ const ERRORS: Record<string, string> = {
   invalid_window:
     "A expiração deve ser futura, em até 24 horas e não passar do início da consulta.",
   contact_not_verified: "O contato não foi confirmado na subconta vinculada.",
+  contact_preferences_not_verified:
+    "O contato foi localizado na subconta correta, mas o GHL não retornou preferências de bloqueio (DND) verificáveis. A autorização não foi guardada. Confira essas preferências no GHL antes de repetir.",
   appointment_not_verified:
     "O compromisso não corresponde ao contato, agenda, início ou estado esperado no GHL.",
   bridge_unavailable: "A agenda da ponte não está disponível para verificação.",

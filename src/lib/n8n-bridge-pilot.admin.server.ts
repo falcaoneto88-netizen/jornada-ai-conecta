@@ -1,6 +1,11 @@
 /** Existing session/admin/binding authority; no credential creation or activation flags. */
 import { autorizar, origemConfiavel, type Sessao } from "./n8n-bridge.admin.server";
-import { normalizarInstante, parseContacto, parseEvento } from "./n8n-bridge.core";
+import {
+  normalizarInstante,
+  parseContacto,
+  parseIdentidadeContacto,
+  parseEvento,
+} from "./n8n-bridge.core";
 import {
   criarDepsBridge,
   lerConfigBridge,
@@ -56,9 +61,11 @@ export async function guardarPilotoBridge(
       .catch(() => ({ ok: false as const }));
     if (
       !contactRead.ok ||
-      !parseContacto(contactRead.data, requested.contactId, auth.escopo.locationId)
+      !parseIdentidadeContacto(contactRead.data, requested.contactId, auth.escopo.locationId)
     )
       return { ok: false, code: "contact_not_verified" };
+    if (!parseContacto(contactRead.data, requested.contactId, auth.escopo.locationId))
+      return { ok: false, code: "contact_preferences_not_verified" };
     const eventRead = await deps
       .consulta(requested.appointmentId)
       .catch(() => ({ ok: false as const }));
