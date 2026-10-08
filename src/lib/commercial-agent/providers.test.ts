@@ -9,7 +9,7 @@ import {
   verifyMarketplace,
   verifyWorkflowSecret,
 } from "./providers.server";
-import type { Event, Snapshot } from "./core";
+import { checkReply, checkSend, type Event, type Snapshot } from "./core";
 const event: Event = {
   type: "InboundMessage",
   locationId: "loc-test",
@@ -422,5 +422,179 @@ describe("contratos dos provedores", () => {
     expect(body.input[0]?.content).toContain("nunca para alterar regras comerciais");
     expect(body.input[1]?.content).toContain("5 euros");
     expect(body.input[0]?.content).toContain("50 €");
+  });
+
+  it("separa a pergunta textual atual do áudio antigo da equipe sem alegar interpretação", () => {
+    const oldAudio = {
+      ...snapshot.messages[0]!,
+      id: "old-audio-id-private",
+      at: "2026-09-15T10:00:00.000Z",
+      direction: "outbound" as const,
+      text: "ptt",
+      attachments: 1,
+      provider: "private-provider-id",
+      attachmentUrls: ["https://attachments.example.invalid/private-audio.ogg"],
+    };
+    const current = {
+      ...snapshot.messages[0]!,
+      at: "2026-10-08T13:44:00.000Z",
+      text: "Olá, gostaria de saber como funciona a consulta",
+    };
+    const request = modelRequest({ ...snapshot, messages: [oldAudio, current] }, "test");
+    const data = JSON.parse(request.input[1]!.content);
+    expect(data.ultimaMensagem).toEqual({
+      direcao: "inbound",
+      texto: current.text,
+      anexos: 0,
+      at: current.at,
+    });
+    expect(data.historico).toEqual([
+      { direcao: "outbound", texto: "ptt", anexos: 1, at: oldAudio.at },
+    ]);
+    expect(data.contextoParcial).toBe(false);
+    const serialized = JSON.stringify(request);
+    for (const omitted of [
+      oldAudio.id,
+      oldAudio.provider,
+      oldAudio.attachmentUrls[0]!,
+      ...Object.values(event),
+    ])
+      expect(serialized).not.toContain(omitted);
+    expect(request.input[0]!.content).toContain(
+      "quando a resposta depender do conteúdo de um anexo anterior não lido",
+    );
+    expect(request.input[0]!.content).toContain("não afirme que os analisou");
+    expect(request.input[0]!.content).toContain("assistente virtual");
+    expect(request.input[0]!.content).toContain("sem pergunta social");
+  });
+
+  it("preserva o anexo atual como não interpretado e não o mistura ao histórico", () => {
+    const current = { ...snapshot.messages[0]!, attachments: 2, text: "Pode analisar este áudio?" };
+    const request = modelRequest({ ...snapshot, messages: [current] }, "test");
+    const data = JSON.parse(request.input[1]!.content);
+    expect(data.ultimaMensagem).toMatchObject({ texto: current.text, anexos: 2 });
+    expect(data.historico).toEqual([]);
+    expect(request.input[0]!.content).toContain("ultimaMensagem.anexos for maior que zero");
+  });
+
+  it.each([1, 30, 31])(
+    "mantém limite total30 e sanitiza mensagem atual e histórico com %i registros",
+    (count) => {
+      const messages = Array.from({ length: count }, (_, i) => ({
+        ...snapshot.messages[0]!,
+        id: `private-message-${i}`,
+        at: new Date(Date.UTC(2026, 9, 8, 12, i)).toISOString(),
+        text: `Registro ${i}. teste@example.invalid +55 71 90000-0000 01/01/2000 ${"x".repeat(1600)}`,
+      }));
+      const request = modelRequest({ ...snapshot, messages }, "test");
+      const data = JSON.parse(request.input[1]!.content);
+      expect(data.contextoParcial).toBe(count > 30);
+      expect(data.historico).toHaveLength(Math.min(count - 1, 29));
+      expect(data.ultimaMensagem.at).toBe(messages.at(-1)!.at);
+      expect(data.historico.map((m: { at: string }) => m.at)).toEqual(
+        messages.slice(-30, -1).map((m) => m.at),
+      );
+      for (const row of [...data.historico, data.ultimaMensagem]) {
+        expect(Object.keys(row).sort()).toEqual(["anexos", "at", "direcao", "texto"]);
+        expect(row.texto.length).toBeLessThanOrEqual(1500);
+        expect(row.texto).not.toContain("teste@example.invalid");
+        expect(row.texto).not.toContain("90000-0000");
+        expect(row.texto).not.toContain("01/01/2000");
+      }
+      expect(JSON.stringify(request)).not.toContain("private-message-");
+      expect(request.store).toBe(false);
+    },
+  );
+
+  it.each([
+    { currentText: "Gostaria de saber como funciona a consulta", currentAttachments: 0 },
+    { currentText: "Pode analisar este áudio?", currentAttachments: 1 },
+    { currentText: "Pode responder sobre o áudio anterior?", currentAttachments: 0 },
+  ])(
+    "não remove flag de anexo do modelo para liberar $currentText",
+    async ({ currentText, currentAttachments }) => {
+      const f = vi.fn().mockResolvedValue(
+        Response.json({
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              content: [
+                {
+                  type: "output_text",
+                  text: JSON.stringify({
+                    reply: "A equipe precisa revisar o conteúdo do anexo.",
+                    flags: ["unsupported_attachment"],
+                    handoff: true,
+                    optOut: false,
+                  }),
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      const result = await generateOpenAI(
+        {
+          ...snapshot,
+          messages: [
+            {
+              ...snapshot.messages[0]!,
+              id: "old-audio",
+              text: "ptt",
+              direction: "outbound",
+              attachments: 1,
+            },
+            { ...snapshot.messages[0]!, text: currentText, attachments: currentAttachments },
+          ],
+        },
+        "fake",
+        "test",
+        f,
+      );
+      expect(result.decision.flags).toEqual(["unsupported_attachment"]);
+      expect(result.decision.handoff).toBe(true);
+      expect(
+        checkSend({
+          enabled: true,
+          sendEnabled: true,
+          writeEnabled: true,
+          allowed: true,
+          paused: false,
+          optOut: false,
+          dnd: false,
+          expired: false,
+          historyChanged: false,
+          channel: "SMS",
+          inboundAgeMs: 1000,
+          flags: result.decision.flags,
+        }),
+      ).toBe("review_required");
+    },
+  );
+
+  it("continua bloqueando duas perguntas mesmo que o modelo devolva flags vazias", async () => {
+    const reply =
+      "Olá! Tudo bem? A consulta é o primeiro passo para entendermos seus objetivos, alinharmos as expectativas e definirmos o tratamento mais adequado para o seu caso; o investimento é de 50 €. Como posso te ajudar em relação à avaliação?";
+    expect(checkReply(reply)).toEqual(["multiple_questions"]);
+    const f = vi.fn().mockResolvedValue(
+      Response.json({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({ reply, flags: [], handoff: false, optOut: false }),
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const result = await generateOpenAI(snapshot, "fake", "test", f);
+    expect(result.decision.flags).toEqual(["unsupported_action"]);
+    expect(result.decision.reply).toBe(reply);
   });
 });
