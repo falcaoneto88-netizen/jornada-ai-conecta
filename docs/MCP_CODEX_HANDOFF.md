@@ -388,3 +388,21 @@ Evidências verificadas por Root nesta sessão; registro factual, sem nova execu
 - **Correção:** implementada e testada localmente; **ainda não publicada**. Verificação somente leitura com a mensagem real: parser aceita (canal `sms`) e `validarLembrete("req24")` retornou `ok` com dependências reais em leitura, sem `processarBridge`, reserva ou envio.
 - **Estado restaurado (não reativar):** backend `simulation=true`, `live_send_enabled=false`, `channel_verified=false`; n8n draft `manual=false`, rules/booking restaurados.
 - **Retomada:** após publicação autorizada, conferir `/api/version` `capabilities.n8nMessageEvidence: 2`; reler ledger, estado n8n, grant e consulta antes de qualquer req24; não repetir o `booking` já aceito.
+
+## 08/10/2026 18:27UTC — req24 entregue em piloto controlado e estado revertido
+
+Adendo factual. Registro somente do que foi comprovado por leitura; nada aqui autoriza nova execução, SQL, flag, envio ou publicação.
+
+- **Publicação comprovada.** Commit `3351825e7de235e746fdfccdd16019d561945849` (“Aplicou correção n8n-bridge”) implantado pelo deploy `25af71a7-400b-49f8-93bb-c852f19f207e`. `GET /api/version` público às 18:15:27.993Z retornou `capabilities.n8nMessageEvidence: 2`, confirmando a correção no ar.
+- **Gates da correção.** Local: 467 testes em 13 suítes aprovados. Remoto: 464 aprovados, 23 ignorados; as duas suítes de base de dados **não** executaram (faltou `embedded-postgres`). TypeScript, lint e build com exit 0.
+- **n8n — patch não publicado.** Root aplicou no **rascunho** do workflow original `WrDn82MwKBcuM73G` os campos de recuperação exata do `req24`, com 79 nós preservados; candidato com 172 testes e 23 cenários n8n. Esse patch n8n **não foi publicado**.
+- **Execução do piloto.** Execução 110, observada na UI às 18:21:28Z: `Succeeded`, 14.579s, autosave `fc651d6e-6983-457a-a147-28fc18e8e644`. Um único `req24`, HTTP 200, `accepted=true`, `duplicate=false`, mensagem `XxdD584xGtbGTQ7HaIAd`.
+- **Ledger (SQL).** Reserva 18:21:39.595199Z, conclusão 18:21:42.254334Z.
+- **Recibo GHL.** `GET` autenticado (leitura desta tarefa) confirmou a mensagem `msg_01m4ec03dbepbbnnv2836623vg` como `delivered`, `dateAdded` 18:21:41.654Z; escopo de contato, location, conversa e provedor confere. O `booking` anterior `zABSLArXccufjcEO5gyL` permanece preservado.
+- **Consulta.** `ofHr3ecQ1EDs4YQkvwgB` continua `new`, 09/10/2026 11h Lisboa. Nesta leitura não houve resposta após o `req24` e há zero confirmações.
+- **Reversão pelo Root, após a leitura acima.** Grant desativado 18:23:04.236073Z; backend `simulation=true`, `live_send_enabled=false`, `channel_verified=false`, com releitura independente confirmada. `bridge_enabled=true` inalterado.
+- **Configuração n8n** salva e reaberta: relay `false`, `manual_pilot_enabled=false`, recuperação/test mode dos rules na fase `booking`, simulação global `true`, `concurrency=false`.
+- **DND** SMS e WhatsApp `inactive` no contato final `7009` mantido.
+- **Aguardando o usuário** responder `CONFIRMO` no WhatsApp.
+- **Pendente:** confirmação da consulta e agradecimento. Timers e concorrência geral **não** homologados — **não marcar E2E como concluído**.
+
