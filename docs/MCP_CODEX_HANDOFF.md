@@ -406,3 +406,13 @@ Adendo factual. Registro somente do que foi comprovado por leitura; nada aqui au
 - **Aguardando o usuário** responder `CONFIRMO` no WhatsApp.
 - **Pendente:** confirmação da consulta e agradecimento. Timers e concorrência geral **não** homologados — **não marcar E2E como concluído**.
 
+
+## Adendo 08/10/2026 19:37 UTC — teste controlado: CONFIRMO, confirmação e agradecimento bloqueado
+
+- **Resposta inbound** `ZNwzQKx7bvdufAyMemam` com texto `CONFIRMO` em `2026-10-08T19:09:59.664Z`; contacto `fCzYtbsUvclTHKGeHIrR`; consulta `ofHr3ecQ1EDs4YQkvwgB`, início `2026-10-09T10:00Z` (11h Lisboa).
+- **Confirmação:** SQL `n8n_bridge_confirmations` `state=confirmed`, `finished_at=2026-10-08T19:18:34.043998Z`; GET GHL autenticado da consulta devolve `confirmed`. Os dois concordam.
+- **Agradecimento (ACK):** nenhuma linha `confirm` reservada ou aceita até 19:36 UTC. Causa técnica correlacionada, comprovada em leitura: card de atividade GHL `1gd26SA1etNjw7eGN5o7` (`TYPE_ACTIVITY_APPOINTMENT`/31, `appointment_updated`, `activity.data.id` = consulta, timestamp = início) às `19:18:34.961Z` fez `validarAgradecimento` devolver `reply_superseded`.
+- **Correção** restrita ao ACK integrada (ver `docs/n8n-acknowledgement-activity-2026-10-08.md`); **ainda não publicada**.
+- **Estado:** flags backend OFF (`simulation=true`, `live_send_enabled=false`, `channel_verified=false`); grant revogado `2026-10-08T19:20:48.324613Z`.
+- **Não verificados** (navegador indisponível): limpeza do rascunho n8n da fase manual reply e ID da execução n8n.
+- **Não se afirma** E2E concluído nem envio do agradecimento.

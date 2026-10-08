@@ -136,7 +136,7 @@ export function criarDepsConfirmacao(db: ClienteBridge): DepsConfirmacao {
     confirmedReply: async (orgId, appointmentId, startTime) => {
       const r = await db
         .from("n8n_bridge_confirmations")
-        .select("request_send_id,inbound_message_id,reply_at")
+        .select("request_send_id,inbound_message_id,reply_at,finished_at")
         .eq("organization_id", orgId)
         .eq("ghl_appointment_id", appointmentId)
         .eq("start_time", startTime)
@@ -146,7 +146,7 @@ export function criarDepsConfirmacao(db: ClienteBridge): DepsConfirmacao {
       if (!r.data) return { ok: true, data: null };
       const row = r.data as Record<string, unknown>;
       if (
-        ["request_send_id", "inbound_message_id", "reply_at"].some(
+        ["request_send_id", "inbound_message_id", "reply_at", "finished_at"].some(
           (key) => typeof row[key] !== "string" || !row[key],
         )
       )
@@ -157,6 +157,7 @@ export function criarDepsConfirmacao(db: ClienteBridge): DepsConfirmacao {
           requestId: String(row["request_send_id"]),
           inboundMessageId: String(row["inbound_message_id"]),
           replyAt: String(row["reply_at"]),
+          finishedAt: String(row["finished_at"]),
         },
       };
     },

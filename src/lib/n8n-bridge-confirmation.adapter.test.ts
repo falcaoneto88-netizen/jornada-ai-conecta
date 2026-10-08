@@ -139,6 +139,7 @@ it("reads acknowledgement reference only from the scoped confirmed ledger", asyn
         request_send_id: "request01",
         inbound_message_id: "reply001",
         reply_at: "2026-10-06T12:00:00Z",
+        finished_at: "2026-10-06T12:01:00.043998Z",
       },
       error: null,
     }),
@@ -149,10 +150,17 @@ it("reads acknowledgement reference only from the scoped confirmed ledger", asyn
   const deps = criarDepsConfirmacao({ from } as unknown as ClienteBridge);
   expect(await deps.confirmedReply("org01", "appoint01", "2026-10-07T12:00:00Z")).toEqual({
     ok: true,
-    data: { requestId: "request01", inboundMessageId: "reply001", replyAt: "2026-10-06T12:00:00Z" },
+    data: {
+      requestId: "request01",
+      inboundMessageId: "reply001",
+      replyAt: "2026-10-06T12:00:00Z",
+      finishedAt: "2026-10-06T12:01:00.043998Z",
+    },
   });
   expect(from).toHaveBeenCalledExactlyOnceWith("n8n_bridge_confirmations");
-  expect(select).toHaveBeenCalledExactlyOnceWith("request_send_id,inbound_message_id,reply_at");
+  expect(select).toHaveBeenCalledExactlyOnceWith(
+    "request_send_id,inbound_message_id,reply_at,finished_at",
+  );
   expect(eq.mock.calls).toEqual([
     ["organization_id", "org01"],
     ["ghl_appointment_id", "appoint01"],
@@ -160,3 +168,29 @@ it("reads acknowledgement reference only from the scoped confirmed ledger", asyn
     ["state", "confirmed"],
   ]);
 });
+
+it.each([undefined, null, 123])(
+  "refuses persisted confirmation without usable completion %s",
+  async (finishedAt) => {
+    const query = {
+      eq: vi.fn(),
+      maybeSingle: async () => ({
+        data: {
+          request_send_id: "request01",
+          inbound_message_id: "reply001",
+          reply_at: "2026-10-06T12:00:00Z",
+          finished_at: finishedAt,
+        },
+        error: null,
+      }),
+    };
+    query.eq.mockReturnValue(query);
+    const deps = criarDepsConfirmacao({
+      from: () => ({ select: () => query }),
+    } as unknown as ClienteBridge);
+    expect(await deps.confirmedReply("org01", "appoint01", "2026-10-07T12:00:00Z")).toEqual({
+      ok: false,
+      code: "invalid_evidence",
+    });
+  },
+);

@@ -52,7 +52,7 @@ function fixture() {
     dateAdded: "2026-10-06T11:58:00Z",
     body: "Responda SIM ou NAO",
   };
-  const history = [inbound, outbound];
+  const history: Record<string, unknown>[] = [inbound, outbound];
   const evidence: RequestEvidence[] = [
     {
       id: "reserved01",
@@ -69,6 +69,7 @@ function fixture() {
         requestId: "reserved01",
         inboundMessageId: "inbound01",
         replyAt: "2026-10-06T12:00:00Z",
+        finishedAt: "2026-10-06T12:01:00.043998Z",
       },
     })),
     conversationMessages: vi.fn(async () => ({
@@ -567,6 +568,7 @@ describe("acknowledgement revalidates the persisted reply", () => {
         requestId: "reserved01",
         inboundMessageId: "inbound01",
         replyAt: "2026-10-06T11:00:00Z",
+        finishedAt: "2026-10-06T12:01:00.043998Z",
       },
     });
     expect((await f.sendAck()).body.error).toBe("reply_outside_window");
@@ -589,6 +591,252 @@ describe("acknowledgement revalidates the persisted reply", () => {
     expect((await f.sendAck()).body.error).toBe("appointment_changed");
     expect(f.reserve).not.toHaveBeenCalled();
     expect(f.send).not.toHaveBeenCalled();
+  });
+});
+
+function technicalActivity(): Record<string, unknown> {
+  return {
+    id: "activity01",
+    locationId: LOC,
+    contactId: "contact01",
+    conversationId: "conversation01",
+    direction: "outbound",
+    messageType: "TYPE_ACTIVITY_APPOINTMENT",
+    type: 31,
+    source: "app",
+    dateAdded: "2026-10-06T12:01:00.961Z",
+    dateUpdated: "2026-10-06T12:01:00.961Z",
+    activity: {
+      type: "appointment_updated",
+      title: "Not used as evidence",
+      data: {
+        id: "appoint01",
+        timestamp: START,
+        serviceBookingId: null,
+        industryType: null,
+        appointmentTitle: "Not used as proof",
+      },
+    },
+  };
+}
+
+describe("acknowledgement tolerates only one narrowly correlated technical activity", () => {
+  it("accepts one exact update after durable confirmation, preserving two checks and no PUT", async () => {
+    const f = acknowledgementFixture();
+    f.history.push(technicalActivity());
+    expect((await f.sendAck()).body.status).toBe("accepted");
+    expect(f.conf.conversationMessages).toHaveBeenCalledTimes(2);
+    expect(f.conf.confirmedReply).toHaveBeenCalledTimes(2);
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+    expect(f.conf.claim).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["2026-10-06T12:01:00.043Z", false], // before DB microsecond completion
+    ["2026-10-06T12:01:00.044Z", true],
+    ["2026-10-06T12:01:05.043Z", true],
+    ["2026-10-06T12:01:05.044Z", false],
+    ["2026-10-06T12:05:01.000Z", false],
+  ])("keeps conservative temporal boundary %s (%s)", async (date, allowed) => {
+    const f = acknowledgementFixture();
+    f.history.push({ ...technicalActivity(), dateAdded: date, dateUpdated: date });
+    const result = await f.sendAck();
+    if (allowed) expect(result.body.status).toBe("accepted");
+    else {
+      expect(result.body.error).toBe("reply_superseded");
+      expect(f.reserve).not.toHaveBeenCalled();
+      expect(f.send).not.toHaveBeenCalled();
+    }
+  });
+  it.each([
+    { source: "api" },
+    { source: undefined },
+    { userId: "human001" },
+    { userId: null },
+    { type: "31" },
+    { type: 2 },
+    { direction: "inbound" },
+    { messageType: "TYPE_ACTIVITY_CONTACT" },
+    { messageType: "TYPE_SMS" },
+    { dateUpdated: "2026-10-06T12:01:01.000Z" },
+    { dateUpdated: "invalid" },
+    { activity: null },
+    { activity: [] },
+    { activity: {} },
+  ])("rejects incompatible or missing activity metadata %j", async (change) => {
+    const f = acknowledgementFixture();
+    f.history.push({ ...technicalActivity(), ...change });
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each([
+    { id: "otherAppointment" },
+    { timestamp: "2026-10-07T13:00:00.000Z" },
+    { timestamp: "invalid" },
+    { id: undefined },
+    { timestamp: undefined },
+    { status: "cancelled" },
+    { old: "new", new: "confirmed" },
+    { userId: "human001" },
+    { calendarId: CAL },
+    { serviceBookingId: "service01" },
+    { industryType: "service" },
+    { appointmentTitle: 31 },
+  ])("rejects another or unsupported appointment update %j", async (change) => {
+    const f = acknowledgementFixture(),
+      activity = technicalActivity();
+    const detail = activity["activity"] as { data: Record<string, unknown> };
+    Object.assign(detail.data, change);
+    f.history.push(activity);
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each([
+    { type: "appointment_cancelled" },
+    { userId: "human001" },
+    { old: {}, new: {} },
+    { title: { userId: "human001" } },
+  ])("rejects extra activity context or a different update %j", async (change) => {
+    const f = acknowledgementFixture(),
+      activity = technicalActivity();
+    Object.assign(activity["activity"] as object, change);
+    f.history.push(activity);
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each([
+    { contactId: "another01" },
+    { locationId: "another01" },
+    { conversationId: "another01" },
+    { dateAdded: "invalid" },
+  ])("preserves full-history identity/date validation %j", async (change) => {
+    const f = acknowledgementFixture();
+    f.history.push({ ...technicalActivity(), ...change });
+    expect((await f.sendAck()).body.error).toBe("reply_history_unavailable");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each(["", "invalid", "2026-10-06T12:00:00Z", "2026-10-06T12:05:01Z"])(
+    "refuses missing/invalid/out-of-window ledger completion %s",
+    async (finishedAt) => {
+      const f = acknowledgementFixture();
+      f.conf.confirmedReply.mockResolvedValue({
+        ok: true,
+        data: {
+          requestId: "reserved01",
+          inboundMessageId: "inbound01",
+          replyAt: f.inbound.dateAdded,
+          finishedAt,
+        },
+      });
+      f.history.push(technicalActivity());
+      expect((await f.sendAck()).body.error).toBe("confirmation_evidence_invalid");
+      expect(f.send).not.toHaveBeenCalled();
+    },
+  );
+  it("refuses two matching technical activities", async () => {
+    const f = acknowledgementFixture();
+    f.history.push(technicalActivity(), { ...technicalActivity(), id: "activity02" });
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each([
+    [5000, true],
+    [5001, false],
+  ])("enforces exact millisecond completion window %i", async (delay, allowed) => {
+    const f = acknowledgementFixture(),
+      finishedAt = "2026-10-06T12:01:00.000Z";
+    f.conf.confirmedReply.mockResolvedValue({
+      ok: true,
+      data: {
+        requestId: "reserved01",
+        inboundMessageId: "inbound01",
+        replyAt: f.inbound.dateAdded,
+        finishedAt,
+      },
+    });
+    const time = new Date(Date.parse(finishedAt) + delay).toISOString();
+    f.history.push({ ...technicalActivity(), dateAdded: time, dateUpdated: time });
+    const result = await f.sendAck();
+    expect(allowed ? result.body.status : result.body.error).toBe(
+      allowed ? "accepted" : "reply_superseded",
+    );
+    if (!allowed) expect(f.send).not.toHaveBeenCalled();
+  });
+  it("does not accept an activity still in the future inside the five-second window", async () => {
+    const f = acknowledgementFixture();
+    f.deps.now = () => Date.parse("2026-10-06T12:01:00.500Z");
+    f.history.push(technicalActivity());
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it("keeps DND effective even with a correlated activity", async () => {
+    const f = acknowledgementFixture();
+    f.history.push(technicalActivity());
+    f.deps.contacto = async () => ({
+      ok: true,
+      data: {
+        total: 1,
+        contacts: [
+          { id: "contact01", locationId: LOC, phone: "+351910000000", dnd: true, dndSettings: {} },
+        ],
+      },
+    });
+    expect((await f.sendAck()).body.error).toBe("dnd_not_confirmed");
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each(["SIM", "NÃO", "REMARCAR", "human outbound"])(
+    "preserves later message %s",
+    async (body) => {
+      const f = acknowledgementFixture();
+      f.history.push(technicalActivity(), {
+        ...f.inbound,
+        id: "laterreply01",
+        dateAdded: "2026-10-06T12:02:00Z",
+        body,
+        direction: body === "human outbound" ? "outbound" : "inbound",
+      });
+      expect((await f.sendAck()).body.error).toBe("reply_superseded");
+      expect(f.reserve).not.toHaveBeenCalled();
+      expect(f.send).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["new", "cancelled"])("requires fresh status confirmed, rejects %s", async (status) => {
+    const f = acknowledgementFixture();
+    f.history.push(technicalActivity());
+    f.conf.conversationMessages.mockImplementation(async () => {
+      f.event.appointmentStatus = status;
+      return { ok: true, data: { messages: { nextPage: false, messages: f.history } } };
+    });
+    expect((await f.sendAck()).body.error).toBe("appointment_changed");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each(["reply", "activity"])(
+    "rejects new %s after the acknowledgement reservation",
+    async (kind) => {
+      const f = acknowledgementFixture();
+      f.history.push(technicalActivity());
+      f.reserve.mockImplementation(async () => {
+        f.history.push(
+          kind === "reply"
+            ? { ...f.inbound, id: "laterreply01", dateAdded: "2026-10-06T12:02:00Z" }
+            : { ...technicalActivity(), id: "activity02" },
+        );
+        return { reserved: true, id: "acksend01" };
+      });
+      expect((await f.sendAck()).body.error).toBe("reply_superseded");
+      expect(f.send).not.toHaveBeenCalled();
+      expect(f.finish).toHaveBeenCalledWith(ORG, "acksend01", "rejected", null, "reply_superseded");
+    },
+  );
+  it("does not exempt the activity during initial appointment confirmation", async () => {
+    const f = fixture();
+    f.history.push(technicalActivity());
+    expect((await f.run()).body.error).toBe("reply_superseded");
+    expect(f.conf.claim).not.toHaveBeenCalled();
+    expect(f.conf.confirm).not.toHaveBeenCalled();
   });
 });
 
