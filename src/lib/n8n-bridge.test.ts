@@ -7,6 +7,7 @@ import {
   type DepsBridge,
 } from "./n8n-bridge.core";
 import { dataHoraLisboa, montarMensagem } from "./n8n-bridge.templates";
+import { testPilot } from "../../test/n8n-pilot-fixture";
 
 const TOKEN = "t".repeat(20) + "Z9x8Y7w6V5u4T3s2R1q0";
 const LOC = "ok2UHC2QMZsd8UHsAgEa";
@@ -150,6 +151,7 @@ function deps(
   const enviar = vi.fn(async () => ({ ok: true as const, messageId: "msg-1" }));
   return {
     token: TOKEN,
+    lerPiloto: testPilot(ORG, "contact01", "appt0001", INICIO),
     verifiedConfirmation: async () => true,
     confirmacao: acknowledgementEvidence(),
     lembretes: reminderEvidence(),
@@ -387,7 +389,7 @@ describe("message.send guards", () => {
     }
   }
 
-  for (const kind of ["booking", "confirm", "escalation", "handoff"] as const) {
+  for (const kind of ["booking", "confirm"] as const) {
     it(`${kind}: preserva o comportamento para consulta confirmada`, async () => {
       const d = deps({
         consulta: async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) }),
@@ -562,19 +564,15 @@ describe("message.send guards", () => {
     expect(String(corpo["message"])).toContain("CONFIRMO");
   });
 
-  it("escalation é comentário interno com menção ao comercial", async () => {
-    const d = deps();
-    await run({ ...envio, kind: "escalation" }, d);
-    const corpo = d.enviar.mock.calls[0]![0] as Record<string, unknown>;
-    expect(corpo).toMatchObject({
-      type: "InternalComment",
-      mentions: ["seller001"],
-      appointmentId: "appt0001",
-      status: "pending",
-    });
-    expect(String(corpo["message"])).toMatch(/^@Responsável<userId>seller001<\/userId> /);
-    expect(corpo).not.toHaveProperty("conversationProviderId");
-  });
+  it.each(["escalation", "handoff"])(
+    "%s: o piloto restrito não autoriza comentários internos",
+    async (kind) => {
+      const d = deps();
+      const result = await run({ ...envio, kind }, d);
+      expect(result).toMatchObject({ status: 403, json: { error: "pilot_not_authorized" } });
+      expect(d.enviar).not.toHaveBeenCalled();
+    },
+  );
 
   it("duplicado aceite devolve messageId persistido sem POST", async () => {
     const d = deps({

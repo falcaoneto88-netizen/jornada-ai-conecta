@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CONFIG_PADRAO, processarBridge, type DepsBridge } from "./n8n-bridge.core";
 import type { RequestEvidence } from "./n8n-bridge-confirmation";
+import { testPilot } from "../../test/n8n-pilot-fixture";
 
 const TOKEN = "synthetic-confirmation-token-32-characters-only";
 const LOC = "location01",
@@ -88,6 +89,7 @@ function fixture() {
   };
   const deps: DepsBridge = {
     token: TOKEN,
+    lerPiloto: testPilot(ORG, "contact01", "appoint01", START),
     now: () => NOW,
     resolver: async () => scope,
     lerConfig: async () => ({ ok: true, cfg }),
@@ -532,5 +534,66 @@ describe("acknowledgement revalidates the persisted reply", () => {
     expect((await f.sendAck()).body.error).toBe("appointment_changed");
     expect(f.reserve).not.toHaveBeenCalled();
     expect(f.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("appointment.confirm pilot authorization", () => {
+  it.each(["absent", "other-contact", "other-appointment", "other-start", "other-kind", "expired"])(
+    "denies %s before the claim or PUT",
+    async (reason) => {
+      const f = fixture();
+      const grant = await testPilot(ORG, "contact01", "appoint01", START)(ORG);
+      const row = grant.data!;
+      if (reason === "other-contact") row.contact_id = "other001";
+      if (reason === "other-appointment") row.ghl_appointment_id = "other001";
+      if (reason === "other-start") row.start_time = "2026-10-07T13:00:00Z";
+      if (reason === "other-kind") row.allowed_kinds = ["booking"];
+      if (reason === "expired") row.expires_at = new Date(NOW).toISOString();
+      f.deps.lerPiloto = async () => ({ ok: true, data: reason === "absent" ? null : row });
+      expect((await f.run()).status).toBe(403);
+      expect(f.conf.claim).not.toHaveBeenCalled();
+      expect(f.conf.confirm).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["revoked", "expired", "unavailable"])(
+    "rechecks %s after claim before PUT",
+    async (reason) => {
+      const f = fixture();
+      f.conf.claim.mockImplementation(async () => {
+        f.deps.lerPiloto = async () =>
+          reason === "unavailable"
+            ? { ok: false }
+            : {
+                ok: true,
+                data:
+                  reason === "revoked"
+                    ? null
+                    : {
+                        ...(await testPilot(ORG, "contact01", "appoint01", START)(ORG)).data,
+                        expires_at: new Date(NOW).toISOString(),
+                      },
+              };
+        return { reserved: true, id: "confirmation01" };
+      });
+      expect((await f.run()).status).toBe(reason === "unavailable" ? 503 : 403);
+      expect(f.conf.confirm).not.toHaveBeenCalled();
+      expect(f.conf.finish).toHaveBeenCalledWith(
+        ORG,
+        "confirmation01",
+        "rejected",
+        expect.stringMatching(/^pilot_/),
+      );
+    },
+  );
+  it("a concurrently confirmed GHL event still requires authorization before persisting proof", async () => {
+    const f = fixture();
+    f.conf.claim.mockImplementation(async () => {
+      f.event.appointmentStatus = "confirmed";
+      f.deps.lerPiloto = async () => ({ ok: true, data: null });
+      return { reserved: true, id: "confirmation01" };
+    });
+    expect((await f.run()).status).toBe(403);
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+    expect(f.conf.finish).not.toHaveBeenCalledWith(ORG, "confirmation01", "confirmed", null);
   });
 });

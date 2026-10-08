@@ -1,5 +1,6 @@
 /** A reply is evidence only after authenticated GHL reads; caller text is never trusted. */
 import { z } from "zod";
+import { autorizarPiloto } from "./n8n-bridge-pilot";
 import {
   normalizarInstante,
   parseEvento,
@@ -381,6 +382,16 @@ export async function processarConfirmacao(
   if (!cfg.liveSendEnabled || !scope.writeEnabled || !scope.integracaoConectada)
     return failure("live_send_disabled", 403);
 
+  const revalidatePilot = () =>
+    autorizarPiloto(deps, scope.orgId, {
+      contactId: event.contactId,
+      appointmentId: event.id,
+      startTime: expected,
+      kind: "appointment.confirm",
+    });
+  const pilot = await revalidatePilot();
+  if (!pilot.ok) return failure(pilot.code, pilot.status);
+
   const reservation = await confirmation
     .claim(scope.orgId, evidence, inbound.id, replyAt)
     .catch(() => null);
@@ -424,6 +435,11 @@ export async function processarConfirmacao(
   if (freshContextError) {
     await finish("rejected", freshContextError);
     return failure(freshContextError);
+  }
+  const latestPilot = await revalidatePilot();
+  if (!latestPilot.ok) {
+    await finish("rejected", latestPilot.code);
+    return failure(latestPilot.code, latestPilot.status);
   }
   if (fresh.appointmentStatus !== "confirmed") {
     const updated = await confirmation

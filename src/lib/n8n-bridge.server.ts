@@ -12,6 +12,7 @@ import {
 } from "./n8n-bridge.core";
 import type { DepsLembretes, ReminderEvidence } from "./n8n-bridge-reminders";
 import type { DepsConfirmacao } from "./n8n-bridge-confirmation";
+import type { PilotRead } from "./n8n-bridge-pilot";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } from "./ghl.server";
 
 type Resp = { data: unknown; error: { code?: string; message?: string } | null };
@@ -288,6 +289,7 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
   const cfgDe = (loc: string) => configGhl(loc);
   return {
     token: process.env["N8N_JORNADA_BRIDGE_TOKEN"],
+    lerPiloto: (orgId) => lerPilotoBridge(db, orgId),
     confirmacao: criarDepsConfirmacao(db),
     lembretes: criarDepsLembretes(db),
     verifiedConfirmation: async (orgId, appointmentId, startTime) => {
@@ -387,6 +389,18 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
       );
     },
   };
+}
+
+/** Service role lookup is constrained by the organization authenticated by the bridge. */
+export async function lerPilotoBridge(db: ClienteBridge, orgId: string): Promise<PilotRead> {
+  const r = await db
+    .from("n8n_bridge_pilot_grants")
+    .select(
+      "organization_id,enabled,contact_id,ghl_appointment_id,start_time,expires_at,allowed_kinds",
+    )
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  return r.error ? { ok: false } : { ok: true, data: r.data };
 }
 
 export async function receberBridgeN8n(request: Request): Promise<Response> {
