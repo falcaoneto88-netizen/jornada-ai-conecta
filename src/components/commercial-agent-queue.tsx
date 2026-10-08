@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CommercialAgentManual, type ManualActions } from "./commercial-agent-manual";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import {
   type DraftRow,
   type QueueError,
   type Settings,
+  type ManualConversation,
 } from "@/lib/commercial-agent/core";
 
 export type QueueItem = Omit<DraftRow, "payload"> & { content: DraftPayload | null };
@@ -24,9 +26,11 @@ export type QueueView = {
   items: QueueItem[];
   errors: QueueError[];
   settings?: Settings;
+  manualConversations?: ManualConversation[];
 };
 export type QueueActions = {
   refresh(): Promise<void>;
+  manual?: ManualActions;
   approve(row: QueueItem): Promise<string>;
   reject(row: QueueItem): Promise<void>;
   pause(row: QueueItem, paused: boolean): Promise<void>;
@@ -141,12 +145,14 @@ export function CommercialAgentQueue({
               {view.enabled && view.settings.mode === "supervised" ? "ativo" : "desativado"}. Novas
               mensagens individuais desta clínica entram para revisão. Respostas sugeridas nos
               canais: {view.settings.allowed_channels.join(", ") || "nenhum canal autorizado"}.
-              Outros canais exigem revisão manual. O envio continua restrito a{" "}
+              Outros canais exigem revisão manual. O envio de sugestões da IA continua restrito a{" "}
               {view.settings.allowed_contacts.length}{" "}
               {view.settings.allowed_contacts.length === 1
                 ? "contato autorizado"
                 : "contatos autorizados"}
               .
+              {view.settings.manual_send_all_contacts &&
+                " A equipe pode escrever e enviar manualmente aos contatos recebidos pelo canal homologado."}
             </p>
           )}
           {demo && (
@@ -163,6 +169,17 @@ export function CommercialAgentQueue({
         <p role="status" className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm">
           {notice}
         </p>
+      )}
+      {actions.manual && !demo && (
+        <CommercialAgentManual
+          conversations={view.manualConversations ?? []}
+          names={Object.fromEntries(
+            view.items
+              .filter((item) => item.content)
+              .map((item) => [item.contact_id, item.content!.snapshot.name]),
+          )}
+          actions={actions.manual}
+        />
       )}
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <section className="surface-card overflow-hidden" aria-label="Fila de respostas">
@@ -280,7 +297,7 @@ export function CommercialAgentQueue({
               <p role="status" className="mt-4 text-sm font-medium">
                 {!view.settings && !demo
                   ? "Não foi possível verificar quais destinatários e canais têm envio liberado. Atualize a fila antes de aprovar."
-                  : "Esta entrada está em revisão. O envio não está liberado para este destinatário ou canal."}
+                  : "Esta entrada está em revisão. O envio desta sugestão da IA não está liberado para este destinatário ou canal. Para responder como equipe, use Atendimento manual."}
               </p>
             )}
             {row.state === "invalidated" && (

@@ -15,6 +15,10 @@ import {
   rejectAgentDraft,
   pauseAgentContact,
   reconcileAgentDraft,
+  getManualAgentContext,
+  prepareManualAgentMessage,
+  sendManualAgentMessage,
+  reconcileManualAgentMessage,
 } from "@/lib/commercial-agent.functions";
 export const Route = createFileRoute("/agente-supervisionado")({
   component: AgentPage,
@@ -40,7 +44,11 @@ function ConnectedQueue({ org }: { org: string }) {
     approve = useServerFn(approveAgentDraft),
     reject = useServerFn(rejectAgentDraft),
     pause = useServerFn(pauseAgentContact),
-    reconcile = useServerFn(reconcileAgentDraft);
+    reconcile = useServerFn(reconcileAgentDraft),
+    manualContext = useServerFn(getManualAgentContext),
+    manualPrepare = useServerFn(prepareManualAgentMessage),
+    manualSend = useServerFn(sendManualAgentMessage),
+    manualReconcile = useServerFn(reconcileManualAgentMessage);
   const [view, setView] = useState<QueueView | null>(null),
     [error, setError] = useState("");
   async function refresh() {
@@ -91,6 +99,53 @@ function ConnectedQueue({ org }: { org: string }) {
           view={view}
           actions={{
             refresh,
+            manual: {
+              refresh,
+              context: async (conversation) => {
+                const r = await manualContext({
+                  data: {
+                    organizationId: org,
+                    contactId: conversation.contactId,
+                    conversationId: conversation.conversationId,
+                  },
+                });
+                if (!r.ok) throw new Error(r.code);
+                return r.data;
+              },
+              pause: async (conversation, expectedVersion, paused) => {
+                const r = await pause({
+                  data: {
+                    organizationId: org,
+                    contactId: conversation.contactId,
+                    expectedVersion,
+                    paused,
+                  },
+                });
+                if (!r.ok) throw new Error(r.code);
+              },
+              prepare: async (input) => {
+                const r = await manualPrepare({ data: { ...input, organizationId: org } });
+                if (!r.ok) throw new Error(r.code);
+                return r.data;
+              },
+              send: async (prepared) => {
+                const r = await manualSend({
+                  data: {
+                    organizationId: org,
+                    manualId: prepared.id,
+                    replyHash: prepared.replyHash,
+                  },
+                });
+                if (!r.ok) throw new Error(r.code);
+                return r.data;
+              },
+              reconcile: async (manualId, messageId) => {
+                const r = await manualReconcile({
+                  data: { organizationId: org, manualId, messageId },
+                });
+                if (!r.ok) throw new Error(r.code);
+              },
+            },
             reconcile: async (row, messageId) => {
               const r = await reconcile({
                 data: { organizationId: org, draftId: row.id, messageId },

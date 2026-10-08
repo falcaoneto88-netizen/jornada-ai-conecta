@@ -11,12 +11,15 @@ type Rpc = {
 export function createStore(client: Rpc): Store {
   return {
     async command<T>(op: string, org: string, data: Record<string, unknown> = {}, actor?: string) {
-      const r = await client.rpc("commercial_agent_command", {
-        _op: op,
-        _org: org,
-        _data: data,
-        _actor: actor ?? null,
-      });
+      const r = await client.rpc(
+        op.startsWith("manual_") ? "commercial_agent_manual_command" : "commercial_agent_command",
+        {
+          _op: op,
+          _org: org,
+          _data: data,
+          _actor: actor ?? null,
+        },
+      );
       if (r.error) throw new AgentError("storage_unavailable");
       const err = (r.data as { error?: unknown } | null)?.error;
       if (typeof err === "string")

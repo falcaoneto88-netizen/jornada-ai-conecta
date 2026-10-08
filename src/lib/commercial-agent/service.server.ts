@@ -4,6 +4,8 @@ import {
   checkSend,
   classifySafety,
   eventSchema,
+  manualPrepareSchema,
+  manualSendSchema,
   type DraftPayload,
   type DraftRow,
   type Event,
@@ -12,13 +14,26 @@ import {
   type Snapshot,
   type QueueError,
   type SessionRow,
+  type ManualContext,
+  type ManualConversation,
+  type ManualDispatchState,
+  type ManualPrepared,
+  type ManualScope,
 } from "./core";
-import { POLICY_HASH, replyHash, seal, unseal } from "./providers.server";
+import { POLICY_HASH, replyHash, seal, sha, unseal } from "./providers.server";
 
 export interface Store {
   command<T>(op: string, org: string, data?: Record<string, unknown>, actor?: string): Promise<T>;
 }
 export type Provider = {
+  manualHistory?(scope: ManualScope): Promise<Snapshot>;
+  sendManual?(snapshot: Snapshot, text: string): ReturnType<Provider["send"]>;
+  verifyManualReceipt?(
+    snapshot: Snapshot,
+    text: string,
+    messageId: string,
+    approvedAt: string,
+  ): Promise<boolean>;
   verifyReceipt?(
     snapshot: Snapshot,
     text: string,
@@ -35,6 +50,37 @@ export type Provider = {
     messageId: string | null;
   }>;
 };
+type ManualPayload = { snapshot: Snapshot; text: string };
+type ManualRow = {
+  id: string;
+  request_id: string;
+  contact_id: string;
+  conversation_id: string;
+  location_id: string;
+  session_version: number;
+  payload: string;
+  reply_hash: string;
+  state: ManualDispatchState;
+  expires_at: string;
+  prepared_by: string;
+  approved_at: string | null;
+  dispatch_id: string | null;
+  result_message_id: string | null;
+  error_code: string | null;
+};
+type ManualSession = ManualConversation & {
+  busy: boolean;
+  lastDispatch?: ManualContext["lastDispatch"];
+};
+const manualHash = (payload: ManualPayload) =>
+  sha(
+    JSON.stringify({
+      kind: "manual",
+      event: payload.snapshot.event,
+      historyHash: payload.snapshot.historyHash,
+      text: payload.text,
+    }),
+  );
 export type Dependencies = {
   store: Store;
   provider: Provider;
@@ -164,6 +210,7 @@ export class CommercialAgent {
     }>("list", org, {}, actor);
     return {
       ...r,
+      manualConversations: await this.manualList(org, actor),
       enabled: this.d.enabled,
       sendEnabled: this.d.sendEnabled,
       items: r.items.map((row) => ({
@@ -264,6 +311,276 @@ export class CommercialAgent {
       throw new AgentError("send_unknown");
     }
     return result;
+  }
+  async manualList(org: string, actor: string): Promise<ManualConversation[]> {
+    return this.d.store.command("manual_list", org, {}, actor);
+  }
+  private manualReason(
+    config: Settings,
+    session: ManualSession,
+    snapshot: Snapshot,
+    writeEnabled: boolean,
+  ): string | null {
+    if (
+      !this.d.enabled ||
+      !this.d.sendEnabled ||
+      !writeEnabled ||
+      config.mode !== "supervised" ||
+      config.manual_send_all_contacts !== true
+    )
+      return "send_disabled";
+    if (
+      config.location_id !== session.locationId ||
+      snapshot.event.locationId !== session.locationId ||
+      snapshot.event.contactId !== session.contactId ||
+      snapshot.event.conversationId !== session.conversationId
+    )
+      return "scope_mismatch";
+    if (session.busy) return "reconciliation_required";
+    if (
+      session.optOut ||
+      snapshot.dnd ||
+      snapshot.messages.some((m) => m.direction === "inbound" && classifySafety(m.text).optOut)
+    )
+      return "do_not_contact";
+    const inbound = snapshot.messages.find(
+      (m) => m.id === snapshot.event.messageId && m.direction === "inbound",
+    );
+    if (!inbound) return "inbound_not_verified";
+    // Only the currently homologated manual channel is enabled. AI contact and
+    // channel allowlists are deliberately not extended by this permission.
+    if (inbound.channel !== "SMS") return "unsupported_channel";
+    const age = this.now() - Date.parse(inbound.at);
+    if (!Number.isFinite(age) || age < 0 || age >= 23 * 3600000) return "channel_window";
+    return null;
+  }
+  async manualContext(
+    org: string,
+    actor: string,
+    input: Pick<ManualScope, "contactId" | "conversationId">,
+    writeEnabled: boolean,
+  ): Promise<ManualContext> {
+    const session = await this.d.store.command<ManualSession>(
+      "manual_context",
+      org,
+      { contactId: input.contactId, conversationId: input.conversationId },
+      actor,
+    );
+    if (!this.d.provider.manualHistory) throw new AgentError("manual_not_configured");
+    const snapshot = await this.d.provider.manualHistory({
+      locationId: session.locationId,
+      contactId: session.contactId,
+      conversationId: session.conversationId,
+    });
+    const config = await this.d.store.command<Settings>("settings", org);
+    const blockedReason = this.manualReason(config, session, snapshot, writeEnabled);
+    return {
+      snapshot,
+      sessionVersion: session.sessionVersion,
+      paused: session.paused,
+      optOut: session.optOut,
+      sendAllowed: blockedReason === null,
+      blockedReason,
+      ...(session.lastDispatch ? { lastDispatch: session.lastDispatch } : {}),
+    };
+  }
+  private manualPayload(org: string, row: ManualRow): ManualPayload {
+    if (!row.payload) throw new AgentError("manual_content_expired");
+    const payload = unseal<ManualPayload>(
+      row.payload,
+      this.d.encryptionKey,
+      `manual:${org}:${row.request_id}`,
+    );
+    if (
+      manualHash(payload) !== row.reply_hash ||
+      payload.snapshot.event.contactId !== row.contact_id ||
+      payload.snapshot.event.conversationId !== row.conversation_id ||
+      payload.snapshot.event.locationId !== row.location_id
+    )
+      throw new AgentError("draft_stale");
+    return payload;
+  }
+  private preparedManual(org: string, row: ManualRow): ManualPrepared {
+    if (row.state !== "prepared") throw new AgentError("manual_request_used");
+    const p = this.manualPayload(org, row);
+    return {
+      id: row.id,
+      replyHash: row.reply_hash,
+      text: p.text,
+      snapshot: p.snapshot,
+      expiresAt: row.expires_at,
+      sessionVersion: row.session_version,
+    };
+  }
+  async manualPrepare(
+    org: string,
+    actor: string,
+    input: {
+      contactId: string;
+      conversationId: string;
+      expectedVersion: number;
+      historyHash: string;
+      text: string;
+      requestId: string;
+    },
+    writeEnabled: boolean,
+  ): Promise<ManualPrepared> {
+    const data = manualPrepareSchema.parse(input);
+    const existing = await this.d.store.command<ManualRow | null>(
+      "manual_lookup",
+      org,
+      { requestId: data.requestId },
+      actor,
+    );
+    if (existing) {
+      const old = this.manualPayload(org, existing);
+      if (
+        existing.prepared_by !== actor ||
+        existing.contact_id !== data.contactId ||
+        existing.conversation_id !== data.conversationId ||
+        old.text !== data.text
+      )
+        throw new AgentError("manual_request_mismatch");
+      return this.preparedManual(org, existing);
+    }
+    const context = await this.manualContext(org, actor, data, writeEnabled);
+    if (context.blockedReason) throw new AgentError(context.blockedReason);
+    if (context.sessionVersion !== data.expectedVersion) throw new AgentError("version_conflict");
+    if (context.snapshot.historyHash !== data.historyHash) throw new AgentError("draft_stale");
+    const inbound = context.snapshot.messages.find(
+      (m) => m.id === context.snapshot.event.messageId && m.direction === "inbound",
+    )!;
+    const payload = { snapshot: context.snapshot, text: data.text };
+    const row = await this.d.store.command<ManualRow>(
+      "manual_prepare",
+      org,
+      {
+        contactId: data.contactId,
+        conversationId: data.conversationId,
+        locationId: context.snapshot.event.locationId,
+        expectedVersion: data.expectedVersion,
+        requestId: data.requestId,
+        historyHash: data.historyHash,
+        inboundId: inbound.id,
+        inboundAt: inbound.at,
+        channel: inbound.channel,
+        dnd: context.snapshot.dnd,
+        stop: context.snapshot.messages.some(
+          (m) => m.direction === "inbound" && classifySafety(m.text).optOut,
+        ),
+        payload: seal(payload, this.d.encryptionKey, `manual:${org}:${data.requestId}`),
+        replyHash: manualHash(payload),
+      },
+      actor,
+    );
+    return this.preparedManual(org, row);
+  }
+  async manualSend(
+    org: string,
+    actor: string,
+    input: { manualId: string; replyHash: string },
+    writeEnabled: boolean,
+  ) {
+    const data = manualSendSchema.parse(input);
+    const row = await this.d.store.command<ManualRow>("manual_detail", org, data, actor);
+    if (row.reply_hash !== data.replyHash || row.prepared_by !== actor)
+      throw new AgentError("version_conflict");
+    if (["sent", "unknown", "rejected"].includes(row.state))
+      return { state: row.state, code: row.error_code, messageId: row.result_message_id };
+    if (row.state !== "prepared")
+      throw new AgentError(row.state === "sending" ? "reconciliation_required" : "draft_stale");
+    if (Date.parse(row.expires_at) <= this.now()) throw new AgentError("draft_stale");
+    const payload = this.manualPayload(org, row);
+    const context = await this.manualContext(
+      org,
+      actor,
+      { contactId: row.contact_id, conversationId: row.conversation_id },
+      writeEnabled,
+    );
+    if (context.blockedReason) throw new AgentError(context.blockedReason);
+    if (
+      !context.paused ||
+      context.sessionVersion !== row.session_version ||
+      context.snapshot.historyHash !== payload.snapshot.historyHash
+    )
+      throw new AgentError("draft_stale");
+    if (!this.d.provider.sendManual) throw new AgentError("manual_not_configured");
+    const claimed = await this.d.store.command<ManualRow>(
+      "manual_start_send",
+      org,
+      { ...data, historyHash: context.snapshot.historyHash },
+      actor,
+    );
+    // A concurrent confirmation may already own or have finished this dispatch.
+    if (claimed.state !== "sending" || !claimed.dispatch_id)
+      return {
+        state: claimed.state,
+        code: claimed.error_code,
+        messageId: claimed.result_message_id,
+      };
+    try {
+      await this.d.store.command(
+        "manual_check_dispatch",
+        org,
+        { manualId: row.id, dispatchId: claimed.dispatch_id },
+        actor,
+      );
+    } catch {
+      await this.d.store.command(
+        "manual_finish_send",
+        org,
+        {
+          manualId: row.id,
+          dispatchId: claimed.dispatch_id,
+          state: "rejected",
+          code: "dispatch_blocked",
+          messageId: null,
+        },
+        actor,
+      );
+      throw new AgentError("dispatch_blocked");
+    }
+    let result: Awaited<ReturnType<Provider["send"]>>;
+    try {
+      result = await this.d.provider.sendManual(context.snapshot, payload.text);
+    } catch {
+      result = { state: "unknown", code: "send_unknown", messageId: null };
+    }
+    try {
+      await this.d.store.command(
+        "manual_finish_send",
+        org,
+        { manualId: row.id, dispatchId: claimed.dispatch_id, ...result },
+        actor,
+      );
+    } catch {
+      throw new AgentError("send_unknown");
+    }
+    return result;
+  }
+  async manualReconcile(
+    org: string,
+    actor: string,
+    input: { manualId: string; messageId: string },
+  ) {
+    const row = await this.d.store.command<ManualRow>("manual_detail", org, input, actor);
+    if (
+      !["unknown", "sending"].includes(row.state) ||
+      !row.approved_at ||
+      !this.d.provider.verifyManualReceipt
+    )
+      throw new AgentError("reconcile_blocked");
+    const p = this.manualPayload(org, row);
+    if (
+      !(await this.d.provider.verifyManualReceipt(
+        p.snapshot,
+        p.text,
+        input.messageId,
+        row.approved_at,
+      ))
+    )
+      throw new AgentError("receipt_not_verified");
+    return this.d.store.command<{ status: string }>("manual_reconcile", org, input, actor);
   }
   async pause(
     org: string,
