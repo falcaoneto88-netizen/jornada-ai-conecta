@@ -42,6 +42,8 @@ export type Snapshot = {
   dnd: boolean;
   name: string;
   historyHash: string;
+  /** Só a caixa de entrada fixa a rota; os outros fluxos não a usam. */
+  route?: { providerId: string; name: string; defaultId: string | null };
 };
 export type DraftPayload = {
   snapshot: Snapshot;

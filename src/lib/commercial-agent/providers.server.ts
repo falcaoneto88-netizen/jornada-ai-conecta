@@ -7,6 +7,7 @@ import {
   verify,
 } from "node:crypto";
 import { z } from "zod";
+import { parseSmsChannels } from "./inbox-route";
 import { ghlFetch, GHL_ORIGIN, GHL_VERSION, type GhlConfig, type GhlResult } from "../ghl.server";
 import { confirmarConversa, normalizarMensagens } from "../ghl-observation.core";
 import {
@@ -480,10 +481,33 @@ export class HighLevel {
   }
 
   /** Authorization and fresh-history/version checks belong to the authenticated manual service. */
+  /** Leitura canónica dos fornecedores SMS da subconta (sem escrita). */
+  async smsChannels() {
+    try {
+      return parseSmsChannels(
+        await this.manualGet(`locations/${this.location}/conversationChannels/SMS`),
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async sendManual(snapshot: Snapshot, text: string) {
     const inbound = this.manualRoute(snapshot);
+    const route = snapshot.route;
+    if (route) {
+      // Revalidação imediatamente antes do POST: mudança de rota/default bloqueia sem POST.
+      const fresh = await this.smsChannels();
+      if (
+        !fresh ||
+        fresh.providers.get(route.providerId) !== route.name ||
+        fresh.defaultId !== route.defaultId
+      )
+        return { state: "rejected" as const, code: "route_changed", messageId: null };
+    }
+    const routed = route ? { ...inbound, provider: route.providerId } : inbound;
     try {
-      const result = await this.send({ ...snapshot, messages: [inbound] }, text);
+      const result = await this.send({ ...snapshot, messages: [routed] }, text);
       if (result.state === "sent" && !id.safeParse(result.messageId).success)
         return { state: "unknown" as const, code: "send_receipt_mismatch", messageId: null };
       return result;
@@ -517,7 +541,8 @@ export class HighLevel {
       receipt.direction === "outbound" &&
       receipt.body === text &&
       normalizeChannel(kind) === inbound.channel &&
-      (receipt.conversationProviderId ?? null) === inbound.provider &&
+      (receipt.conversationProviderId ?? null) ===
+        (snapshot.route?.providerId ?? inbound.provider) &&
       ["pending", "sent", "delivered", "read"].includes(receipt.status) &&
       at - approved >= -5000 &&
       at - approved <= 300000
