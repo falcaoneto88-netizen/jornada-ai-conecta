@@ -352,7 +352,8 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           setErroDestino(erroEnvio(r.code));
         }
       })
-      .catch(() => {
+      .catch((e) => {
+        console.log("CTXERR", e);
         if (!ativo) return;
         setDestino(null);
         setErroDestino("Não foi possível verificar o canal de envio desta conversa.");
