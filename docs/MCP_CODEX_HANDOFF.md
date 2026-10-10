@@ -484,3 +484,13 @@ Estado nesta revisão: **implementado localmente; gates e integração em andame
 - Testes de banco em PostgreSQL efémero local (nunca produção): manual-inbox.db + manual.db: 0 — 62 passaram (23 + 39).
 - QA visual: harness Vite temporário isolado (fora da app, já removido) renderizando o `GhlInbox` real com respostas sintéticas; envio simulado nunca chamado (0 chamadas). Chromium headless, 1280 px e 390 px: sem rolagem lateral; anexar imagem → prévia → remover; gravar (microfone falso) → Parar/Cancelar visíveis → prévia de áudio; microfone recusado → aviso "Não foi possível acessar o microfone…".
 - Não verificado: suíte completa, publicação, entrega real de mídia pelo Zaptos/GHL, E2E.
+
+## Verificação pós-publicação — 10/10/2026 13:36 UTC (somente leitura)
+
+- Revisão de código publicada: `06a70fc` (integração áudio/imagem; 20 ficheiros de código/testes byte-exatos ao manifest conforme coordenador; apenas docs divergem pela evidência).
+- Deployment: `0385e5b1-1546-4555-a77a-6a3213f79370` (publicado pelo coordenador; não republicado).
+- Prova de publicação limitada ao marcador público atual: `GET /api/version` → 200, `checked_at` 2026-10-10T13:36:05.478Z, `build` `jornada-inbox-media-20261010.1`, capabilities `pilotAuthorization:1`, `n8nMessageEvidence:2`, `n8nAcknowledgementActivity:2`, `inboxManualMedia:1`, `release` null. O marcador não comprova SHA.
+- `GET /api/public/commercial-agent-media/00000000-0000-4000-8000-000000000000.png?index=0&token=invalid` (fixture inválida) → 404, corpo vazio.
+- Acesso via ambiente Lovable normal, sem bypass de proteções; nenhum header/cookie registado.
+- Resultados locais do coordenador: 1726 testes / 76 suítes passaram; 11 suítes (169 testes) não executadas (psql ENOENT: 9; embedded-postgres ausente: 2); lint global 3042 erros apenas em ficheiros não modificados; tsc/build/diff check passaram. Testes focados, DB efémero e QA visual conforme secção anterior.
+- Pendente: recebimento real GHL/Zaptos de mídia. Nenhum envio real, server function, SQL, flag, contacto ou n8n alterado.
