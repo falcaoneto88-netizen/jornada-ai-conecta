@@ -70,3 +70,15 @@ export async function safe<T>(fn: () => Promise<T>) {
     return { ok: false as const, code: e instanceof AgentError ? e.code : "internal_error" };
   }
 }
+
+/** Fornecedor SMS configurado da clínica (só leitura); evidência adicional, nunca autorização. */
+export async function configuredSmsProvider(org: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("n8n_bridge_settings")
+    .select("zaptos_provider_id")
+    .eq("organization_id", org)
+    .maybeSingle();
+  if (error || !data) return null;
+  const v = data.zaptos_provider_id;
+  return typeof v === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(v) ? v : null;
+}

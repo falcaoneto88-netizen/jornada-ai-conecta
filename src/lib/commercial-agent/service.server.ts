@@ -20,12 +20,14 @@ import {
   type ManualPrepared,
   type ManualScope,
 } from "./core";
+import { resolveInboxRoute, sameRoute, type InboxRoute, type SmsChannels } from "./inbox-route";
 import { POLICY_HASH, replyHash, seal, sha, unseal } from "./providers.server";
 
 export interface Store {
   command<T>(op: string, org: string, data?: Record<string, unknown>, actor?: string): Promise<T>;
 }
 export type Provider = {
+  smsChannels?(): Promise<SmsChannels | null>;
   manualHistory?(scope: ManualScope): Promise<Snapshot>;
   sendManual?(snapshot: Snapshot, text: string): ReturnType<Provider["send"]>;
   verifyManualReceipt?(
@@ -79,6 +81,7 @@ const manualHash = (payload: ManualPayload) =>
       event: payload.snapshot.event,
       historyHash: payload.snapshot.historyHash,
       text: payload.text,
+      ...(payload.snapshot.route ? { route: payload.snapshot.route } : {}),
     }),
   );
 export type Dependencies = {
@@ -424,6 +427,7 @@ export class CommercialAgent {
       requestId: string;
     },
     writeEnabled: boolean,
+    route?: InboxRoute,
   ): Promise<ManualPrepared> {
     const data = manualPrepareSchema.parse(input);
     const existing = await this.d.store.command<ManualRow | null>(
@@ -450,7 +454,10 @@ export class CommercialAgent {
     const inbound = context.snapshot.messages.find(
       (m) => m.id === context.snapshot.event.messageId && m.direction === "inbound",
     )!;
-    const payload = { snapshot: context.snapshot, text: data.text };
+    const payload = {
+      snapshot: route ? { ...context.snapshot, route } : context.snapshot,
+      text: data.text,
+    };
     const row = await this.d.store.command<ManualRow>(
       "manual_prepare",
       org,
@@ -542,7 +549,11 @@ export class CommercialAgent {
     }
     let result: Awaited<ReturnType<Provider["send"]>>;
     try {
-      result = await this.d.provider.sendManual(context.snapshot, payload.text);
+      // Só a caixa de entrada fixa rota; os outros fluxos mantêm o comportamento.
+      const routed = payload.snapshot.route
+        ? { ...context.snapshot, route: payload.snapshot.route }
+        : context.snapshot;
+      result = await this.d.provider.sendManual(routed, payload.text);
     } catch {
       result = { state: "unknown", code: "send_unknown", messageId: null };
     }
@@ -558,16 +569,77 @@ export class CommercialAgent {
     }
     return result;
   }
+  /** Rota explícita verificada para a caixa de entrada; nunca o default implícito. */
+  async inboxRoute(snapshot: Snapshot, configuredProviderId: string | null) {
+    if (!this.d.provider.smsChannels) return { ok: false as const, code: "route_unverified" };
+    return resolveInboxRoute(snapshot, await this.d.provider.smsChannels(), configuredProviderId);
+  }
+  /** Contexto + referência da revisão humana (hash, versão e rota) para exigir no envio. */
+  async inboxContext(
+    org: string,
+    actor: string,
+    input: Pick<ManualScope, "contactId" | "conversationId">,
+    writeEnabled: boolean,
+    configuredProviderId: string | null,
+  ) {
+    const context = await this.manualContext(org, actor, input, writeEnabled);
+    const route = await this.inboxRoute(context.snapshot, configuredProviderId);
+    const blockedReason = context.blockedReason ?? (route.ok ? null : route.code);
+    return {
+      context,
+      route: route.ok ? route.route : null,
+      blockedReason,
+      revision: {
+        historyHash: context.snapshot.historyHash,
+        sessionVersion: context.sessionVersion,
+        providerId: route.ok ? route.route.providerId : null,
+        defaultId: route.ok ? route.route.defaultId : null,
+      },
+    };
+  }
+  /** Leitura do estado durável de um pedido (recuperação após falha do navegador). */
+  async inboxStatus(org: string, actor: string, requestId: string) {
+    const row = await this.d.store.command<ManualRow | null>(
+      "manual_lookup",
+      org,
+      { requestId },
+      actor,
+    );
+    if (!row) return null;
+    if (row.prepared_by !== actor) throw new AgentError("forbidden");
+    return {
+      manualId: row.id,
+      state: row.state,
+      code: row.error_code,
+      messageId: row.result_message_id,
+      contactId: row.contact_id,
+      conversationId: row.conversation_id,
+    };
+  }
   /**
    * One human click from the GHL inbox: prepare + send through the durable manual ledger.
    * The requestId is the idempotency key; a repeated request never issues a second POST.
+   * The reviewed revision is required and re-checked; it is never silently renewed.
    */
   async inboxSend(
     org: string,
     actor: string,
-    input: { contactId: string; conversationId: string; text: string; requestId: string },
+    input: {
+      contactId: string;
+      conversationId: string;
+      text: string;
+      requestId: string;
+      revision: {
+        historyHash: string;
+        sessionVersion: number;
+        providerId: string;
+        defaultId: string | null;
+      };
+    },
     writeEnabled: boolean,
+    configuredProviderId: string | null,
   ): Promise<{ state: string; code: string | null; messageId: string | null; manualId: string }> {
+    const { revision, ...scope } = input;
     const existing = await this.d.store.command<ManualRow | null>(
       "manual_lookup",
       org,
@@ -585,18 +657,33 @@ export class CommercialAgent {
       )
         throw new AgentError("manual_request_mismatch");
     } else {
-      const context = await this.manualContext(org, actor, input, writeEnabled);
-      if (context.blockedReason) throw new AgentError(context.blockedReason);
+      const fresh = await this.inboxContext(org, actor, scope, writeEnabled, configuredProviderId);
+      if (fresh.blockedReason) throw new AgentError(fresh.blockedReason);
+      if (
+        fresh.revision.historyHash !== revision.historyHash ||
+        fresh.revision.sessionVersion !== revision.sessionVersion
+      )
+        throw new AgentError("revision_changed");
+      if (
+        !fresh.route ||
+        !sameRoute(fresh.route, {
+          providerId: revision.providerId,
+          name: fresh.route.name,
+          defaultId: revision.defaultId,
+        })
+      )
+        throw new AgentError("route_changed");
       try {
         const prepared = await this.manualPrepare(
           org,
           actor,
           {
-            ...input,
-            expectedVersion: context.sessionVersion,
-            historyHash: context.snapshot.historyHash,
+            ...scope,
+            expectedVersion: revision.sessionVersion,
+            historyHash: revision.historyHash,
           },
           writeEnabled,
+          fresh.route,
         );
         row = await this.d.store.command<ManualRow>(
           "manual_detail",
@@ -623,6 +710,11 @@ export class CommercialAgent {
         messageId: row.result_message_id,
         manualId: row.id,
       };
+    // Rota fixada na revisão: revalidar antes de reclamar o envio.
+    const pinned = this.manualPayload(org, row).snapshot;
+    if (!pinned.route) throw new AgentError("route_unverified");
+    const now = await this.inboxRoute(pinned, configuredProviderId);
+    if (!now.ok || !sameRoute(now.route, pinned.route)) throw new AgentError("route_changed");
     const result = await this.manualSend(
       org,
       actor,

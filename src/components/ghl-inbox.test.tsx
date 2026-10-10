@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   enviar: vi.fn(),
   contexto: vi.fn(),
   conferir: vi.fn(),
+  estado: vi.fn(),
   refetch: vi.fn(),
   escopo: "conta-a",
   error: false,
@@ -17,6 +18,7 @@ vi.mock("@/lib/correcao-texto.functions", () => ({ corrigirRascunho: mocks.corri
 vi.mock("@/lib/commercial-agent.functions", () => ({
   getInboxSendContext: mocks.contexto,
   sendInboxMessage: mocks.enviar,
+  getInboxSendStatus: mocks.estado,
   reconcileManualAgentMessage: mocks.conferir,
 }));
 vi.mock("@/lib/jev-pedidos.functions", () => ({ classificarPedido: vi.fn() }));
@@ -69,23 +71,38 @@ vi.mock("@/lib/ghl-observation", () => ({
     },
   }),
 }));
-import { GhlInbox } from "./ghl-inbox";
+import { GhlInbox, pendentesEnvio } from "./ghl-inbox";
+const REV = { historyHash: "a".repeat(64), sessionVersion: 1, providerId: "zap", defaultId: "zap" };
+function ctx(over: Record<string, unknown> = {}) {
+  return {
+    name: "Ana",
+    channel: "SMS",
+    transport: "ZaptosWPP V2",
+    sendAllowed: true,
+    blockedReason: null,
+    revision: REV,
+    lastDispatch: null,
+    ...over,
+  };
+}
 afterEach(cleanup);
 beforeEach(() => {
-  for (const f of [mocks.analisar, mocks.corrigir, mocks.enviar, mocks.conferir, mocks.refetch])
+  for (const f of [
+    mocks.analisar,
+    mocks.corrigir,
+    mocks.enviar,
+    mocks.conferir,
+    mocks.refetch,
+    mocks.estado,
+  ])
     f.mockReset();
   mocks.contexto.mockReset().mockResolvedValue({
     ok: true,
-    data: {
-      name: "Ana",
-      channel: "SMS",
-      sendAllowed: true,
-      blockedReason: null,
-      lastDispatch: null,
-    },
+    data: ctx(),
   });
   mocks.escopo = "conta-a";
   mocks.error = false;
+  pendentesEnvio.clear();
 });
 function bruno() {
   fireEvent.click(screen.getByRole("button", { name: /Bruno/ }));
@@ -212,7 +229,7 @@ it("Enviar: um clique envia o texto visível atual; duplo clique não duplica", 
     conversationId: "Ana",
     text: "Texto final",
   });
-  expect(campo().readOnly).toBe(true);
+  expect(campo().disabled).toBe(true);
   await act(async () =>
     r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }),
   );
@@ -230,8 +247,8 @@ it("falha de rede = incerto, mantém texto e não reenvia automaticamente", asyn
   expect(campo().value).toBe("Mensagem");
   expect(screen.getByText(/não confirmado/)).toBeTruthy();
 });
-it("repetição manual da mesma revisão reutiliza a chave de idempotência", async () => {
-  mocks.enviar.mockResolvedValue({ ok: false, code: "storage_unavailable" });
+it("falha antes do POST liberta; nova revisão gera nova chave, mesma revisão reutiliza", async () => {
+  mocks.enviar.mockResolvedValue({ ok: false, code: "send_disabled" });
   render(<GhlInbox />);
   await flush();
   escrever("Mensagem");
@@ -262,4 +279,122 @@ it("bloqueio do servidor (DND/canal/escopo) desativa Enviar com motivo", async (
     (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
   ).toBe(true);
   expect(screen.getByText(/DND ativo/)).toBeTruthy();
+});
+
+it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo sucesso", async () => {
+  mocks.analisar.mockResolvedValue({
+    ok: true,
+    analise: {
+      resumo: "r",
+      revisao_humana: false,
+      sugestoes: [{ tom: "objetiva", texto: "Sugestão" }],
+    },
+  });
+  let r!: (v: unknown) => void;
+  mocks.enviar.mockImplementation(() => new Promise((x) => (r = x)));
+  render(<GhlInbox />);
+  await flush();
+  await act(async () => fireEvent.click(screen.getByText("Analisar mensagens carregadas")));
+  escrever("Texto enviado");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  const usar = screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement;
+  expect(usar.disabled).toBe(true);
+  fireEvent.click(usar);
+  fireEvent.change(campo(), { target: { value: "edição forçada" } });
+  expect(campo().value).toBe("Texto enviado");
+  await act(async () =>
+    r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }),
+  );
+  expect(campo().value).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Usar rascunho" }));
+  expect(campo().value).toBe("Sugestão");
+});
+it("timeout do navegador: edição posterior não liberta novo POST; só leitura recupera", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  mocks.estado.mockResolvedValue({
+    ok: true,
+    data: { manualId: "m9", state: "sent", messageId: "g9", code: null },
+  });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Mensagem");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  const id = mocks.enviar.mock.calls[0]![0].data.requestId;
+  escrever("Mensagem editada");
+  const b = screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement;
+  expect(b.disabled).toBe(true);
+  fireEvent.click(b);
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Verificar estado/ })));
+  expect(mocks.estado).toHaveBeenCalledWith({ data: { organizationId: "orgA", requestId: id } });
+  expect(screen.getByText(/aceite pelo GHL \(ID g9\)/)).toBeTruthy();
+  expect(campo().value).toBe("Mensagem editada");
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+it("envio incerto persiste ao trocar de conversa e voltar", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  render(<GhlInbox />);
+  await flush();
+  escrever("Mensagem");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  bruno();
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+  await flush();
+  expect(screen.getByText(/novos envios ficam bloqueados/)).toBeTruthy();
+});
+it("duplo clique síncrono produz um único pedido", async () => {
+  mocks.enviar.mockImplementation(() => new Promise(() => {}));
+  render(<GhlInbox />);
+  await flush();
+  escrever("Mensagem");
+  const b = screen.getByRole("button", { name: /Enviar para Ana/ });
+  act(() => {
+    b.click();
+    b.click();
+  });
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+it("capacidade atualizada: conversa mudou desde a revisão bloqueia sem renovar sozinha", async () => {
+  render(<GhlInbox />);
+  await flush();
+  escrever("Mensagem");
+  mocks.contexto.mockResolvedValue({
+    ok: true,
+    data: ctx({ revision: { ...REV, historyHash: "b".repeat(64) } }),
+  });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Atualizar$/ })));
+  expect(screen.getByText(/mudou desde que começou a rever/)).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /Conferi as mensagens novas/ }));
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "m", code: null, manualId: "x" },
+  });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  expect(mocks.enviar.mock.calls[0]![0].data.revision.historyHash).toBe("b".repeat(64));
+});
+it("falha de leitura do contexto torna o envio indisponível", async () => {
+  render(<GhlInbox />);
+  await flush();
+  escrever("Mensagem");
+  mocks.contexto.mockResolvedValue({ ok: false, code: "route_unverified" });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Atualizar$/ })));
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(screen.getByText(/fornecedor real/)).toBeTruthy();
+  expect(screen.getByText(/Transporte: não verificado/)).toBeTruthy();
+});
+it("colar texto acima do limite não corta; mostra contador e bloqueia envio", async () => {
+  render(<GhlInbox />);
+  await flush();
+  escrever("x".repeat(1600));
+  expect(campo().value.length).toBe(1600);
+  expect(screen.getByText(/1600\/1500/)).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 });

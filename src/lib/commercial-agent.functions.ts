@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   commandSchema,
@@ -109,28 +110,32 @@ export const sendManualAgentMessage = createServerFn({ method: "POST" })
       );
     });
   });
-/** Contexto sanitizado para a caixa de entrada: destinatário, canal e motivo de bloqueio. */
+/** Contexto sanitizado para a caixa de entrada: destinatário, rota verificada e referência de revisão. */
 export const getInboxSendContext = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator(manualScopeSchema.extend({ organizationId: listSchema.shape.organizationId }))
   .handler(async ({ data, context }) => {
-    const { safe, authenticatedAgent } = await import("./commercial-agent/runtime.server");
+    const { safe, authenticatedAgent, configuredSmsProvider } =
+      await import("./commercial-agent/runtime.server");
     return safe(async () => {
       const { agent, actor, writeEnabled } = await authenticatedAgent(context, data.organizationId);
-      const c = await agent.manualContext(
+      const r = await agent.inboxContext(
         data.organizationId,
         actor,
         { contactId: data.contactId, conversationId: data.conversationId },
         writeEnabled,
+        await configuredSmsProvider(data.organizationId),
       );
+      const c = r.context;
       const inbound = c.snapshot.messages.find((m) => m.id === c.snapshot.event.messageId);
       return {
         name: c.snapshot.name,
         channel: inbound?.channel ?? null,
-        providerConfigured: Boolean(inbound?.provider),
+        transport: r.route?.name ?? null,
         inboundAt: inbound?.at ?? null,
-        sendAllowed: c.sendAllowed,
-        blockedReason: c.blockedReason,
+        sendAllowed: r.blockedReason === null,
+        blockedReason: r.blockedReason,
+        revision: r.revision,
         lastDispatch: c.lastDispatch
           ? {
               id: c.lastDispatch.id,
@@ -141,20 +146,48 @@ export const getInboxSendContext = createServerFn({ method: "GET" })
       };
     });
   });
+const revisionSchema = z
+  .object({
+    historyHash: z.string().regex(/^[a-f0-9]{64}$/),
+    sessionVersion: z.number().int().nonnegative(),
+    providerId: id,
+    defaultId: id.nullable(),
+  })
+  .strict();
 /** Envio pela caixa de entrada: um clique humano final, idempotente por requestId. */
 export const sendInboxMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
     manualPrepareSchema
       .pick({ contactId: true, conversationId: true, text: true, requestId: true })
-      .extend({ organizationId: listSchema.shape.organizationId }),
+      .extend({ organizationId: listSchema.shape.organizationId, revision: revisionSchema }),
+  )
+  .handler(async ({ data, context }) => {
+    const { safe, authenticatedAgent, configuredSmsProvider } =
+      await import("./commercial-agent/runtime.server");
+    return safe(async () => {
+      const { agent, actor, writeEnabled } = await authenticatedAgent(context, data.organizationId);
+      const { organizationId, ...input } = data;
+      return agent.inboxSend(
+        organizationId,
+        actor,
+        input,
+        writeEnabled,
+        await configuredSmsProvider(organizationId),
+      );
+    });
+  });
+/** Só leitura: estado durável de um pedido pelo seu requestId. */
+export const getInboxSendStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({ organizationId: listSchema.shape.organizationId, requestId: z.string().uuid() }),
   )
   .handler(async ({ data, context }) => {
     const { safe, authenticatedAgent } = await import("./commercial-agent/runtime.server");
     return safe(async () => {
-      const { agent, actor, writeEnabled } = await authenticatedAgent(context, data.organizationId);
-      const { organizationId, ...input } = data;
-      return agent.inboxSend(organizationId, actor, input, writeEnabled);
+      const { agent, actor } = await authenticatedAgent(context, data.organizationId);
+      return agent.inboxStatus(data.organizationId, actor, data.requestId);
     });
   });
 export const reconcileManualAgentMessage = createServerFn({ method: "POST" })
