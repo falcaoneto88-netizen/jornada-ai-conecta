@@ -28,6 +28,7 @@ export type CorrecaoResultado =
     };
 
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"]+/gi;
+const UNIDADE = String.raw`(?:mmol|µmol|umol|nmol|pmol|mEq|mcg|µg|ug|ng|pg|mg|kg|g|mL|ml|dL|dl|l|L|cm|mm|m|UI|ui|IU|mU|U|kcal|cal|min|hs|h|horas?|dias?|semanas?|meses|mês|anos?|sessões|sessão)(?:[²³]|\^-?\d+)?`;
 // Ordem importa: links, e-mails, variáveis, depois número com moeda/unidade associada.
 const PROTEGIDO_RE = new RegExp(
   [
@@ -35,7 +36,8 @@ const PROTEGIDO_RE = new RegExp(
     String.raw`[\w.+-]+@[\w-]+(?:\.[\w-]+)+`,
     String.raw`\{\{[^}]*\}\}`,
     String.raw`\[[^\]\n]{1,60}\]`,
-    String.raw`(?:R\$|[€$£])?\s?\d+(?:[.,:/hH]\d+)*\s?(?:%|€|\$|£|(?:mg|mcg|µg|ug|kg|g|ml|mL|dl|l|L|cm|mm|m|UI|ui|kcal|cal|min|h|hs|horas?|dias?|semanas?|meses|mês|anos?|sessões|sessão)\b)?`,
+    // Comparador e sinal fazem parte do valor; a unidade inclui denominadores e expoentes.
+    String.raw`(?:[<>≤≥]=?\s?)?(?:[+\-−±]\s?)?(?:R\$|[€$£])?\s?\d+(?:[.,:/hH]\d+)*\s?(?:%|€|\$|£|${UNIDADE}(?:\s?\/\s?${UNIDADE})*(?![A-Za-zÀ-ÿµ]))?`,
     String.raw`R\$|[€$£]`,
   ].join("|"),
   "gi",
