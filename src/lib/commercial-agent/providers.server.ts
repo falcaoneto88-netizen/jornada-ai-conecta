@@ -7,6 +7,7 @@ import {
   verify,
 } from "node:crypto";
 import { z } from "zod";
+import { sameMediaReceipt } from "./inbox-media.server";
 import { parseSmsChannels } from "./inbox-route";
 import { ghlFetch, GHL_ORIGIN, GHL_VERSION, type GhlConfig, type GhlResult } from "../ghl.server";
 import { confirmarConversa, normalizarMensagens } from "../ghl-observation.core";
@@ -172,7 +173,10 @@ const manualMessageSchema = z.object({
 const manualReceiptSchema = manualMessageSchema.extend({
   locationId: id,
   contactId: id,
-  body: z.string(),
+  body: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? ""),
   status: z.string(),
 });
 const manualReceiptEnvelopeSchema = z
@@ -499,9 +503,11 @@ export class HighLevel {
     }
   }
 
-  async sendManual(snapshot: Snapshot, text: string) {
+  async sendManual(snapshot: Snapshot, text: string, attachments?: string[]) {
     const inbound = this.manualRoute(snapshot);
     const route = snapshot.route;
+    if (attachments?.length && (!route || route.channel !== "SMS" || !route.providerId))
+      return { state: "rejected" as const, code: "media_channel_unsupported", messageId: null };
     if (route && (route.channel ?? "SMS") !== inbound.channel)
       return { state: "rejected" as const, code: "route_changed", messageId: null };
     if (route && (route.channel ?? "SMS") === "SMS") {
@@ -518,7 +524,7 @@ export class HighLevel {
     // Canais nativos nunca herdam conversationProviderId de outro transporte.
     const routed = route ? { ...inbound, provider: route.providerId } : inbound;
     try {
-      const result = await this.send({ ...snapshot, messages: [routed] }, text);
+      const result = await this.send({ ...snapshot, messages: [routed] }, text, attachments);
       if (result.state === "sent" && !id.safeParse(result.messageId).success)
         return { state: "unknown" as const, code: "send_receipt_mismatch", messageId: null };
       return result;
@@ -533,6 +539,7 @@ export class HighLevel {
     text: string,
     messageId: string,
     approvedAt: string,
+    attachments: string[] = [],
   ): Promise<boolean> {
     const inbound = this.manualRoute(snapshot);
     if (!id.safeParse(messageId).success) throw new AgentError("scope_mismatch");
@@ -551,6 +558,7 @@ export class HighLevel {
       receipt.conversationId === snapshot.event.conversationId &&
       receipt.direction === "outbound" &&
       receipt.body === text &&
+      sameMediaReceipt(receipt.attachments, attachments) &&
       normalizeChannel(kind) === inbound.channel &&
       (snapshot.route && !snapshot.route.providerId
         ? true
@@ -568,7 +576,7 @@ export class HighLevel {
     );
   }
 
-  async send(snapshot: Snapshot, text: string) {
+  async send(snapshot: Snapshot, text: string, attachments?: string[]) {
     const last = snapshot.messages.at(-1);
     if (!last) throw new AgentError("history_invalid");
     const body: Record<string, unknown> = {
@@ -579,6 +587,7 @@ export class HighLevel {
       status: "pending",
     };
     if (last.provider) body["conversationProviderId"] = last.provider;
+    if (attachments?.length) body["attachments"] = attachments;
     const pinned = snapshot.route;
     if (pinned?.channel === "WhatsApp") {
       if (!pinned.fromNumber || !pinned.toNumber)

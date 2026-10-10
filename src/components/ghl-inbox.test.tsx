@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, fireEvent, act } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   analisar: vi.fn(),
@@ -85,6 +85,7 @@ function ctx(over: Record<string, unknown> = {}) {
     channel: "SMS",
     transport: "ZaptosWPP V2",
     sendAllowed: true,
+    mediaAllowed: true,
     blockedReason: null,
     revision: REV,
     lastDispatch: null,
@@ -93,6 +94,11 @@ function ctx(over: Record<string, unknown> = {}) {
 }
 afterEach(cleanup);
 beforeEach(() => {
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: vi.fn(() => "blob:local-preview"),
+  });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
   for (const f of [
     mocks.analisar,
     mocks.corrigir,
@@ -110,6 +116,217 @@ beforeEach(() => {
   mocks.error = false;
   pendentesEnvio.clear();
   localStorage.clear();
+});
+
+async function attach(file = new File(["local image bytes"], "imagem.png", { type: "image/png" })) {
+  fireEvent.change(screen.getByLabelText("Selecionar imagem ou áudio"), {
+    target: { files: [file] },
+  });
+  await waitFor(() => expect(screen.getByLabelText("Prévia do anexo")).toBeTruthy());
+}
+
+it("imagem fica local na prévia; clique final envia arquivo e texto exatos uma única vez", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.enviar.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  render(<GhlInbox />);
+  await flush();
+  await attach();
+  expect(screen.getByAltText("Prévia de imagem.png").getAttribute("src")).toBe(
+    "blob:local-preview",
+  );
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  expect(mocks.analisar).not.toHaveBeenCalled();
+  expect(localStorage.length).toBe(0);
+  escrever("  Legenda exata\n");
+  const send = screen.getByRole("button", { name: /Enviar para Ana/ });
+  act(() => {
+    send.click();
+    send.click();
+  });
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  expect(mocks.enviar.mock.calls[0]![0].data).toMatchObject({
+    organizationId: "orgA",
+    conversationId: "Ana",
+    contactId: "Ana",
+    text: "  Legenda exata\n",
+    attachments: [{ name: "imagem.png", mimeType: "image/png", base64: btoa("local image bytes") }],
+    revision: REV,
+  });
+  expect(
+    (screen.getByRole("button", { name: /Remover anexo/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  const stored = JSON.stringify(Object.fromEntries(Object.entries(localStorage)));
+  expect(stored).not.toContain("imagem.png");
+  expect(stored).not.toContain(btoa("local image bytes"));
+  await act(async () =>
+    resolve({
+      ok: true,
+      data: { state: "sent", messageId: "media1", code: null, manualId: "manual1" },
+    }),
+  );
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:local-preview");
+  expect(screen.getByText(/aceite pelo GHL \(ID media1\)/)).toBeTruthy();
+});
+
+it("áudio sem texto tem controle de reprodução e só envia no clique humano", async () => {
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "audio1", code: null, manualId: "manual1" },
+  });
+  render(<GhlInbox />);
+  await flush();
+  await attach(new File(["audio bytes"], "voz.mp3", { type: "audio/mpeg" }));
+  expect(screen.getByLabelText("Ouvir áudio antes de enviar").tagName).toBe("AUDIO");
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  expect(mocks.enviar.mock.calls[0]![0].data).toMatchObject({
+    text: "",
+    attachments: [{ name: "voz.mp3", mimeType: "audio/mpeg", base64: btoa("audio bytes") }],
+  });
+});
+
+it("remoção e troca de conversa revogam prévia e não levam anexo para outro destinatário", async () => {
+  render(<GhlInbox />);
+  await flush();
+  await attach();
+  fireEvent.click(screen.getByRole("button", { name: /Remover anexo/ }));
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  await attach();
+  bruno();
+  await flush();
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+  expect(mocks.enviar).not.toHaveBeenCalled();
+});
+
+it("arquivo inválido ou maior que 5 MB não chega ao envio", async () => {
+  render(<GhlInbox />);
+  await flush();
+  fireEvent.change(screen.getByLabelText("Selecionar imagem ou áudio"), {
+    target: { files: [new File(["<svg>"], "imagem.svg", { type: "image/svg+xml" })] },
+  });
+  await waitFor(() => expect(screen.getByText(/Use uma imagem JPG/)).toBeTruthy());
+  fireEvent.change(screen.getByLabelText("Selecionar imagem ou áudio"), {
+    target: {
+      files: [new File([new Uint8Array(5 * 1024 * 1024 + 1)], "grande.png", { type: "image/png" })],
+    },
+  });
+  await waitFor(() => expect(screen.getByText(/O anexo deve ter no máximo 5 MB/)).toBeTruthy());
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(mocks.enviar).not.toHaveBeenCalled();
+});
+
+it("mídia com resultado incerto fica preservada e não permite uma segunda tentativa", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  render(<GhlInbox />);
+  await flush();
+  await attach();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  expect(screen.getByLabelText("Prévia do anexo")).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: /Remover anexo/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  bruno();
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+  await flush();
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(screen.getByText(/Resultado do envio não confirmado/)).toBeTruthy();
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("mídia rejeitada antes do envio mantém prévia e permite nova intenção explícita", async () => {
+  mocks.enviar.mockResolvedValue({ ok: false, code: "media_invalid" });
+  render(<GhlInbox />);
+  await flush();
+  await attach();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  expect(screen.getByLabelText("Prévia do anexo")).toBeTruthy();
+  expect(screen.queryByText(/Resultado do envio não confirmado/)).toBeNull();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  expect(mocks.enviar.mock.calls[0]![0].data.requestId).not.toBe(
+    mocks.enviar.mock.calls[1]![0].data.requestId,
+  );
+});
+
+it.each(["IG", "FB", "WhatsApp"])(
+  "%s mantém texto mas não promete envio de anexos",
+  async (channel) => {
+    mocks.contexto.mockResolvedValue({
+      ok: true,
+      data: ctx({ channel, revision: { ...REV, channel, providerId: null, defaultId: null } }),
+    });
+    render(<GhlInbox />);
+    await flush();
+    expect(
+      (screen.getByRole("button", { name: /Anexar imagem ou áudio/ }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: /Gravar áudio/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    escrever("Resposta textual");
+    expect(
+      (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  },
+);
+
+it("capacidade mediaAllowed=false vinda do servidor mantém só envio de texto", async () => {
+  mocks.contexto.mockResolvedValue({ ok: true, data: ctx({ mediaAllowed: false }) });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Resposta de texto");
+  expect(
+    (screen.getByRole("button", { name: /Anexar imagem ou áudio/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+});
+
+it("selecionar arquivo e enviar no mesmo frame não envia antes da prévia estar pronta", async () => {
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto com futura imagem");
+  act(() => {
+    fireEvent.change(screen.getByLabelText("Selecionar imagem ou áudio"), {
+      target: { files: [new File(["imagem"], "foto.png", { type: "image/png" })] },
+    });
+    screen.getByRole("button", { name: /Enviar para Ana/ }).click();
+  });
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByLabelText("Prévia do anexo")).toBeTruthy());
+  expect(mocks.enviar).not.toHaveBeenCalled();
+});
+
+it("recuperação do envio incerto limpa só o anexo que pertence ao pedido confirmado", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  mocks.estado.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "media2", manualId: "manual2", code: null },
+  });
+  render(<GhlInbox />);
+  await flush();
+  await attach();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  escrever("Novo texto ainda não enviado");
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ })),
+  );
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(campo().value).toBe("Novo texto ainda não enviado");
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
 });
 function bruno() {
   fireEvent.click(screen.getByRole("button", { name: /Bruno/ }));

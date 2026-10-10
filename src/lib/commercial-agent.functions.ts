@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { inboxAttachmentsSchema } from "./commercial-agent/inbox-media";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   commandSchema,
@@ -136,6 +137,8 @@ export const getInboxSendContext = createServerFn({ method: "GET" })
         connectionVerifiedAtSend: r.route ? r.route.channel !== "SMS" : false,
         inboundAt: inbound?.at ?? null,
         sendAllowed: r.blockedReason === null,
+        mediaAllowed:
+          r.blockedReason === null && r.route?.channel === "SMS" && !!r.route.providerId,
         blockedReason: r.blockedReason,
         revision: r.revision,
         lastDispatch: c.lastDispatch
@@ -157,20 +160,19 @@ const revisionSchema = z
     defaultId: id.nullable(),
   })
   .strict();
-/** Texto exato visível: trim só para testar vazio; nada é normalizado sem Corrigir. */
-const exactText = z
-  .string()
-  .max(1500)
-  .refine((t) => t.trim().length > 0, "empty");
 /** Envio pela caixa de entrada: um clique humano final, idempotente por requestId. */
 export const sendInboxMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    manualPrepareSchema.pick({ contactId: true, conversationId: true, requestId: true }).extend({
-      organizationId: listSchema.shape.organizationId,
-      text: exactText,
-      revision: revisionSchema,
-    }),
+    manualPrepareSchema
+      .pick({ contactId: true, conversationId: true, requestId: true })
+      .extend({
+        organizationId: listSchema.shape.organizationId,
+        text: z.string().max(1500),
+        attachments: inboxAttachmentsSchema.optional(),
+        revision: revisionSchema,
+      })
+      .refine((v) => v.text.trim().length > 0 || (v.attachments?.length ?? 0) > 0, "empty"),
   )
   .handler(async ({ data, context }) => {
     const { safe, authenticatedAgent, configuredSmsProvider } =

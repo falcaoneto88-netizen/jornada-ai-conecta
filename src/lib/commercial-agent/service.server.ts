@@ -22,6 +22,14 @@ import {
 } from "./core";
 import { resolveInboxRoute, sameRoute, type InboxRoute, type SmsChannels } from "./inbox-route";
 import { POLICY_HASH, replyHash, seal, sha, unseal } from "./providers.server";
+import type { InboxAttachment } from "./inbox-media";
+import {
+  INBOX_MEDIA_TTL_MS,
+  mediaManifest,
+  mediaUrls,
+  validateInboxAttachments,
+  type InboxMedia,
+} from "./inbox-media.server";
 
 export interface Store {
   command<T>(op: string, org: string, data?: Record<string, unknown>, actor?: string): Promise<T>;
@@ -29,12 +37,17 @@ export interface Store {
 export type Provider = {
   smsChannels?(): Promise<SmsChannels | null>;
   manualHistory?(scope: ManualScope): Promise<Snapshot>;
-  sendManual?(snapshot: Snapshot, text: string): ReturnType<Provider["send"]>;
+  sendManual?(
+    snapshot: Snapshot,
+    text: string,
+    attachments?: string[],
+  ): ReturnType<Provider["send"]>;
   verifyManualReceipt?(
     snapshot: Snapshot,
     text: string,
     messageId: string,
     approvedAt: string,
+    attachments?: string[],
   ): Promise<boolean>;
   verifyReceipt?(
     snapshot: Snapshot,
@@ -52,7 +65,7 @@ export type Provider = {
     messageId: string | null;
   }>;
 };
-type ManualPayload = { snapshot: Snapshot; text: string };
+export type ManualPayload = { snapshot: Snapshot; text: string; media?: InboxMedia };
 type ManualRow = {
   id: string;
   request_id: string;
@@ -83,13 +96,22 @@ type ManualSession = ManualConversation & {
   busy: boolean;
   lastDispatch?: ManualContext["lastDispatch"];
 };
-const manualHash = (payload: ManualPayload) =>
+export const manualHash = (payload: ManualPayload) =>
   sha(
     JSON.stringify({
       kind: "manual",
       event: payload.snapshot.event,
       historyHash: payload.snapshot.historyHash,
       text: payload.text,
+      ...(payload.media
+        ? {
+            media: {
+              issuedAt: payload.media.issuedAt,
+              expiresAt: payload.media.expiresAt,
+              attachments: mediaManifest(payload.media.attachments),
+            },
+          }
+        : {}),
       ...(payload.snapshot.route ? { route: payload.snapshot.route } : {}),
     }),
   );
@@ -493,14 +515,31 @@ export class CommercialAgent {
       historyHash: string;
       text: string;
       requestId: string;
+      attachments?: InboxAttachment[] | undefined;
     },
     writeEnabled: boolean,
     route?: InboxRoute,
     notAfter?: string,
   ): Promise<ManualPrepared> {
-    const parsed = manualPrepareSchema.parse(input);
+    const { attachments: attachmentInput, ...prepareInput } = input;
+    const attachments = validateInboxAttachments(attachmentInput);
+    if (attachments.length && (!route || route.channel !== "SMS" || !route.providerId))
+      throw new AgentError("media_channel_unsupported");
+    const parsed = route
+      ? {
+          ...manualPrepareSchema
+            .omit({ text: true })
+            .parse((({ text: _text, ...rest }) => rest)(prepareInput)),
+          text: input.text,
+        }
+      : manualPrepareSchema.parse(prepareInput);
     // Caixa de entrada: texto EXATO visível (trim só para testar vazio).
-    if (route && (!input.text.trim() || input.text.length > 1500))
+    if (
+      route &&
+      (typeof input.text !== "string" ||
+        (!input.text.trim() && !attachments.length) ||
+        input.text.length > 1500)
+    )
       throw new AgentError("invalid_manual");
     const data = route ? { ...parsed, text: input.text } : parsed;
     const existing = await this.d.store.command<ManualRow | null>(
@@ -515,7 +554,9 @@ export class CommercialAgent {
         existing.prepared_by !== actor ||
         existing.contact_id !== data.contactId ||
         existing.conversation_id !== data.conversationId ||
-        old.text !== data.text
+        old.text !== data.text ||
+        JSON.stringify(mediaManifest(old.media?.attachments)) !==
+          JSON.stringify(mediaManifest(attachments))
       )
         throw new AgentError("manual_request_mismatch");
       return this.preparedManual(org, existing);
@@ -527,9 +568,19 @@ export class CommercialAgent {
     const inbound = context.snapshot.messages.find(
       (m) => m.id === context.snapshot.event.messageId && m.direction === "inbound",
     )!;
+    const mediaIssuedAt = this.now();
     const payload = {
       snapshot: route ? { ...context.snapshot, route } : context.snapshot,
       text: data.text,
+      ...(attachments.length
+        ? {
+            media: {
+              issuedAt: new Date(mediaIssuedAt).toISOString(),
+              expiresAt: new Date(mediaIssuedAt + INBOX_MEDIA_TTL_MS).toISOString(),
+              attachments,
+            },
+          }
+        : {}),
     };
     if (route && route.channel !== inbound.channel) throw new AgentError("route_changed");
     const row = await this.d.store.command<ManualRow>(
@@ -574,6 +625,8 @@ export class CommercialAgent {
       throw new AgentError(row.state === "sending" ? "reconciliation_required" : "draft_stale");
     if (Date.parse(row.expires_at) <= this.now()) throw new AgentError("draft_stale");
     const payload = this.manualPayload(org, row);
+    if (payload.media && Date.parse(payload.media.expiresAt) <= this.now())
+      throw new AgentError("media_expired");
     const context = await this.manualContext(
       org,
       actor,
@@ -636,7 +689,16 @@ export class CommercialAgent {
       const routed = payload.snapshot.route
         ? { ...context.snapshot, route: payload.snapshot.route }
         : context.snapshot;
-      result = await this.d.provider.sendManual(routed, payload.text);
+      if (payload.media) {
+        if (Date.parse(payload.media.expiresAt) <= this.now())
+          result = { state: "rejected", code: "media_expired", messageId: null };
+        else
+          result = await this.d.provider.sendManual(
+            routed,
+            payload.text,
+            mediaUrls({ ...row, organization_id: org }, payload.media, this.d.encryptionKey),
+          );
+      } else result = await this.d.provider.sendManual(routed, payload.text);
     } catch {
       result = { state: "unknown", code: "send_unknown", messageId: null };
     }
@@ -727,6 +789,7 @@ export class CommercialAgent {
       conversationId: string;
       text: string;
       requestId: string;
+      attachments?: InboxAttachment[] | undefined;
       revision: {
         historyHash: string;
         sessionVersion: number;
@@ -738,6 +801,13 @@ export class CommercialAgent {
     writeEnabled: boolean,
     configuredProviderId: string | null,
   ): Promise<{ state: string; code: string | null; messageId: string | null; manualId: string }> {
+    const attachments = validateInboxAttachments(input.attachments);
+    if (
+      typeof input.text !== "string" ||
+      input.text.length > 1500 ||
+      (!input.text.trim() && !attachments.length)
+    )
+      throw new AgentError("invalid_manual");
     const { revision, ...scope } = input;
     // Prazo operacional (também no SQL, com clock_timestamp após os locks). Não prova não-envio.
     const notAfter = new Date(this.now() + INBOX_DEADLINE_MS).toISOString();
@@ -749,7 +819,9 @@ export class CommercialAgent {
         r.prepared_by !== actor ||
         r.contact_id !== input.contactId ||
         r.conversation_id !== input.conversationId ||
-        old.text !== input.text
+        old.text !== input.text ||
+        JSON.stringify(mediaManifest(old.media?.attachments)) !==
+          JSON.stringify(mediaManifest(attachments))
       )
         throw new AgentError("manual_request_mismatch");
     };
@@ -772,6 +844,8 @@ export class CommercialAgent {
         })
       )
         throw new AgentError("route_changed");
+      if (attachments.length && (fresh.route.channel !== "SMS" || !fresh.route.providerId))
+        throw new AgentError("media_channel_unsupported");
       if (late()) throw new AgentError("request_expired");
       try {
         const prepared = await this.manualPrepare(
@@ -843,6 +917,9 @@ export class CommercialAgent {
         p.text,
         input.messageId,
         row.approved_at,
+        ...(p.media
+          ? [mediaUrls({ ...row, organization_id: org }, p.media, this.d.encryptionKey)]
+          : []),
       ))
     )
       throw new AgentError("receipt_not_verified");

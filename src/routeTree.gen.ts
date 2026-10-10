@@ -32,6 +32,7 @@ import { Route as ApiPublicFalcaoLeadRouteImport } from './routes/api/public/fal
 import { Route as ApiPublicGhlWebhookRouteImport } from './routes/api/public/ghl-webhook'
 import { Route as ApiAdNavigatorV1ExchangeRouteImport } from './routes/api/ad-navigator/v1/exchange'
 import { Route as ApiAdNavigatorV1SummaryRouteImport } from './routes/api/ad-navigator/v1/summary'
+import { Route as ApiPublicCommercialAgentMediaFileRouteImport } from './routes/api/public/commercial-agent-media/$file'
 import { Route as ApiPublicHooksSincronizarAgendaRouteImport } from './routes/api/public/hooks/sincronizar-agenda'
 import { Route as ApiPublicN8nBridgeRouteImport } from './routes/api/public/n8n/bridge'
 import { Route as ApiPublicN8nConfirmacaoConsultaRouteImport } from './routes/api/public/n8n/confirmacao-consulta'
@@ -156,6 +157,12 @@ const ApiAdNavigatorV1SummaryRoute = ApiAdNavigatorV1SummaryRouteImport.update({
   path: '/api/ad-navigator/v1/summary',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCommercialAgentMediaFileRoute =
+  ApiPublicCommercialAgentMediaFileRouteImport.update({
+    id: '/api/public/commercial-agent-media/$file',
+    path: '/api/public/commercial-agent-media/$file',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksSincronizarAgendaRoute =
   ApiPublicHooksSincronizarAgendaRouteImport.update({
     id: '/api/public/hooks/sincronizar-agenda',
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
   '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
+  '/api/public/commercial-agent-media/$file': typeof ApiPublicCommercialAgentMediaFileRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
   '/api/public/n8n/bridge': typeof ApiPublicN8nBridgeRoute
   '/api/public/n8n/confirmacao-consulta': typeof ApiPublicN8nConfirmacaoConsultaRoute
@@ -226,6 +234,7 @@ export interface FileRoutesByTo {
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
   '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
+  '/api/public/commercial-agent-media/$file': typeof ApiPublicCommercialAgentMediaFileRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
   '/api/public/n8n/bridge': typeof ApiPublicN8nBridgeRoute
   '/api/public/n8n/confirmacao-consulta': typeof ApiPublicN8nConfirmacaoConsultaRoute
@@ -255,6 +264,7 @@ export interface FileRoutesById {
   '/api/public/ghl-webhook': typeof ApiPublicGhlWebhookRoute
   '/api/ad-navigator/v1/exchange': typeof ApiAdNavigatorV1ExchangeRoute
   '/api/ad-navigator/v1/summary': typeof ApiAdNavigatorV1SummaryRoute
+  '/api/public/commercial-agent-media/$file': typeof ApiPublicCommercialAgentMediaFileRoute
   '/api/public/hooks/sincronizar-agenda': typeof ApiPublicHooksSincronizarAgendaRoute
   '/api/public/n8n/bridge': typeof ApiPublicN8nBridgeRoute
   '/api/public/n8n/confirmacao-consulta': typeof ApiPublicN8nConfirmacaoConsultaRoute
@@ -285,6 +295,7 @@ export interface FileRouteTypes {
     | '/api/public/ghl-webhook'
     | '/api/ad-navigator/v1/exchange'
     | '/api/ad-navigator/v1/summary'
+    | '/api/public/commercial-agent-media/$file'
     | '/api/public/hooks/sincronizar-agenda'
     | '/api/public/n8n/bridge'
     | '/api/public/n8n/confirmacao-consulta'
@@ -313,6 +324,7 @@ export interface FileRouteTypes {
     | '/api/public/ghl-webhook'
     | '/api/ad-navigator/v1/exchange'
     | '/api/ad-navigator/v1/summary'
+    | '/api/public/commercial-agent-media/$file'
     | '/api/public/hooks/sincronizar-agenda'
     | '/api/public/n8n/bridge'
     | '/api/public/n8n/confirmacao-consulta'
@@ -341,6 +353,7 @@ export interface FileRouteTypes {
     | '/api/public/ghl-webhook'
     | '/api/ad-navigator/v1/exchange'
     | '/api/ad-navigator/v1/summary'
+    | '/api/public/commercial-agent-media/$file'
     | '/api/public/hooks/sincronizar-agenda'
     | '/api/public/n8n/bridge'
     | '/api/public/n8n/confirmacao-consulta'
@@ -370,6 +383,7 @@ export interface RootRouteChildren {
   ApiPublicGhlWebhookRoute: typeof ApiPublicGhlWebhookRoute
   ApiAdNavigatorV1ExchangeRoute: typeof ApiAdNavigatorV1ExchangeRoute
   ApiAdNavigatorV1SummaryRoute: typeof ApiAdNavigatorV1SummaryRoute
+  ApiPublicCommercialAgentMediaFileRoute: typeof ApiPublicCommercialAgentMediaFileRoute
   ApiPublicHooksSincronizarAgendaRoute: typeof ApiPublicHooksSincronizarAgendaRoute
   ApiPublicN8nBridgeRoute: typeof ApiPublicN8nBridgeRoute
   ApiPublicN8nConfirmacaoConsultaRoute: typeof ApiPublicN8nConfirmacaoConsultaRoute
@@ -538,6 +552,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdNavigatorV1SummaryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/commercial-agent-media/$file': {
+      id: '/api/public/commercial-agent-media/$file'
+      path: '/api/public/commercial-agent-media/$file'
+      fullPath: '/api/public/commercial-agent-media/$file'
+      preLoaderRoute: typeof ApiPublicCommercialAgentMediaFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/sincronizar-agenda': {
       id: '/api/public/hooks/sincronizar-agenda'
       path: '/api/public/hooks/sincronizar-agenda'
@@ -588,6 +609,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGhlWebhookRoute: ApiPublicGhlWebhookRoute,
   ApiAdNavigatorV1ExchangeRoute: ApiAdNavigatorV1ExchangeRoute,
   ApiAdNavigatorV1SummaryRoute: ApiAdNavigatorV1SummaryRoute,
+  ApiPublicCommercialAgentMediaFileRoute:
+    ApiPublicCommercialAgentMediaFileRoute,
   ApiPublicHooksSincronizarAgendaRoute: ApiPublicHooksSincronizarAgendaRoute,
   ApiPublicN8nBridgeRoute: ApiPublicN8nBridgeRoute,
   ApiPublicN8nConfirmacaoConsultaRoute: ApiPublicN8nConfirmacaoConsultaRoute,

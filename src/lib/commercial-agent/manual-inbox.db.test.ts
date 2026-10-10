@@ -6,7 +6,9 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
 import { ACTOR, FOREIGN, ORG, startCommercialDb } from "../../../test/commercial-agent-db";
 import { CommercialAgent, type Provider } from "./service.server";
-import { sha } from "./providers.server";
+import { sha, unseal } from "./providers.server";
+import type { ManualPayload } from "./service.server";
+import { inboxMediaResponse, type MediaRow } from "./media-http.server";
 import type { Snapshot } from "./core";
 
 let db: Awaited<ReturnType<typeof startCommercialDb>>;
@@ -91,6 +93,134 @@ const send = async (text = "Resposta humana exata  ", requestId: string = random
     "zap",
   );
 };
+
+const image = {
+  name: "imagem-ficticia.png",
+  mimeType: "image/png" as const,
+  base64:
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=",
+};
+const mediaInput = async (requestId = randomUUID()) => ({
+  ...scope,
+  text: "",
+  requestId,
+  revision: (await ctx()).revision,
+  attachments: [image],
+});
+
+it("media: durable encrypted dispatch, exact content-bound URL and one POST across retries", async () => {
+  const input = await mediaInput();
+  const result = await agent.inboxSend(ORG, ACTOR, input, true, "zap");
+  expect(result.state).toBe("sent");
+  expect(sendManual).toHaveBeenCalledTimes(1);
+  const url = sendManual.mock.calls[0]![2][0] as string;
+  expect(url).toContain(`/api/public/commercial-agent-media/${result.manualId}.png?`);
+  expect(url).not.toContain(image.name);
+  const [row] =
+    await db.sql`select * from commercial_agent_manual_dispatches where id=${result.manualId}`;
+  expect(row!["payload"]).not.toContain(image.base64);
+  const decoded = unseal<ManualPayload>(row!["payload"], key, `manual:${ORG}:${input.requestId}`);
+  expect(decoded.media?.attachments[0]?.base64).toBe(image.base64);
+  expect(decoded.snapshot.route?.providerId).toBe("zap");
+  const response = await inboxMediaResponse(new Request(url), `${result.manualId}.png`, {
+    key,
+    read: async () => ({ ...row!, created_at: row!["created_at"].toISOString() }) as MediaRow,
+  });
+  expect(response.status).toBe(200);
+  expect(Buffer.from(await response.arrayBuffer()).toString("base64")).toBe(image.base64);
+  expect((await agent.inboxSend(ORG, ACTOR, input, true, "zap")).messageId).toBe(result.messageId);
+  expect(sendManual).toHaveBeenCalledTimes(1);
+  await expect(
+    agent.inboxSend(
+      ORG,
+      ACTOR,
+      { ...input, attachments: [{ ...image, name: "outra.png" }] },
+      true,
+      "zap",
+    ),
+  ).rejects.toThrow("manual_request_mismatch");
+});
+
+it("media: unknown send remains blocked; reconciliation receives exact original attachments", async () => {
+  sendManual.mockResolvedValue({ state: "unknown", code: "outcome_unknown", messageId: null });
+  const input = await mediaInput();
+  const result = await agent.inboxSend(ORG, ACTOR, input, true, "zap");
+  expect((await agent.inboxSend(ORG, ACTOR, input, true, "zap")).state).toBe("unknown");
+  expect(sendManual).toHaveBeenCalledTimes(1);
+  const receipt = vi.fn().mockResolvedValue(false);
+  provider.verifyManualReceipt = receipt;
+  await expect(
+    agent.manualReconcile(ORG, ACTOR, { manualId: result.manualId, messageId: "receipt-test" }),
+  ).rejects.toThrow("receipt_not_verified");
+  expect(receipt.mock.calls[0]![4]).toEqual(sendManual.mock.calls[0]![2]);
+  expect((await agent.inboxStatus(ORG, ACTOR, input.requestId))?.state).toBe("unknown");
+});
+
+it("media: concurrent requests for the same reviewed content produce at most one provider POST", async () => {
+  const input = await mediaInput();
+  const results = await Promise.allSettled([
+    agent.inboxSend(ORG, ACTOR, input, true, "zap"),
+    agent.inboxSend(ORG, ACTOR, input, true, "zap"),
+  ]);
+  expect(results.some((r) => r.status === "fulfilled" && r.value.state === "sent")).toBe(true);
+  expect(sendManual).toHaveBeenCalledTimes(1);
+  expect((await counts()).d).toBe(1);
+});
+
+it("media: unsupported channel, bad bytes and DND cause no dispatch or provider call", async () => {
+  const input = await mediaInput();
+  await expect(
+    agent.inboxSend(
+      ORG,
+      ACTOR,
+      {
+        ...input,
+        attachments: [{ ...image, base64: Buffer.from("not an image").toString("base64") }],
+      },
+      true,
+      "zap",
+    ),
+  ).rejects.toThrow("media_unsupported");
+  snapshot.dnd = true;
+  await expect(agent.inboxSend(ORG, ACTOR, input, true, "zap")).rejects.toThrow("do_not_contact");
+  snapshot.dnd = false;
+  snapshot.messages[0]!.channel = "IG";
+  const ig = await ctx();
+  await expect(
+    agent.inboxSend(ORG, ACTOR, { ...input, revision: ig.revision }, true, "zap"),
+  ).rejects.toThrow("media_channel_unsupported");
+  expect(sendManual).not.toHaveBeenCalled();
+  expect((await counts()).d).toBe(0);
+});
+
+it("media: full 5 MiB WAV survives encrypted PostgreSQL round trip; GHL remains mocked", async () => {
+  const bytes = Buffer.alloc(5 * 1024 * 1024);
+  bytes.write("RIFF");
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write("WAVEfmt ", 8);
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(16000, 24);
+  bytes.writeUInt32LE(32000, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.writeUInt32LE(bytes.length - 44, 40);
+  bytes.write("data", 36);
+  const input = {
+    ...(await mediaInput()),
+    attachments: [
+      { name: "audio-teste.wav", mimeType: "audio/wav" as const, base64: bytes.toString("base64") },
+    ],
+  };
+  const result = await agent.inboxSend(ORG, ACTOR, input, true, "zap");
+  const [row] =
+    await db.sql`select payload,octet_length(payload) as size from commercial_agent_manual_dispatches where id=${result.manualId}`;
+  expect(row!["size"]).toBeGreaterThan(9_300_000);
+  const decoded = unseal<ManualPayload>(row!["payload"], key, `manual:${ORG}:${input.requestId}`);
+  expect(decoded.media!.attachments[0]!.base64).toBe(input.attachments[0]!.base64);
+  expect(sendManual).toHaveBeenCalledTimes(1);
+}, 20000);
 
 it("contexto de conversa sem fila/sessão é só leitura (versão virtual 0)", async () => {
   const before = await counts();
