@@ -60,7 +60,7 @@ describe("POST e recibo com rota fixada", () => {
       if (path === "conversations/messages" && init?.method === "POST")
         return { ok: true as const, status: 200, data: { conversationId: "v", messageId: "msg1" } };
       if (path === "conversations/v")
-        return { ok: true as const, status: 200, data: { conversation: { id: "v", locationId: "loc", contactId: "c" } } };
+        return { ok: true as const, status: 200, data: { id: "v", locationId: "loc", contactId: "c" } };
       if (path === "conversations/messages/msg1")
         return { ok: true as const, status: 200, data: { message: { id: "msg1", locationId: "loc", contactId: "c", conversationId: "v", direction: "outbound", body: "Olá", messageType: "TYPE_SMS", conversationProviderId: receiptProvider, status: "pending", dateAdded: "2026-10-08T11:59:59Z" } } };
       throw new Error("unexpected " + path);
