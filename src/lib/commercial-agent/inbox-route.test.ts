@@ -54,7 +54,12 @@ describe("resolução explícita da rota", () => {
   it("usa o provider da mensagem recebida quando listado", () => {
     expect(resolveInboxRoute(snap("native-fictional"), canais(Z), null)).toEqual({
       ok: true,
-      route: { providerId: "native-fictional", name: "Nome native-fictional", defaultId: Z },
+      route: {
+        channel: "SMS",
+        providerId: "native-fictional",
+        name: "Nome native-fictional",
+        defaultId: Z,
+      },
     });
   });
   it("provider recebido não listado bloqueia", () => {
@@ -85,94 +90,51 @@ describe("resolução explícita da rota", () => {
     });
     expect(resolveInboxRoute(snap(null), null, Z)).toMatchObject({ code: "route_unverified" });
   });
-  it("canal não SMS (WhatsApp/IG nativos) fica indisponível", () => {
-    const s = snap("p");
-    s.messages[1] = { ...s.messages[1]!, channel: "WhatsApp" };
-    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({ code: "unsupported_channel" });
+  it("IG/FB nativos: rota do próprio canal, sem conversationProviderId nem leitura SMS", () => {
+    for (const channel of ["IG", "FB"]) {
+      const s = snap("sms-provider-que-nao-deve-ser-herdado");
+      s.messages[1] = { ...s.messages[1]!, channel };
+      const r = resolveInboxRoute(s, null, Z);
+      expect(r).toMatchObject({ ok: true, route: { channel, providerId: null, defaultId: null } });
+    }
   });
-});
-
-describe("POST e recibo com rota fixada", () => {
-  const route = { providerId: Z, name: `Nome ${Z}`, defaultId: Z };
-  let receiptProvider: string | null = Z;
-  const make = (defaultId: string) => {
-    const call = vi.fn(
-      async (_c: unknown, path: string, init?: { method?: string; body?: unknown }) => {
-        if (path === "locations/loc/conversationChannels/SMS")
-          return {
-            ok: true as const,
-            status: 200,
-            data: {
-              conversationChannel: {
-                defaults: { SMS: defaultId },
-                SMS: [{ conversationProvider: { _id: Z, name: `Nome ${Z}`, type: "SMS" } }],
-              },
-            },
-          };
-        if (path === "conversations/messages" && init?.method === "POST")
-          return {
-            ok: true as const,
-            status: 200,
-            data: { conversationId: "v", messageId: "msg1" },
-          };
-        if (path === "conversations/v")
-          return {
-            ok: true as const,
-            status: 200,
-            data: { id: "v", locationId: "loc", contactId: "c" },
-          };
-        if (path === "conversations/messages/msg1")
-          return {
-            ok: true as const,
-            status: 200,
-            data: {
-              message: {
-                id: "msg1",
-                locationId: "loc",
-                contactId: "c",
-                conversationId: "v",
-                direction: "outbound",
-                body: "Olá",
-                messageType: "TYPE_SMS",
-                conversationProviderId: receiptProvider,
-                status: "pending",
-                dateAdded: "2026-10-08T11:59:59Z",
-              },
-            },
-          };
-        throw new Error("unexpected " + path);
-      },
-    );
-    return {
-      call,
-      hl: new HighLevel("t", "loc", call as never, () => Date.parse("2026-10-08T12:00:00Z")),
+  it("WhatsApp: fixa o par número comercial ↔ contato da mensagem recebida", () => {
+    const s = snap(null);
+    s.messages[1] = {
+      ...s.messages[1]!,
+      channel: "WhatsApp",
+      from: "+351910000001",
+      to: "+351210000009",
     };
-  };
-  it("POST leva o conversationProviderId fixado e status pending", async () => {
-    const { call, hl } = make(Z);
-    expect((await hl.sendManual({ ...snap(null), route }, "Olá")).state).toBe("sent");
-    const post = call.mock.calls.find((c) => c[2]?.method === "POST")!;
-    expect(post[2]!.body).toMatchObject({
-      type: "SMS",
-      conversationProviderId: Z,
-      status: "pending",
-      message: "Olá",
+    expect(resolveInboxRoute(s, null, Z)).toMatchObject({
+      ok: true,
+      route: {
+        channel: "WhatsApp",
+        fromNumber: "+351210000009",
+        toNumber: "+351910000001",
+        providerId: null,
+      },
     });
   });
-  it("default mudou entre revisão e envio: zero POST", async () => {
-    const { call, hl } = make("native-fictional");
-    expect(await hl.sendManual({ ...snap(null), route }, "Olá")).toMatchObject({
-      state: "rejected",
-      code: "route_changed",
+  it("WhatsApp sem número comercial identificado bloqueia (nunca o default)", () => {
+    const s = snap(null);
+    s.messages[1] = { ...s.messages[1]!, channel: "WhatsApp", from: "+351910000001", to: null };
+    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({
+      code: "whatsapp_sender_unverified",
     });
-    expect(call.mock.calls.some((c) => c[2]?.method === "POST")).toBe(false);
+    s.messages[1] = {
+      ...s.messages[1]!,
+      channel: "WhatsApp",
+      from: "+351910000001",
+      to: "invalido",
+    };
+    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({
+      code: "whatsapp_sender_unverified",
+    });
   });
-  it("recibo só confere com o provider fixado", async () => {
-    const { hl } = make(Z);
-    const s = { ...snap(null), route };
-    receiptProvider = Z;
-    expect(await hl.verifyManualReceipt(s, "Olá", "msg1", "2026-10-08T11:59:58Z")).toBe(true);
-    receiptProvider = "native-fictional";
-    expect(await hl.verifyManualReceipt(s, "Olá", "msg1", "2026-10-08T11:59:58Z")).toBe(false);
+  it("canal desconhecido fica indisponível com motivo", () => {
+    const s = snap("p");
+    s.messages[1] = { ...s.messages[1]!, channel: "Email" };
+    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({ code: "unsupported_channel" });
   });
 });

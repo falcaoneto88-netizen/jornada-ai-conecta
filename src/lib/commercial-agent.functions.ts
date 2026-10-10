@@ -132,6 +132,8 @@ export const getInboxSendContext = createServerFn({ method: "GET" })
         name: c.snapshot.name,
         channel: inbound?.channel ?? null,
         transport: r.route?.name ?? null,
+        // Canais nativos: a conexão/permissão só é validada pelo GHL no envio.
+        connectionVerifiedAtSend: r.route ? r.route.channel !== "SMS" : false,
         inboundAt: inbound?.at ?? null,
         sendAllowed: r.blockedReason === null,
         blockedReason: r.blockedReason,
@@ -150,17 +152,25 @@ const revisionSchema = z
   .object({
     historyHash: z.string().regex(/^[a-f0-9]{64}$/),
     sessionVersion: z.number().int().nonnegative(),
-    providerId: id,
+    channel: z.enum(["SMS", "IG", "FB", "WhatsApp"]),
+    providerId: id.nullable(),
     defaultId: id.nullable(),
   })
   .strict();
+/** Texto exato visível: trim só para testar vazio; nada é normalizado sem Corrigir. */
+const exactText = z
+  .string()
+  .max(1500)
+  .refine((t) => t.trim().length > 0, "empty");
 /** Envio pela caixa de entrada: um clique humano final, idempotente por requestId. */
 export const sendInboxMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    manualPrepareSchema
-      .pick({ contactId: true, conversationId: true, text: true, requestId: true })
-      .extend({ organizationId: listSchema.shape.organizationId, revision: revisionSchema }),
+    manualPrepareSchema.pick({ contactId: true, conversationId: true, requestId: true }).extend({
+      organizationId: listSchema.shape.organizationId,
+      text: exactText,
+      revision: revisionSchema,
+    }),
   )
   .handler(async ({ data, context }) => {
     const { safe, authenticatedAgent, configuredSmsProvider } =

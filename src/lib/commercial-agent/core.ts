@@ -35,6 +35,9 @@ export type Message = {
   channel: string;
   attachments: number;
   provider: string | null;
+  /** Só WhatsApp: números canónicos da mensagem (janela por par comercial ↔ contato). */
+  from?: string | null;
+  to?: string | null;
 };
 export type Snapshot = {
   event: Event;
@@ -43,7 +46,14 @@ export type Snapshot = {
   name: string;
   historyHash: string;
   /** Só a caixa de entrada fixa a rota; os outros fluxos não a usam. */
-  route?: { providerId: string; name: string; defaultId: string | null };
+  route?: {
+    channel?: "SMS" | "IG" | "FB" | "WhatsApp";
+    providerId: string | null;
+    name: string;
+    defaultId: string | null;
+    fromNumber?: string;
+    toNumber?: string;
+  };
 };
 export type DraftPayload = {
   snapshot: Snapshot;

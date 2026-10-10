@@ -89,7 +89,8 @@ it("primeiro clique prepara com a revisão e rota fixada, e envia uma vez", asyn
     "u1",
     expect.objectContaining({ expectedVersion: 3, historyHash: H }),
     true,
-    route,
+    expect.objectContaining({ ...route, channel: "SMS" }),
+    expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
   );
 });
 it("novo inbound/alteração após a revisão: zero envio", async () => {

@@ -69,7 +69,10 @@ type ManualRow = {
   dispatch_id: string | null;
   result_message_id: string | null;
   error_code: string | null;
+  created_at?: string;
 };
+/** Tempo máximo do pedido do navegador no servidor antes de qualquer escrita/POST. */
+export const INBOX_DEADLINE_MS = 20_000;
 type ManualSession = ManualConversation & {
   busy: boolean;
   lastDispatch?: ManualContext["lastDispatch"];
@@ -323,6 +326,7 @@ export class CommercialAgent {
     session: ManualSession,
     snapshot: Snapshot,
     writeEnabled: boolean,
+    channels: readonly string[] = ["SMS"],
   ): string | null {
     if (
       !this.d.enabled ||
@@ -352,7 +356,7 @@ export class CommercialAgent {
     if (!inbound) return "inbound_not_verified";
     // Only the currently homologated manual channel is enabled. AI contact and
     // channel allowlists are deliberately not extended by this permission.
-    if (inbound.channel !== "SMS") return "unsupported_channel";
+    if (!channels.includes(inbound.channel)) return "unsupported_channel";
     const age = this.now() - Date.parse(inbound.at);
     if (!Number.isFinite(age) || age < 0 || age >= 23 * 3600000) return "channel_window";
     return null;
@@ -362,7 +366,9 @@ export class CommercialAgent {
     actor: string,
     input: Pick<ManualScope, "contactId" | "conversationId">,
     writeEnabled: boolean,
+    inbox = false,
   ): Promise<ManualContext> {
+    if (inbox) return this.manualInboxContext(org, actor, input, writeEnabled);
     const session = await this.d.store.command<ManualSession>(
       "manual_context",
       org,
@@ -377,6 +383,58 @@ export class CommercialAgent {
     });
     const config = await this.d.store.command<Settings>("settings", org);
     const blockedReason = this.manualReason(config, session, snapshot, writeEnabled);
+    return {
+      snapshot,
+      sessionVersion: session.sessionVersion,
+      paused: session.paused,
+      optOut: session.optOut,
+      sendAllowed: blockedReason === null,
+      blockedReason,
+      ...(session.lastDispatch ? { lastDispatch: session.lastDispatch } : {}),
+    };
+  }
+  /**
+   * Conversa aberta na caixa de entrada sem item prévio na fila: a leitura canónica do GHL
+   * (localização vinculada, contato, conversa e mensagem recebida) vem ANTES do comando SQL,
+   * que é só leitura (sessão existente ou versão virtual 0). Não ativa a IA nem cria fila.
+   */
+  private async manualInboxContext(
+    org: string,
+    actor: string,
+    input: Pick<ManualScope, "contactId" | "conversationId">,
+    writeEnabled: boolean,
+  ): Promise<ManualContext> {
+    if (!this.d.provider.manualHistory) throw new AgentError("manual_not_configured");
+    const config = await this.d.store.command<Settings>("settings", org);
+    if (config.organization_id !== org || !config.location_id)
+      throw new AgentError("scope_mismatch");
+    const snapshot = await this.d.provider.manualHistory({
+      locationId: config.location_id,
+      contactId: input.contactId,
+      conversationId: input.conversationId,
+    });
+    if (
+      snapshot.event.locationId !== config.location_id ||
+      snapshot.event.contactId !== input.contactId ||
+      snapshot.event.conversationId !== input.conversationId
+    )
+      throw new AgentError("scope_mismatch");
+    const session = await this.d.store.command<ManualSession>(
+      "manual_inbox_context",
+      org,
+      {
+        contactId: input.contactId,
+        conversationId: input.conversationId,
+        locationId: config.location_id,
+      },
+      actor,
+    );
+    const blockedReason = this.manualReason(config, session, snapshot, writeEnabled, [
+      "SMS",
+      "IG",
+      "FB",
+      "WhatsApp",
+    ]);
     return {
       snapshot,
       sessionVersion: session.sessionVersion,
@@ -428,8 +486,13 @@ export class CommercialAgent {
     },
     writeEnabled: boolean,
     route?: InboxRoute,
+    notAfter?: string,
   ): Promise<ManualPrepared> {
-    const data = manualPrepareSchema.parse(input);
+    const parsed = manualPrepareSchema.parse(input);
+    // Caixa de entrada: texto EXATO visível (trim só para testar vazio).
+    if (route && (!input.text.trim() || input.text.length > 1500))
+      throw new AgentError("invalid_manual");
+    const data = route ? { ...parsed, text: input.text } : parsed;
     const existing = await this.d.store.command<ManualRow | null>(
       "manual_lookup",
       org,
@@ -447,7 +510,7 @@ export class CommercialAgent {
         throw new AgentError("manual_request_mismatch");
       return this.preparedManual(org, existing);
     }
-    const context = await this.manualContext(org, actor, data, writeEnabled);
+    const context = await this.manualContext(org, actor, data, writeEnabled, !!route);
     if (context.blockedReason) throw new AgentError(context.blockedReason);
     if (context.sessionVersion !== data.expectedVersion) throw new AgentError("version_conflict");
     if (context.snapshot.historyHash !== data.historyHash) throw new AgentError("draft_stale");
@@ -458,10 +521,12 @@ export class CommercialAgent {
       snapshot: route ? { ...context.snapshot, route } : context.snapshot,
       text: data.text,
     };
+    if (route && route.channel !== inbound.channel) throw new AgentError("route_changed");
     const row = await this.d.store.command<ManualRow>(
-      "manual_prepare",
+      route ? "manual_inbox_prepare" : "manual_prepare",
       org,
       {
+        ...(route ? { notAfter } : {}),
         contactId: data.contactId,
         conversationId: data.conversationId,
         locationId: context.snapshot.event.locationId,
@@ -487,6 +552,7 @@ export class CommercialAgent {
     actor: string,
     input: { manualId: string; replyHash: string },
     writeEnabled: boolean,
+    notAfter?: string,
   ) {
     const data = manualSendSchema.parse(input);
     const row = await this.d.store.command<ManualRow>("manual_detail", org, data, actor);
@@ -503,6 +569,8 @@ export class CommercialAgent {
       actor,
       { contactId: row.contact_id, conversationId: row.conversation_id },
       writeEnabled,
+      // Só a caixa de entrada fixa rota: usa o contexto compatível (sem o gate da fila).
+      !!payload.snapshot.route,
     );
     if (context.blockedReason) throw new AgentError(context.blockedReason);
     if (
@@ -515,7 +583,11 @@ export class CommercialAgent {
     const claimed = await this.d.store.command<ManualRow>(
       "manual_start_send",
       org,
-      { ...data, historyHash: context.snapshot.historyHash },
+      {
+        ...data,
+        historyHash: context.snapshot.historyHash,
+        ...(notAfter ? { notAfter } : {}),
+      },
       actor,
     );
     // A concurrent confirmation may already own or have finished this dispatch.
@@ -571,6 +643,11 @@ export class CommercialAgent {
   }
   /** Rota explícita verificada para a caixa de entrada; nunca o default implícito. */
   async inboxRoute(snapshot: Snapshot, configuredProviderId: string | null) {
+    const inbound = snapshot.messages.find(
+      (m) => m.id === snapshot.event.messageId && m.direction === "inbound",
+    );
+    // Fornecedores SMS só são lidos para SMS; canais nativos não usam conversationProviderId.
+    if (inbound?.channel !== "SMS") return resolveInboxRoute(snapshot, null, configuredProviderId);
     if (!this.d.provider.smsChannels) return { ok: false as const, code: "route_unverified" };
     return resolveInboxRoute(snapshot, await this.d.provider.smsChannels(), configuredProviderId);
   }
@@ -582,7 +659,7 @@ export class CommercialAgent {
     writeEnabled: boolean,
     configuredProviderId: string | null,
   ) {
-    const context = await this.manualContext(org, actor, input, writeEnabled);
+    const context = await this.manualContext(org, actor, input, writeEnabled, true);
     const route = await this.inboxRoute(context.snapshot, configuredProviderId);
     const blockedReason = context.blockedReason ?? (route.ok ? null : route.code);
     return {
@@ -592,12 +669,17 @@ export class CommercialAgent {
       revision: {
         historyHash: context.snapshot.historyHash,
         sessionVersion: context.sessionVersion,
+        channel: route.ok ? route.route.channel : null,
         providerId: route.ok ? route.route.providerId : null,
         defaultId: route.ok ? route.route.defaultId : null,
       },
     };
   }
-  /** Leitura do estado durável de um pedido (recuperação após falha do navegador). */
+  /**
+   * Leitura do estado durável de um pedido (recuperação após falha do navegador).
+   * `null` NÃO prova que nada foi enviado: o pedido original pode ainda estar em curso.
+   * O cliente só liberta após o prazo do servidor (INBOX_DEADLINE_MS) ter passado com folga.
+   */
   async inboxStatus(org: string, actor: string, requestId: string) {
     const row = await this.d.store.command<ManualRow | null>(
       "manual_lookup",
@@ -614,12 +696,17 @@ export class CommercialAgent {
       messageId: row.result_message_id,
       contactId: row.contact_id,
       conversationId: row.conversation_id,
+      expiresAt: row.expires_at,
     };
+  }
+  private async lookupOwn(org: string, actor: string, requestId: string) {
+    return this.d.store.command<ManualRow | null>("manual_lookup", org, { requestId }, actor);
   }
   /**
    * One human click from the GHL inbox: prepare + send through the durable manual ledger.
    * The requestId is the idempotency key; a repeated request never issues a second POST.
    * The reviewed revision is required and re-checked; it is never silently renewed.
+   * A conversa não precisa de item prévio na fila; a sessão ausente é criada já pausada.
    */
   async inboxSend(
     org: string,
@@ -632,7 +719,8 @@ export class CommercialAgent {
       revision: {
         historyHash: string;
         sessionVersion: number;
-        providerId: string;
+        channel?: string | null;
+        providerId: string | null;
         defaultId: string | null;
       };
     },
@@ -640,23 +728,22 @@ export class CommercialAgent {
     configuredProviderId: string | null,
   ): Promise<{ state: string; code: string | null; messageId: string | null; manualId: string }> {
     const { revision, ...scope } = input;
-    const existing = await this.d.store.command<ManualRow | null>(
-      "manual_lookup",
-      org,
-      { requestId: input.requestId },
-      actor,
-    );
-    let row = existing;
-    if (row) {
-      const old = this.manualPayload(org, row);
+    // Prazo duro: nenhuma reserva nem POST depois dele (aplicado também no SQL, em now()).
+    const notAfter = new Date(this.now() + INBOX_DEADLINE_MS).toISOString();
+    const late = () => this.now() > Date.parse(notAfter);
+    let row = await this.lookupOwn(org, actor, input.requestId);
+    const same = (r: ManualRow) => {
+      const old = this.manualPayload(org, r);
       if (
-        row.prepared_by !== actor ||
-        row.contact_id !== input.contactId ||
-        row.conversation_id !== input.conversationId ||
-        old.text !== input.text.trim()
+        r.prepared_by !== actor ||
+        r.contact_id !== input.contactId ||
+        r.conversation_id !== input.conversationId ||
+        old.text !== input.text
       )
         throw new AgentError("manual_request_mismatch");
-    } else {
+    };
+    if (row) same(row);
+    else {
       const fresh = await this.inboxContext(org, actor, scope, writeEnabled, configuredProviderId);
       if (fresh.blockedReason) throw new AgentError(fresh.blockedReason);
       if (
@@ -667,12 +754,14 @@ export class CommercialAgent {
       if (
         !fresh.route ||
         !sameRoute(fresh.route, {
+          ...fresh.route,
+          channel: (revision.channel ?? "SMS") as InboxRoute["channel"],
           providerId: revision.providerId,
-          name: fresh.route.name,
           defaultId: revision.defaultId,
         })
       )
         throw new AgentError("route_changed");
+      if (late()) throw new AgentError("request_expired");
       try {
         const prepared = await this.manualPrepare(
           org,
@@ -684,6 +773,7 @@ export class CommercialAgent {
           },
           writeEnabled,
           fresh.route,
+          notAfter,
         );
         row = await this.d.store.command<ManualRow>(
           "manual_detail",
@@ -693,14 +783,11 @@ export class CommercialAgent {
         );
       } catch (e) {
         // A concurrent request with the same key may have already prepared/claimed it.
-        if (!(e instanceof AgentError) || e.code !== "manual_request_used") throw e;
-        row = await this.d.store.command<ManualRow | null>(
-          "manual_lookup",
-          org,
-          { requestId: input.requestId },
-          actor,
-        );
-        if (!row) throw e;
+        if (!(e instanceof AgentError)) throw e;
+        const again = await this.lookupOwn(org, actor, input.requestId);
+        if (!again) throw e;
+        same(again);
+        row = again;
       }
     }
     if (row.state !== "prepared")
@@ -713,13 +800,16 @@ export class CommercialAgent {
     // Rota fixada na revisão: revalidar antes de reclamar o envio.
     const pinned = this.manualPayload(org, row).snapshot;
     if (!pinned.route) throw new AgentError("route_unverified");
+    const pinnedRoute: InboxRoute = { channel: "SMS", ...pinned.route };
     const now = await this.inboxRoute(pinned, configuredProviderId);
-    if (!now.ok || !sameRoute(now.route, pinned.route)) throw new AgentError("route_changed");
+    if (!now.ok || !sameRoute(now.route, pinnedRoute)) throw new AgentError("route_changed");
+    if (late()) throw new AgentError("request_expired");
     const result = await this.manualSend(
       org,
       actor,
       { manualId: row.id, replyHash: row.reply_hash },
       writeEnabled,
+      notAfter,
     );
     return { ...result, manualId: row.id };
   }

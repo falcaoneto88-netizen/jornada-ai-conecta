@@ -166,6 +166,8 @@ const manualMessageSchema = z.object({
   attachments: z.array(z.unknown()).optional(),
   contentType: z.string().nullish(),
   conversationProviderId: id.nullish(),
+  from: z.string().max(40).nullish(),
+  to: z.string().max(40).nullish(),
 });
 const manualReceiptSchema = manualMessageSchema.extend({
   locationId: id,
@@ -414,6 +416,11 @@ export class HighLevel {
           channel: normalizeChannel(type),
           attachments: raw.attachments?.length ?? 0,
           provider: raw.conversationProviderId ?? null,
+          // Só WhatsApp guarda os números (rota por par comercial ↔ contato); os outros
+          // canais mantêm a forma anterior e o mesmo historyHash.
+          ...(normalizeChannel(type) === "WhatsApp"
+            ? { from: raw.from ?? null, to: raw.to ?? null }
+            : {}),
         };
         const fingerprint = sha(
           JSON.stringify([
@@ -495,16 +502,20 @@ export class HighLevel {
   async sendManual(snapshot: Snapshot, text: string) {
     const inbound = this.manualRoute(snapshot);
     const route = snapshot.route;
-    if (route) {
+    if (route && (route.channel ?? "SMS") !== inbound.channel)
+      return { state: "rejected" as const, code: "route_changed", messageId: null };
+    if (route && (route.channel ?? "SMS") === "SMS") {
       // Revalidação imediatamente antes do POST: mudança de rota/default bloqueia sem POST.
       const fresh = await this.smsChannels();
       if (
         !fresh ||
+        !route.providerId ||
         fresh.providers.get(route.providerId) !== route.name ||
         fresh.defaultId !== route.defaultId
       )
         return { state: "rejected" as const, code: "route_changed", messageId: null };
     }
+    // Canais nativos nunca herdam conversationProviderId de outro transporte.
     const routed = route ? { ...inbound, provider: route.providerId } : inbound;
     try {
       const result = await this.send({ ...snapshot, messages: [routed] }, text);
@@ -541,8 +552,10 @@ export class HighLevel {
       receipt.direction === "outbound" &&
       receipt.body === text &&
       normalizeChannel(kind) === inbound.channel &&
-      (receipt.conversationProviderId ?? null) ===
-        (snapshot.route?.providerId ?? inbound.provider) &&
+      (snapshot.route && !snapshot.route.providerId
+        ? true
+        : (receipt.conversationProviderId ?? null) ===
+          (snapshot.route?.providerId ?? inbound.provider)) &&
       ["pending", "sent", "delivered", "read"].includes(receipt.status) &&
       at - approved >= -5000 &&
       at - approved <= 300000
@@ -560,6 +573,13 @@ export class HighLevel {
       status: "pending",
     };
     if (last.provider) body["conversationProviderId"] = last.provider;
+    const pinned = snapshot.route;
+    if (pinned?.channel === "WhatsApp") {
+      if (!pinned.fromNumber || !pinned.toNumber)
+        return { state: "rejected" as const, code: "whatsapp_sender_unverified", messageId: null };
+      body["fromNumber"] = pinned.fromNumber;
+      body["toNumber"] = pinned.toNumber;
+    }
     const r = await this.call(
       { token: this.token, locationId: this.location, baseUrl: GHL_ORIGIN, version: GHL_VERSION },
       "conversations/messages",

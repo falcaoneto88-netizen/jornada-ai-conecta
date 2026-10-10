@@ -113,6 +113,13 @@
       "when": 1791476627470,
       "tag": "0015_n8n_bridge_pilot_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791594426189,
+      "tag": "0016_commercial_agent_manual_inbox",
+      "breakpoints": true
     }
   ]
 }
