@@ -344,8 +344,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           )
             mudarEnvio({
               estado: "incerto",
-              requestId:
-                envioRef.current.estado === "incerto" ? envioRef.current.requestId : null,
+              requestId: envioRef.current.estado === "incerto" ? envioRef.current.requestId : null,
               manualId: ultimo.id,
             });
         } else {
@@ -563,7 +562,10 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
             size="sm"
             variant="ghost"
             disabled={result.isFetching}
-            onClick={() => void result.refetch()}
+            onClick={() => {
+              setTick((t) => t + 1);
+              void result.refetch();
+            }}
           >
             <RefreshCw className="size-4" /> Atualizar
           </Button>
@@ -700,7 +702,12 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
                 <article key={s.tom} className="rounded-xl border border-border p-3">
                   <Badge variant="outline">{s.tom}</Badge>
                   <p className="my-3 text-sm">{s.texto}</p>
-                  <Button size="sm" variant="outline" onClick={() => editar(s.texto)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={enviando}
+                    onClick={() => editar(s.texto)}
+                  >
                     Usar rascunho
                   </Button>
                 </article>
@@ -715,19 +722,46 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           id="rascunho-ghl"
           value={rascunho}
           onChange={(e) => editar(e.target.value)}
-          readOnly={envio.estado === "a_enviar"}
-          aria-busy={envio.estado === "a_enviar"}
-          maxLength={1500}
+          readOnly={enviando}
+          disabled={enviando}
+          aria-busy={enviando}
+          aria-describedby="rascunho-contador"
           rows={4}
         />
+        <p
+          id="rascunho-contador"
+          className={`text-xs ${rascunho.trim().length > LIMITE ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          {rascunho.trim().length}/{LIMITE} caracteres
+          {rascunho.trim().length > LIMITE ? " · reduza o texto para poder corrigir ou enviar" : ""}
+        </p>
         <p className="text-xs text-muted-foreground">
           Destinatário: {destino?.name ?? conversa.nome} · Canal:{" "}
-          {destino?.channel ?? "a verificar no GHL"}
+          {destino?.channel ?? "não verificado"} · Transporte:{" "}
+          {destino?.transport ?? "não verificado"}
         </p>
+        {revisaoMudou && (
+          <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
+            <p>
+              A conversa ou a rota de envio mudou desde que começou a rever. Confira as mensagens
+              novas antes de enviar; nada foi enviado.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={enviando}
+              onClick={() =>
+                destino?.revision.providerId && setReferencia(destino.revision as Revisao)
+              }
+            >
+              Conferi as mensagens novas
+            </Button>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={!rascunho.trim() || corrigindo || envio.estado === "a_enviar"}
+            disabled={!rascunho.trim() || corrigindo || enviando || rascunho.length > LIMITE}
             onClick={() => void corrigir()}
           >
             <SpellCheck className="size-4" /> {corrigindo ? "A corrigir…" : "Corrigir"}
@@ -736,14 +770,16 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
             disabled={
               !rascunho.trim() ||
               corrigindo ||
-              envio.estado === "a_enviar" ||
+              enviando ||
+              envio.estado === "incerto" ||
               !destino?.sendAllowed ||
-              rascunho.trim().length > 1500
+              !referencia ||
+              revisaoMudou ||
+              rascunho.trim().length > LIMITE
             }
             onClick={() => void enviar()}
           >
-            <Send className="size-4" />{" "}
-            {envio.estado === "a_enviar" ? "A enviar…" : `Enviar para ${conversa.nome}`}
+            <Send className="size-4" /> {enviando ? "A enviar…" : `Enviar para ${conversa.nome}`}
           </Button>
         </div>
         {aviso && (
@@ -766,8 +802,16 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
             <p>
               Resultado do envio não confirmado. Não repita: confira a conversa no GHL. O texto foi
-              mantido.
+              mantido e novos envios ficam bloqueados até o estado ser recuperado.
             </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={conferindo}
+              onClick={() => void verificarEstado()}
+            >
+              Verificar estado do envio
+            </Button>
             {envio.manualId && (
               <div className="flex flex-wrap gap-2">
                 <Input
@@ -781,7 +825,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={!/^[A-Za-z0-9_-]{1,100}$/.test(recibo.trim())}
+                  disabled={conferindo || !/^[A-Za-z0-9_-]{1,100}$/.test(recibo.trim())}
                   onClick={() => void conferir()}
                 >
                   Conferir no GHL

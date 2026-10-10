@@ -115,9 +115,8 @@ export const getInboxSendContext = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator(manualScopeSchema.extend({ organizationId: listSchema.shape.organizationId }))
   .handler(async ({ data, context }) => {
-    const { safe, authenticatedAgent, configuredSmsProvider } = await import(
-      "./commercial-agent/runtime.server"
-    );
+    const { safe, authenticatedAgent, configuredSmsProvider } =
+      await import("./commercial-agent/runtime.server");
     return safe(async () => {
       const { agent, actor, writeEnabled } = await authenticatedAgent(context, data.organizationId);
       const r = await agent.inboxContext(
@@ -138,7 +137,11 @@ export const getInboxSendContext = createServerFn({ method: "GET" })
         blockedReason: r.blockedReason,
         revision: r.revision,
         lastDispatch: c.lastDispatch
-          ? { id: c.lastDispatch.id, state: c.lastDispatch.state, messageId: c.lastDispatch.messageId }
+          ? {
+              id: c.lastDispatch.id,
+              state: c.lastDispatch.state,
+              messageId: c.lastDispatch.messageId,
+            }
           : null,
       };
     });
@@ -160,9 +163,8 @@ export const sendInboxMessage = createServerFn({ method: "POST" })
       .extend({ organizationId: listSchema.shape.organizationId, revision: revisionSchema }),
   )
   .handler(async ({ data, context }) => {
-    const { safe, authenticatedAgent, configuredSmsProvider } = await import(
-      "./commercial-agent/runtime.server"
-    );
+    const { safe, authenticatedAgent, configuredSmsProvider } =
+      await import("./commercial-agent/runtime.server");
     return safe(async () => {
       const { agent, actor, writeEnabled } = await authenticatedAgent(context, data.organizationId);
       const { organizationId, ...input } = data;
