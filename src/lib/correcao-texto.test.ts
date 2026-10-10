@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { corrigirTexto, violacoesInvariantes } from "./correcao-texto.core";
 
 const resp = (content: unknown, status = 200) =>
