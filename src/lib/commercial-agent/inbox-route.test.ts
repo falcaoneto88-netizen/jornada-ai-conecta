@@ -52,12 +52,17 @@ describe("resolução explícita da rota", () => {
 
 describe("POST e recibo com rota fixada", () => {
   const route = { providerId: Z, name: `Nome ${Z}`, defaultId: Z };
+  let receiptProvider: string | null = Z;
   const make = (defaultId: string) => {
     const call = vi.fn(async (_c: unknown, path: string, init?: { method?: string; body?: unknown }) => {
       if (path === "locations/loc/conversationChannels/SMS")
         return { ok: true as const, status: 200, data: { conversationChannel: { defaults: { SMS: defaultId }, SMS: [{ conversationProvider: { _id: Z, name: `Nome ${Z}`, type: "SMS" } }] } } };
       if (path === "conversations/messages" && init?.method === "POST")
         return { ok: true as const, status: 200, data: { conversationId: "v", messageId: "msg1" } };
+      if (path === "conversations/v")
+        return { ok: true as const, status: 200, data: { conversation: { id: "v", locationId: "loc", contactId: "c" } } };
+      if (path === "conversations/messages/msg1")
+        return { ok: true as const, status: 200, data: { message: { id: "msg1", locationId: "loc", contactId: "c", conversationId: "v", direction: "outbound", body: "Olá", messageType: "TYPE_SMS", conversationProviderId: receiptProvider, status: "pending", dateAdded: "2026-10-08T11:59:59Z" } } };
       throw new Error("unexpected " + path);
     });
     return { call, hl: new HighLevel("t", "loc", call as never, () => Date.parse("2026-10-08T12:00:00Z")) };
@@ -72,5 +77,13 @@ describe("POST e recibo com rota fixada", () => {
     const { call, hl } = make("native-fictional");
     expect(await hl.sendManual({ ...snap(null), route }, "Olá")).toMatchObject({ state: "rejected", code: "route_changed" });
     expect(call.mock.calls.some((c) => c[2]?.method === "POST")).toBe(false);
+  });
+  it("recibo só confere com o provider fixado", async () => {
+    const { hl } = make(Z);
+    const s = { ...snap(null), route };
+    receiptProvider = Z;
+    expect(await hl.verifyManualReceipt(s, "Olá", "msg1", "2026-10-08T11:59:58Z")).toBe(true);
+    receiptProvider = "native-fictional";
+    expect(await hl.verifyManualReceipt(s, "Olá", "msg1", "2026-10-08T11:59:58Z")).toBe(false);
   });
 });
