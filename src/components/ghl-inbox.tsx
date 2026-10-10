@@ -515,7 +515,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
             .join("\n")
             .slice(-4000)}
           nome={conversa.nome}
-          usarRascunho={setRascunho}
+          usarRascunho={editar}
         />
       )}
       <div className="surface-card space-y-4 p-5">
@@ -532,8 +532,8 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          O rascunho é temporário e exclusivo desta conversa. O envio deve ser feito no atendimento
-          do GHL; o canal/provedor de envio pelo app ainda não foi homologado.
+          O rascunho é temporário e exclusivo desta conversa. Corrigir é opcional; Enviar usa o
+          canal verificado no servidor e fica indisponível quando não há garantia.
         </p>
         {erroIA && (
           <p role="alert" className="text-sm text-destructive">
@@ -558,7 +558,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
                 <article key={s.tom} className="rounded-xl border border-border p-3">
                   <Badge variant="outline">{s.tom}</Badge>
                   <p className="my-3 text-sm">{s.texto}</p>
-                  <Button size="sm" variant="outline" onClick={() => setRascunho(s.texto)}>
+                  <Button size="sm" variant="outline" onClick={() => editar(s.texto)}>
                     Usar rascunho
                   </Button>
                 </article>
