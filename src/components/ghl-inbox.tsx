@@ -407,14 +407,84 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
         <Textarea
           id="rascunho-ghl"
           value={rascunho}
-          onChange={(e) => setRascunho(e.target.value)}
+          onChange={(e) => editar(e.target.value)}
+          readOnly={envio.estado === "a_enviar"}
+          aria-busy={envio.estado === "a_enviar"}
+          maxLength={1500}
           rows={4}
         />
-        <Button disabled={!rascunho.trim()} variant="outline" onClick={() => void copiar(rascunho)}>
-          <Copy className="size-4" /> Copiar rascunho
-        </Button>
         <p className="text-xs text-muted-foreground">
-          Reveja destinatário e conteúdo no GHL. A IA não faz diagnósticos.
+          Destinatário: {destino?.name ?? conversa.nome} · Canal:{" "}
+          {destino?.channel ?? "a verificar no GHL"}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={!rascunho.trim() || corrigindo || envio.estado === "a_enviar"}
+            onClick={() => void corrigir()}
+          >
+            <SpellCheck className="size-4" /> {corrigindo ? "A corrigir…" : "Corrigir"}
+          </Button>
+          <Button
+            disabled={
+              !rascunho.trim() ||
+              corrigindo ||
+              envio.estado === "a_enviar" ||
+              !destino?.sendAllowed ||
+              rascunho.trim().length > 1500
+            }
+            onClick={() => void enviar()}
+          >
+            <Send className="size-4" />{" "}
+            {envio.estado === "a_enviar" ? "A enviar…" : `Enviar para ${conversa.nome}`}
+          </Button>
+        </div>
+        {aviso && (
+          <p role="status" className="text-sm">
+            {aviso}
+          </p>
+        )}
+        {erroDestino && (
+          <p role="alert" className="text-sm text-destructive">
+            {erroDestino}
+          </p>
+        )}
+        {envio.estado === "aceite" && (
+          <p role="status" className="text-sm">
+            Mensagem aceite pelo GHL (ID {envio.messageId}). A entrega só fica comprovada quando o
+            estado da mensagem no histórico mudar para entregue.
+          </p>
+        )}
+        {envio.estado === "incerto" && (
+          <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
+            <p>
+              Resultado do envio não confirmado. Não repita: confira a conversa no GHL. O texto foi
+              mantido.
+            </p>
+            {envio.manualId && (
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  aria-label="ID da mensagem encontrada no GHL"
+                  placeholder="ID da mensagem no GHL"
+                  maxLength={100}
+                  value={recibo}
+                  onChange={(e) => setRecibo(e.target.value)}
+                  className="max-w-xs"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!/^[A-Za-z0-9_-]{1,100}$/.test(recibo.trim())}
+                  onClick={() => void conferir()}
+                >
+                  Conferir no GHL
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Enviar envia exatamente o texto visível. A IA não faz diagnósticos.
         </p>
       </div>
     </section>
