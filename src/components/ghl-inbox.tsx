@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { ExternalLink, RefreshCw, Send, Sparkles, SpellCheck } from "lucide-react";
+import {
+  ExternalLink,
+  Mic,
+  Paperclip,
+  RefreshCw,
+  Send,
+  Sparkles,
+  SpellCheck,
+  Square,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -20,6 +30,7 @@ import {
 } from "@/lib/commercial-agent.functions";
 import { JevPedido } from "@/components/jev-pedido";
 import { JevMensagem } from "@/components/jev-mensagem";
+import { useInboxMedia, type InboxAttachment } from "@/components/inbox-media";
 
 type EstadoEnvio =
   | { estado: "livre" }
@@ -44,6 +55,7 @@ type DestinoEnvio = {
   channel: string | null;
   transport: string | null;
   sendAllowed: boolean;
+  mediaAllowed: boolean;
   blockedReason: string | null;
   revision: Omit<Revisao, "channel"> & { channel: Revisao["channel"] | null };
   connectionVerifiedAtSend?: boolean;
@@ -110,6 +122,12 @@ const ANTES_DO_ENVIO = new Set([
   "not_configured",
   "manual_not_configured",
   "encryption_not_configured",
+  "media_invalid",
+  "media_too_large",
+  "media_unsupported",
+  "media_channel_unsupported",
+  "media_expired",
+  "media_not_configured",
 ]);
 
 const ERROS_ENVIO: Record<string, string> = {
@@ -149,6 +167,14 @@ const ERROS_ENVIO: Record<string, string> = {
     "O fornecedor de envio é ambíguo (difere do padrão da subconta). Envio bloqueado.",
   route_changed: "A rota de envio mudou desde a revisão. Nada foi enviado.",
   revision_changed: "A conversa mudou desde a revisão. Nada foi enviado.",
+  media_invalid: "O anexo não é válido. Escolha outro arquivo; nada foi enviado.",
+  media_too_large: "O anexo deve ter no máximo 5 MB. Nada foi enviado.",
+  media_unsupported:
+    "Formato de anexo não suportado. Escolha uma imagem JPG, PNG ou GIF, ou áudio MP3, WAV, OGG, M4A ou AAC.",
+  media_channel_unsupported:
+    "Anexos estão disponíveis apenas na rota SMS com fornecedor identificado, como o Zaptos. Use o GHL para este canal.",
+  media_expired: "O anexo expirou antes do envio. Selecione o arquivo novamente.",
+  media_not_configured: "O envio de anexos ainda não está configurado nesta clínica.",
 };
 const erroEnvio = (code: string) =>
   ERROS_ENVIO[code] ?? "Não foi possível enviar. O texto foi mantido.";
@@ -344,6 +370,13 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   const chavePendente = `${orgId}:${conversa.contactId}:${conversa.id}`;
   // Estado síncrono do envio: bloqueia entradas e duplo clique antes do re-render.
   const envioRef = useRef<EstadoEnvio>(envio);
+  const anexoEmEnvio = useRef<{ requestId: string; attachment: InboxAttachment } | null>(null);
+  const media = useInboxMedia(() => {
+    revisao.current += 1;
+    setAviso(null);
+    if (envioRef.current.estado === "aceite") mudarEnvio({ estado: "livre" });
+  });
+  const arquivoInput = useRef<HTMLInputElement | null>(null);
   function mudarEnvio(e: EstadoEnvio) {
     envioRef.current = e;
     setEnvio(e);
@@ -491,15 +524,18 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   async function enviar() {
     const atual = envioRef.current.estado;
     // Incerto nunca envia: só verificação de leitura. Nenhuma retomada de texto oculto.
-    if (atual === "a_enviar" || atual === "incerto" || !orgId) return;
+    if (atual === "a_enviar" || atual === "incerto" || !orgId || media.isBusy()) return;
     // Texto EXATO visível no campo agora: trim só para testar vazio.
     const texto = rascunho;
     const revisaoEnvio = referencia;
     if (!revisaoEnvio || !destino?.sendAllowed || revisaoMudou) return;
-    if (!texto.trim() || texto.length > LIMITE) return;
+    const attachments = media.snapshot();
+    if ((!texto.trim() && attachments.length === 0) || texto.length > LIMITE) return;
+    if (attachments.length && !mediaPermitida) return;
     if (!pedido.current || pedido.current.rev !== revisao.current)
       pedido.current = { rev: revisao.current, id: crypto.randomUUID() };
     const requestId = pedido.current.id;
+    anexoEmEnvio.current = attachments[0] ? { requestId, attachment: attachments[0] } : null;
     const rev = revisao.current;
     const desde = Date.now();
     // Intenção gravada ANTES da chamada: um recarregamento a meio não liberta novo envio.
@@ -515,6 +551,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           contactId: conversa.contactId,
           conversationId: conversa.id,
           text: texto,
+          ...(attachments.length ? { attachments } : {}),
           requestId,
           revision: revisaoEnvio,
         },
@@ -542,6 +579,20 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (vivo.current) incerto(null);
     }
   }
+  function limparAnexoEnviado(requestId: string | null) {
+    const enviado = anexoEmEnvio.current;
+    const atual = media.snapshot()[0];
+    if (
+      enviado &&
+      enviado.requestId === requestId &&
+      atual &&
+      enviado.attachment.name === atual.name &&
+      enviado.attachment.mimeType === atual.mimeType &&
+      enviado.attachment.base64 === atual.base64
+    )
+      media.clearAfterSend();
+    anexoEmEnvio.current = null;
+  }
   function aplicarEstado(
     state: string,
     messageId: string | null,
@@ -553,6 +604,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   ) {
     if (state === "sent" && messageId) {
       mudarEnvio({ estado: "aceite", messageId });
+      limparAnexoEnviado(requestId);
       pedido.current = null;
       // Só limpa se ninguém editou depois da captura.
       if (rev !== null && revisao.current === rev) {
@@ -633,6 +685,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (!vivo.current) return;
       if (r.ok) {
         mudarEnvio({ estado: "aceite", messageId: recibo.trim() });
+        limparAnexoEnviado(e.requestId);
         setRecibo("");
         setTick((t) => t + 1);
         void result.refetch();
@@ -644,6 +697,11 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     }
   }
   const enviando = envio.estado === "a_enviar";
+  const mediaPermitida =
+    destino?.mediaAllowed === true &&
+    destino.channel === "SMS" &&
+    Boolean(destino.revision?.providerId);
+  const mediaBloqueada = enviando || envio.estado === "incerto";
   const url = `https://app.gohighlevel.com/v2/location/${conversa.locationId}/contacts/detail/${conversa.contactId}`;
   return (
     <section className="min-w-0 space-y-4" aria-label={`Atendimento de ${conversa.nome}`}>
@@ -843,6 +901,141 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           {rascunho.length}/{LIMITE} caracteres
           {rascunho.length > LIMITE ? " · reduza o texto para poder corrigir ou enviar" : ""}
         </p>
+        <div
+          className="space-y-3 rounded-xl border border-border p-4"
+          aria-label="Anexo da resposta"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={arquivoInput}
+              type="file"
+              aria-label="Selecionar imagem ou áudio"
+              className="sr-only"
+              accept="image/jpeg,image/png,image/gif,audio/mpeg,audio/wav,audio/x-wav,audio/ogg,audio/mp4,audio/x-m4a,audio/aac,.jpg,.jpeg,.png,.gif,.mp3,.wav,.ogg,.m4a,.aac"
+              disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                e.currentTarget.value = "";
+                if (
+                  file &&
+                  !mediaBloqueada &&
+                  mediaPermitida &&
+                  envioRef.current.estado !== "a_enviar" &&
+                  envioRef.current.estado !== "incerto"
+                )
+                  void media.select(file);
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
+              onClick={() => arquivoInput.current?.click()}
+            >
+              <Paperclip className="size-4" /> Anexar imagem ou áudio
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
+              onClick={() => {
+                if (envioRef.current.estado !== "a_enviar" && envioRef.current.estado !== "incerto")
+                  void media.start();
+              }}
+            >
+              <Mic className="size-4" /> Gravar áudio
+            </Button>
+            {media.state === "recording" && (
+              <>
+                <span role="status" className="text-sm">
+                  Gravando {Math.floor(media.seconds / 60)}:
+                  {String(media.seconds % 60).padStart(2, "0")} / 2:00
+                </span>
+                <Button type="button" size="sm" variant="outline" onClick={media.stop}>
+                  <Square className="size-4" /> Parar e ouvir
+                </Button>
+              </>
+            )}
+            {media.state === "permission" && (
+              <span role="status" className="text-sm">
+                Aguardando permissão do microfone…
+              </span>
+            )}
+            {media.state === "loading" && (
+              <span role="status" className="text-sm">
+                Preparando anexo…
+              </span>
+            )}
+            {media.state !== "idle" && (
+              <Button type="button" size="sm" variant="ghost" onClick={media.cancel}>
+                Cancelar preparação
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Um anexo por mensagem, até 5 MB. JPG, PNG, GIF, MP3, WAV, OGG, M4A ou AAC. Gravação de
+            até 2 minutos. Selecione, confira a prévia e clique em Enviar. Nada é enviado ao
+            selecionar ou gravar.
+          </p>
+          {!mediaPermitida && (
+            <p className="text-xs text-muted-foreground">
+              Anexos disponíveis na rota SMS com fornecedor identificado, como o Zaptos. O envio de
+              texto segue as regras do canal acima.
+            </p>
+          )}
+          {media.error && (
+            <p role="alert" className="text-sm text-destructive">
+              {media.error}
+            </p>
+          )}
+          {media.draft && (
+            <div className="space-y-3" aria-label="Prévia do anexo">
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 break-words text-sm">
+                  {media.draft.name} · {(media.draft.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={mediaBloqueada || media.state !== "idle"}
+                  onClick={() => {
+                    if (
+                      envioRef.current.estado !== "a_enviar" &&
+                      envioRef.current.estado !== "incerto"
+                    )
+                      media.remove();
+                  }}
+                >
+                  <X className="size-4" /> Remover anexo
+                </Button>
+              </div>
+              {media.draft.kind === "image" ? (
+                <img
+                  src={media.draft.url}
+                  alt={`Prévia de ${media.draft.name}`}
+                  className="max-h-64 max-w-full rounded-lg object-contain"
+                />
+              ) : (
+                <>
+                  <audio
+                    src={media.draft.url}
+                    controls
+                    preload="metadata"
+                    className="w-full"
+                    aria-label="Ouvir áudio antes de enviar"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    O áudio será enviado como anexo. A aparência da mensagem depende do canal e do
+                    fornecedor.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
           Destinatário: {destino?.name ?? conversa.nome} · Canal:{" "}
           {destino?.channel ?? "não verificado"} · Transporte:{" "}
@@ -881,9 +1074,11 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           </Button>
           <Button
             disabled={
-              !rascunho.trim() ||
+              (!rascunho.trim() && !media.draft) ||
               corrigindo ||
               enviando ||
+              media.state !== "idle" ||
+              (Boolean(media.draft) && !mediaPermitida) ||
               envio.estado === "incerto" ||
               !destino?.sendAllowed ||
               !referencia ||
@@ -948,7 +1143,8 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Enviar envia exatamente o texto visível. A IA não faz diagnósticos.
+          Confira o destinatário, o canal, o texto e o anexo antes de enviar. Enviar usa exatamente
+          o conteúdo visível. A IA não faz diagnósticos.
         </p>
       </div>
     </section>

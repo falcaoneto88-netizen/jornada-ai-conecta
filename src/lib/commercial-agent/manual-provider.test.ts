@@ -79,6 +79,90 @@ function fixture(pages: unknown[] = [page([humanReply, incoming])]) {
   return { provider, call, data, resetPages };
 }
 
+it("media manual: POST has attachments on the pinned custom SMS provider, never uploads or retries", async () => {
+  const f = fixture();
+  const snapshot = await f.provider.manualHistory(scope);
+  snapshot.route = {
+    channel: "SMS",
+    providerId: incoming.conversationProviderId,
+    defaultId: incoming.conversationProviderId,
+    name: "Zaptos",
+  };
+  vi.spyOn(f.provider, "smsChannels").mockResolvedValue({
+    defaultId: incoming.conversationProviderId,
+    providers: new Map([[incoming.conversationProviderId, "Zaptos"]]),
+  });
+  const urls = [
+    "https://jornada-ai-conecta.lovable.app/api/public/commercial-agent-media/fictitious.png?index=0&token=fictitious-capability",
+  ];
+  f.call.mockClear();
+  expect(await f.provider.sendManual(snapshot, "", urls)).toMatchObject({
+    state: "sent",
+    messageId: receipt.id,
+  });
+  expect(f.call).toHaveBeenCalledTimes(1);
+  expect(f.call.mock.calls[0]![1]).toBe("conversations/messages");
+  expect(f.call.mock.calls[0]![2]).toEqual({
+    method: "POST",
+    body: {
+      type: "SMS",
+      contactId: scope.contactId,
+      replyMessageId: incoming.id,
+      message: "",
+      status: "pending",
+      conversationProviderId: incoming.conversationProviderId,
+      attachments: urls,
+    },
+  });
+  f.call.mockClear();
+  f.call.mockResolvedValueOnce({
+    ok: false,
+    status: 504,
+    code: "outcome_unknown",
+    message: "fake",
+  });
+  expect(await f.provider.sendManual(snapshot, "", urls)).toMatchObject({ state: "unknown" });
+  expect(f.call).toHaveBeenCalledTimes(1);
+});
+
+it("media manual: native/ambiguous transports cause zero POST", async () => {
+  const f = fixture();
+  const snapshot = await f.provider.manualHistory(scope);
+  f.call.mockClear();
+  for (const channel of ["SMS", "IG", "FB", "WhatsApp"] as const) {
+    snapshot.messages[0]!.channel = channel;
+    snapshot.route = { channel, providerId: null, defaultId: null, name: "Unproved" };
+    expect(
+      await f.provider.sendManual(snapshot, "", ["https://fictitious.invalid/a.wav"]),
+    ).toMatchObject({ state: "rejected", code: "media_channel_unsupported" });
+  }
+  expect(f.call).not.toHaveBeenCalled();
+});
+
+it("media manual reconciliation requires identical attachment URLs, including audio without body", async () => {
+  const f = fixture();
+  const snapshot = await f.provider.manualHistory(scope);
+  const urls = [
+    "https://jornada-ai-conecta.lovable.app/api/public/commercial-agent-media/fictitious.wav?index=0&token=fictitious-capability",
+  ];
+  f.data.receipt = { ...receipt, body: undefined, attachments: urls };
+  expect(
+    await f.provider.verifyManualReceipt(snapshot, "", receipt.id, "2026-10-08T12:02:00Z", urls),
+  ).toBe(true);
+  f.data.receipt = { ...receipt, body: "", attachments: [] };
+  expect(
+    await f.provider.verifyManualReceipt(snapshot, "", receipt.id, "2026-10-08T12:02:00Z", urls),
+  ).toBe(false);
+  f.data.receipt = {
+    ...receipt,
+    body: "",
+    attachments: ["https://fictitious.invalid/different.wav"],
+  };
+  expect(
+    await f.provider.verifyManualReceipt(snapshot, "", receipt.id, "2026-10-08T12:02:00Z", urls),
+  ).toBe(false);
+});
+
 describe("histórico e rota canônica para atendimento manual", () => {
   it("inclui a resposta humana atual sem relaxar history da IA", async () => {
     const manual = fixture();

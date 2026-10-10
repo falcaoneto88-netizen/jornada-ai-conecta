@@ -440,3 +440,36 @@ Registro factual do marco final desta etapa. Nada aqui autoriza novo envio, SQL,
 - **Candidato n8n preparado SOMENTE LOCAL** (ack-only): 79 nós, nove blocos de `jsCode`, 264 testes mais revisão independente, hash `438a709198ec0670eccefd1b00816333ad5d539bf1084b4420a79bcb693ce2a4`. **Não** foi importado, aplicado nem publicado.
 - **Próximo passo, só após recuperar o navegador:** ler execução, estado e histórico; repor o modo manual; comparar os `jsCode`; aplicar a retomada apenas se as pré-condições validarem. Grant futuro **apenas** `confirm`, na mesma tupla, SQL **sem** `claim`; executar uma vez, verificar aceitação e entrega, e desligar os controlos.
 - **Pendentes:** agradecimento, limpeza do rascunho n8n, webhook, timers e concorrência geral.
+
+
+## Adendo 10/10/2026 — áudio e imagens na Caixa de Entrada IA
+
+### Escopo e contrato
+
+- Projeto original `36345211-2616-42f7-bb9e-e78a9d00ca22`; base conferida `8ed6dfbf84c51a1392243037f380fdfac1cb06a6`. Implementação em branch isolada `codex/inbox-media-20261010`, sem substituir os checkouts existentes.
+- A Caixa de Entrada real usava somente texto. Agora prepara **um anexo por mensagem até 5 MiB**, imagem JPEG/PNG/GIF ou áudio MP3/WAV/OGG/M4A/AAC, com texto opcional, prévia/reprodução/remoção e clique humano final. Gravações limitadas a dois minutos; MP4/WebM gravados são convertidos localmente em WAV mono 16kHz. Não se promete voice note nativa do WhatsApp.
+- Caminho: Jornada → API GHL existente (`attachments: string[]`) → fornecedor SMS personalizado comprovado no servidor, incluindo o Zaptos configurado. Anexos não são habilitados para SMS nativo, IG, FB ou WhatsApp nativo nesta revisão. O envio textual existente continua.
+- O backend deriva a clínica e valida ator, organização/location, contato/conversa, DND, janela, revisão do histórico e rota/default provider. Mantém reserva durável por requestId, envio único e bloqueio de resultado incerto. A mídia entra no hash do conteúdo e na verificação do recibo.
+- Selecionar/gravar/ouvir não transmite o arquivo. Apenas o clique final envia os bytes ao backend autenticado. Não há uploads GHL públicos permanentes, nova credencial ou bucket. Os bytes reutilizam o payload AES-GCM do dispatch manual.
+- O fornecedor recebe uma URL HMAC de dez minutos, vinculada a organização/pedido/despacho/índice/hash/expiração, no domínio original. GET/HEAD e ranges validam token, estado, vínculo da location e bytes antes de retornar. Nenhum URL arbitrário é recebido do cliente. Respostas usam no-store, nosniff, no-referrer e erro sanitizado.
+- A URL temporária é uma credencial de leitura: quem a possuir pode ler dentro do prazo; GHL/Zaptos podem conservar sua cópia. **Dez minutos não é prazo de apagamento.** A retenção cifrada segue o ledger existente: purge de registros antigos depende do worker e não remove `sending/unknown`; não se afirma retenção máxima de sete dias. Access logs da hospedagem não foram auditados.
+- POST de server functions limitado a 8 MiB antes do parse; webhooks e outras rotas não são interceptados. Validação de arquivo verifica tamanho, MIME e estrutura mínima, não substitui antivírus ou decodificação integral.
+- Configurações reutilizadas, sem valores: `GHL_PRIVATE_TOKEN`, `GHL_LOCATION_ID`, `COMMERCIAL_AGENT_ENCRYPTION_KEY`, configurações existentes de envio manual e `n8n_bridge_settings.zaptos_provider_id`. Sem migração SQL, alterações de permissões, ativação de IA ou mudanças no n8n.
+
+### Evidência atual e limites
+
+- Inspeção Lovable somente leitura `umsg_01m4jyz39gepnrhbnb0mqc5ehk`, 10/10/2026: código base confirmado; GHL autenticado comprovou vínculo da organização/location, contato/conversa de teste e ZaptosWPP V2 como default e último fornecedor. Histórico continha seis anexos (MP3/JPG), recebidos e enviados. Isso não comprova entrega de mídia pela nova implementação.
+- Banco consultado: `channel=whatsapp_zaptos`, `simulation=true`, `live_send_enabled=false`; nenhuma flag alterada. A conversa de teste estava fora da janela de 24h; bloqueio preservado. Nenhuma mensagem/upload/execução de automação foi feita nesta tarefa.
+- `/api/version` anterior retornava `jornada-n8n-confirmation-20261006.1` e release nulo. Marcador estático antigo, sozinho, não identifica o SHA publicado nem prova ausência do código da inbox. A candidata acrescenta `inboxManualMedia:1` e build `jornada-inbox-media-20261010.1` para verificação posterior.
+- UI de Chrome não pôde ser inspecionada: leituras de DOM e captura falharam. Testes de componentes não devem ser apresentados como homologação visual do navegador real.
+- O histórico no app continua exibindo a contagem de anexos e o acesso pelo GHL; a prévia implementada é a do arquivo a enviar. A reprodução de anexos antigos dentro da Jornada é uma melhoria separada.
+- Pendência de ponta a ponta: envio autorizado de uma imagem e um áudio sintéticos para contato próprio dentro da janela; comprovar download do link pelo Zaptos, recebimento, mídia reproduzível e status de entrega. Reconciliação exige URL exata e bloqueia se o fornecedor reescrever/re-hospedar o anexo. Limites efetivos do proxy de produção ainda precisam ser observados no teste controlado.
+
+### Fontes de contrato consultadas
+
+- [GHL send message](https://marketplace.gohighlevel.com/docs/2021-04-15/ghl/conversations/send-a-new-message/)
+- [GHL upload](https://marketplace.gohighlevel.com/docs/2021-04-15/ghl/conversations/upload-file-attachments/) — opção segura descrita como exclusiva de email na data da consulta; não foi usada.
+- [ProviderOutboundMessage](https://marketplace.gohighlevel.com/docs/webhook/ProviderOutboundMessage/)
+- [Zaptos oficial](https://zaptoscompany.com/zaptoswpp/) — anuncia mídia, sem contrato público preciso de codecs/PTT encontrado.
+
+Estado nesta revisão: **implementado localmente; gates e integração em andamento; publicação e entrega real ainda não verificadas**. Os resultados finais são registrados abaixo após a execução.
