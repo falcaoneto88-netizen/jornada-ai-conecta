@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, ExternalLink, RefreshCw, Sparkles } from "lucide-react";
-import { toast } from "sonner";
+import { ExternalLink, RefreshCw, Send, Sparkles, SpellCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -12,8 +11,55 @@ import { useOrganizacao } from "@/lib/organization";
 import { useModoDados } from "@/lib/repo";
 import { formatarDataHora } from "@/lib/clinic-time";
 import { aiSupport, type AnaliseIA } from "@/lib/ai.functions";
+import { corrigirRascunho } from "@/lib/correcao-texto.functions";
+import {
+  getInboxSendContext,
+  reconcileManualAgentMessage,
+  sendInboxMessage,
+} from "@/lib/commercial-agent.functions";
 import { JevPedido } from "@/components/jev-pedido";
 import { JevMensagem } from "@/components/jev-mensagem";
+
+type EstadoEnvio =
+  | { estado: "livre" }
+  | { estado: "a_enviar" }
+  | { estado: "aceite"; messageId: string }
+  | { estado: "incerto"; manualId: string | null };
+type DestinoEnvio = {
+  name: string;
+  channel: string | null;
+  sendAllowed: boolean;
+  blockedReason: string | null;
+};
+
+const ERROS_ENVIO: Record<string, string> = {
+  send_disabled: "O envio por esta tela ainda não está liberado nesta clínica.",
+  forbidden: "A sua conta não tem permissão para enviar nesta clínica.",
+  scope_mismatch:
+    "Esta conversa ainda não foi recebida pelo atendimento do Jornada AI; continue no GHL.",
+  not_configured: "O envio manual não está configurado nesta clínica.",
+  manual_not_configured: "O envio manual não está configurado nesta clínica.",
+  encryption_not_configured: "O envio manual não está configurado nesta clínica.",
+  do_not_contact: "Contato com DND ativo ou pedido de interrupção. Envio bloqueado.",
+  unsupported_channel: "Canal sem envio homologado por esta tela. Continue no GHL.",
+  channel_window: "A janela de resposta deste canal terminou. Continue no GHL.",
+  inbound_not_verified: "Não há mensagem recebida válida para responder.",
+  draft_stale: "A conversa mudou. Atualize as mensagens; o texto foi mantido.",
+  version_conflict: "A conversa mudou. Atualize as mensagens; o texto foi mantido.",
+  history_invalid: "Histórico do GHL inválido. Envio bloqueado.",
+  history_incomplete: "Histórico do GHL incompleto. Envio bloqueado.",
+  history_conflict: "Histórico do GHL inconsistente. Envio bloqueado.",
+  reconciliation_required:
+    "Existe um envio sem confirmação nesta conversa. Confira no GHL antes de enviar outra.",
+  send_unknown: "Resultado do envio não confirmado. Não repita: confira no GHL.",
+  manual_request_used: "Este envio já foi processado. Confira a conversa no GHL.",
+  manual_request_mismatch: "Pedido de envio inconsistente. Atualize a página.",
+  dispatch_blocked: "Envio bloqueado pelas regras de segurança. Confira no GHL.",
+  receipt_not_verified: "O ID indicado não corresponde a este envio.",
+  storage_unavailable: "Serviço temporariamente indisponível. O texto foi mantido.",
+};
+const erroEnvio = (code: string) =>
+  ERROS_ENVIO[code] ?? "Não foi possível enviar. O texto foi mantido.";
 
 export function GhlInbox() {
   const contexto = useOrganizacao();
@@ -191,7 +237,20 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   const [erroIA, setErroIA] = useState<string | null>(null);
   const [pendente, setPendente] = useState(false);
   const [analisadoAte, setAnalisadoAte] = useState<string | null>(null);
+  const [corrigindo, setCorrigindo] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [envio, setEnvio] = useState<EstadoEnvio>({ estado: "livre" });
+  const [recibo, setRecibo] = useState("");
+  const [destino, setDestino] = useState<DestinoEnvio | null>(null);
+  const [erroDestino, setErroDestino] = useState<string | null>(null);
+  const revisao = useRef(0);
+  const pedido = useRef<{ rev: number; id: string } | null>(null);
+  const orgId = useOrganizacao().data?.organizacao.id ?? null;
   const analisar = useServerFn(aiSupport);
+  const corrigirFn = useServerFn(corrigirRascunho);
+  const enviarFn = useServerFn(sendInboxMessage);
+  const contextoFn = useServerFn(getInboxSendContext);
+  const conferirFn = useServerFn(reconcileManualAgentMessage);
   const vivo = useRef(true);
   useEffect(() => {
     vivo.current = true;
@@ -199,6 +258,31 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       vivo.current = false;
     };
   }, []);
+  // Destinatário/canal canónicos lidos no servidor; sem eles o envio fica indisponível.
+  useEffect(() => {
+    if (!orgId) return;
+    let ativo = true;
+    contextoFn({
+      data: { organizationId: orgId, contactId: conversa.contactId, conversationId: conversa.id },
+    })
+      .then((r) => {
+        if (!ativo) return;
+        if (r.ok) {
+          setDestino(r.data);
+          setErroDestino(r.data.blockedReason ? erroEnvio(r.data.blockedReason) : null);
+          const ultimo = r.data.lastDispatch;
+          if (ultimo && ["unknown", "sending"].includes(ultimo.state))
+            setEnvio({ estado: "incerto", manualId: ultimo.id });
+        } else setErroDestino(erroEnvio(r.code));
+      })
+      .catch(() => {
+        if (ativo) setErroDestino("Não foi possível verificar o canal de envio desta conversa.");
+      });
+    return () => {
+      ativo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, conversa.id, conversa.contactId]);
   // Remontado por conversationId/contactId: uma promessa antiga não altera o novo atendimento.
   async function gerarAnalise() {
     if (pendente || result.isError || mensagens.length === 0) return;
@@ -222,13 +306,94 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (vivo.current) setPendente(false);
     }
   }
-  async function copiar(texto: string) {
+  // Cada alteração do campo (digitação, sugestão, correção) gera nova revisão.
+  function editar(texto: string) {
+    revisao.current += 1;
+    setRascunho(texto);
+    setAviso(null);
+    if (envio.estado !== "a_enviar") setEnvio({ estado: "livre" });
+  }
+  async function corrigir() {
+    const texto = rascunho;
+    if (!texto.trim() || corrigindo) return;
+    const rev = revisao.current;
+    setCorrigindo(true);
+    setAviso(null);
     try {
-      await navigator.clipboard.writeText(texto);
-      toast.success("Rascunho copiado.");
+      const r = await corrigirFn({ data: { texto } });
+      if (!vivo.current) return;
+      if (revisao.current !== rev) {
+        setAviso("O texto foi alterado durante a correção; a sugestão foi descartada.");
+        return;
+      }
+      if (r.ok) {
+        if (r.texto === texto) setAviso("Nenhuma correção necessária.");
+        else {
+          editar(r.texto);
+          setAviso("Correção aplicada. Reveja e edite livremente antes de enviar.");
+        }
+      } else setAviso(r.message);
     } catch {
-      toast.error("Não foi possível copiar. Selecione o texto manualmente.");
+      if (vivo.current) setAviso("Não foi possível corrigir agora. O texto foi mantido.");
+    } finally {
+      if (vivo.current) setCorrigindo(false);
     }
+  }
+  async function enviar() {
+    if (envio.estado === "a_enviar" || !orgId) return;
+    const texto = rascunho.trim();
+    if (!texto) return;
+    if (texto !== rascunho) editar(texto);
+    // A mesma revisão reutiliza a mesma chave: repetições não geram segundo POST.
+    if (!pedido.current || pedido.current.rev !== revisao.current)
+      pedido.current = { rev: revisao.current, id: crypto.randomUUID() };
+    const requestId = pedido.current.id;
+    setEnvio({ estado: "a_enviar" });
+    setAviso(null);
+    try {
+      const r = await enviarFn({
+        data: {
+          organizationId: orgId,
+          contactId: conversa.contactId,
+          conversationId: conversa.id,
+          text: texto,
+          requestId,
+        },
+      });
+      if (!vivo.current) return;
+      if (!r.ok) {
+        const incerto = ["send_unknown", "reconciliation_required", "manual_request_used"].includes(
+          r.code,
+        );
+        setEnvio(incerto ? { estado: "incerto", manualId: null } : { estado: "livre" });
+        setAviso(erroEnvio(r.code));
+        return;
+      }
+      if (r.data.state === "sent" && r.data.messageId) {
+        setEnvio({ estado: "aceite", messageId: r.data.messageId });
+        pedido.current = null;
+        revisao.current += 1;
+        setRascunho("");
+        void result.refetch();
+      } else if (r.data.state === "rejected") {
+        setEnvio({ estado: "livre" });
+        setAviso("O GHL recusou a mensagem. O texto foi mantido; confira a conversa.");
+      } else setEnvio({ estado: "incerto", manualId: r.data.manualId });
+    } catch {
+      if (vivo.current) setEnvio({ estado: "incerto", manualId: null });
+    }
+  }
+  async function conferir() {
+    if (envio.estado !== "incerto" || !envio.manualId || !orgId) return;
+    const r = await conferirFn({
+      data: { organizationId: orgId, manualId: envio.manualId, messageId: recibo.trim() },
+    });
+    if (!vivo.current) return;
+    if (r.ok) {
+      setEnvio({ estado: "aceite", messageId: recibo.trim() });
+      setRecibo("");
+      void result.refetch();
+    } else setAviso(erroEnvio(r.code));
   }
   const url = `https://app.gohighlevel.com/v2/location/${conversa.locationId}/contacts/detail/${conversa.contactId}`;
   return (
