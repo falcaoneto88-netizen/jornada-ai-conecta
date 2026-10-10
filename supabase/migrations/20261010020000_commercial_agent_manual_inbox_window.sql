@@ -62,7 +62,7 @@ begin
     if coalesce(_data->>'inboundId','') !~ '^[A-Za-z0-9_-]{1,100}$' or coalesce(_data->>'historyHash','') !~ '^[a-f0-9]{64}$' or coalesce(_data->>'replyHash','') !~ '^[a-f0-9]{64}$' or coalesce(_data->>'payload','')='' then return jsonb_build_object('error','invalid_manual'); end if;
     if jsonb_typeof(_data->'inboundAt') is distinct from 'string' or (_data->>'inboundAt') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$' then return jsonb_build_object('error','channel_window'); end if;
     begin inbound_time:=(_data->>'inboundAt')::timestamptz; exception when others then return jsonb_build_object('error','channel_window'); end;
-    if inbound_time is null or not isfinite(inbound_time) or inbound_time>now() or inbound_time<=now()-case when inbox_op then interval '24 hours' else interval '23 hours' end then return jsonb_build_object('error','channel_window'); end if;
+    if inbound_time is null or not isfinite(inbound_time) or inbound_time>now() or inbound_time<=now()-(case when inbox_op then interval '24 hours' else interval '23 hours' end) then return jsonb_build_object('error','channel_window'); end if;
     if virtual then
       insert into public.commercial_agent_sessions(organization_id,contact_id,version,paused) values(_org,cid,1,true) on conflict do nothing;
       get diagnostics n=row_count;
@@ -90,14 +90,14 @@ begin
     if item.state<>'prepared' or item.expires_at<=now() or item.payload='' or sess.version<>item.session_version or not sess.paused or item.history_hash is distinct from _data->>'historyHash' then return jsonb_build_object('error','draft_stale'); end if;
     if sess.opt_out then return jsonb_build_object('error','do_not_contact'); end if;
     if cfg.mode<>'supervised' or not cfg.manual_send_all_contacts or item.location_id<>cfg.location_id or not exists(select 1 from public.ghl_connections where organization_id=_org and write_enabled=true) then return jsonb_build_object('error','send_disabled'); end if;
-    if item.channel not in ('SMS','IG','FB','WhatsApp') or item.inbound_at>now() or item.inbound_at<=now()-case when _data ? 'notAfter' then interval '24 hours' else interval '23 hours' end then return jsonb_build_object('error','channel_window'); end if;
+    if item.channel not in ('SMS','IG','FB','WhatsApp') or item.inbound_at>now() or item.inbound_at<=now()-(case when _data ? 'notAfter' then interval '24 hours' else interval '23 hours' end) then return jsonb_build_object('error','channel_window'); end if;
     if exists(select 1 from public.commercial_agent_drafts where organization_id=_org and contact_id=item.contact_id and state in ('sending','unknown')) or exists(select 1 from public.commercial_agent_manual_dispatches where organization_id=_org and contact_id=item.contact_id and id<>item.id and state in ('sending','unknown')) then return jsonb_build_object('error','reconciliation_required'); end if;
     update public.commercial_agent_manual_dispatches set state='sending',approved_by=_actor,approved_at=now(),dispatch_id=gen_random_uuid() where id=item.id returning * into item;
     insert into public.commercial_agent_audit(organization_id,draft_id,actor_id,code) values(_org,item.id,_actor,'manual_approved');
     return to_jsonb(item);
   elsif _op='manual_check_dispatch' then
     if item.state<>'sending' or item.dispatch_id is distinct from (_data->>'dispatchId')::uuid or item.approved_by<>_actor or sess.version<>item.session_version or not sess.paused or sess.opt_out or cfg.mode<>'supervised' or not cfg.manual_send_all_contacts or not exists(select 1 from public.ghl_connections where organization_id=_org and write_enabled=true) then return jsonb_build_object('error','dispatch_blocked'); end if;
-    if item.channel not in ('SMS','IG','FB','WhatsApp') or item.inbound_at>now() or item.inbound_at<=now()-case when _data ? 'notAfter' then interval '24 hours' else interval '23 hours' end then return jsonb_build_object('error','dispatch_blocked'); end if;
+    if item.channel not in ('SMS','IG','FB','WhatsApp') or item.inbound_at>now() or item.inbound_at<=now()-(case when _data ? 'notAfter' then interval '24 hours' else interval '23 hours' end) then return jsonb_build_object('error','dispatch_blocked'); end if;
     if _data ? 'notAfter' and (jsonb_typeof(_data->'notAfter') is distinct from 'string' or (_data->>'notAfter') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$' or clock_timestamp()>(_data->>'notAfter')::timestamptz) then return jsonb_build_object('error','dispatch_blocked'); end if;
     if exists(select 1 from public.commercial_agent_drafts where organization_id=_org and contact_id=item.contact_id and state in ('sending','unknown')) or exists(select 1 from public.commercial_agent_manual_dispatches where organization_id=_org and contact_id=item.contact_id and id<>item.id and state in ('sending','unknown')) then return jsonb_build_object('error','dispatch_blocked'); end if;
     return jsonb_build_object('status','allowed');
