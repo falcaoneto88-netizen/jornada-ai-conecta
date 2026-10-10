@@ -341,3 +341,73 @@ it("credenciais negadas pelo GHL (403): rejeitado, sem segundo POST", async () =
   expect((await send("T", id)).state).toBe("rejected");
   expect(sendManual).toHaveBeenCalledTimes(1);
 });
+it("janela da caixa de entrada é 24 h: IG a 23h30 envia; 24h exatas bloqueiam sem POST nem escrita", async () => {
+  snapshot.messages[0] = {
+    ...snapshot.messages[0]!,
+    channel: "IG",
+    provider: null,
+    at: new Date(Date.now() - 23.5 * 3600000).toISOString(),
+  };
+  expect((await ctx()).blockedReason).toBeNull();
+  expect((await send("Olá IG 23h30")).state).toBe("sent");
+  expect(sendManual).toHaveBeenCalledTimes(1);
+  await db.sql`truncate commercial_agent_manual_dispatches,commercial_agent_sessions,commercial_agent_audit restart identity cascade`;
+  snapshot.messages[0]!.at = new Date(Date.now() - 24 * 3600000).toISOString();
+  snapshot.historyHash = sha("ig-24");
+  const before = await counts();
+  expect((await ctx()).blockedReason).toBe("channel_window");
+  await expect(send("Olá IG 24h")).rejects.toMatchObject({ code: "channel_window" });
+  expect(sendManual).toHaveBeenCalledTimes(1);
+  expect(await counts()).toEqual(before);
+});
+it("SQL: prepare do inbox recusa 24h exatas mesmo que o servidor tente (janela no banco)", async () => {
+  const c = await ctx();
+  snapshot.messages[0] = {
+    ...snapshot.messages[0]!,
+    channel: "IG",
+    provider: null,
+    at: new Date(Date.now() - 24 * 3600000 - 1000).toISOString(),
+  };
+  const before = await counts();
+  await expect(
+    agent.manualPrepare(
+      ORG,
+      ACTOR,
+      {
+        ...scope,
+        expectedVersion: 0,
+        historyHash: c.revision.historyHash,
+        text: "A",
+        requestId: randomUUID(),
+      },
+      true,
+      { channel: "IG", providerId: null, name: "Instagram", defaultId: null },
+      new Date(Date.now() + 20000).toISOString(),
+    ),
+  ).rejects.toBeTruthy();
+  expect(await counts()).toEqual(before);
+});
+it("manual_check_dispatch aplica o prazo com clock_timestamp: prazo vencido bloqueia o POST", async () => {
+  const id = randomUUID();
+  // Simula espera longa entre a reserva e a verificação: o prazo passa durante a transação.
+  const original = db.store.command.bind(db.store);
+  const spy = vi
+    .spyOn(db.store, "command")
+    .mockImplementation(async (op: string, org: string, data?: unknown, actor?: string) => {
+      if (op === "manual_check_dispatch")
+        return original(
+          op,
+          org,
+          { ...(data as object), notAfter: new Date(Date.now() - 1).toISOString() },
+          actor,
+        );
+      return original(op, org, data as never, actor);
+    });
+  try {
+    await expect(send("T", id)).rejects.toMatchObject({ code: "dispatch_blocked" });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(sendManual).not.toHaveBeenCalled();
+  expect((await agent.inboxStatus(ORG, ACTOR, id))?.state).toBe("rejected");
+});

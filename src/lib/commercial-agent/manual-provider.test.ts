@@ -538,6 +538,73 @@ describe("recibo manual vinculado ao inbound de origem", () => {
     ).toBe(false);
   });
 
+  async function waSnapshot(f: ReturnType<typeof fixture>) {
+    const snap = await f.provider.manualHistory(scope);
+    snap.messages = snap.messages.map((m) =>
+      m.id === snap.event.messageId
+        ? {
+            ...m,
+            channel: "WhatsApp" as const,
+            provider: null,
+            from: "+351910000001",
+            to: "+351210000009",
+          }
+        : m,
+    );
+    snap.route = {
+      channel: "WhatsApp",
+      providerId: null,
+      name: "WhatsApp",
+      defaultId: null,
+      fromNumber: "+351210000009",
+      toNumber: "+351910000001",
+    };
+    return snap;
+  }
+  const waReceipt = {
+    ...receipt,
+    messageType: "TYPE_WHATSAPP",
+    conversationProviderId: undefined,
+    from: "+351210000009",
+    to: "+351910000001",
+  };
+  it("recibo WhatsApp com o par remetente/destino canónico exato é aceite", async () => {
+    const f = fixture();
+    const snap = await waSnapshot(f);
+    f.data.receipt = { message: waReceipt };
+    expect(
+      await f.provider.verifyManualReceipt(snap, sentText, receipt.id, "2026-10-08T12:02:00Z"),
+    ).toBe(true);
+  });
+  it.each([
+    { from: "+351210000777" },
+    { to: "+351910000999" },
+    { from: undefined },
+    { to: undefined },
+  ])("recibo WhatsApp de outro número comercial/destino é recusado %#", async (change) => {
+    const f = fixture();
+    const snap = await waSnapshot(f);
+    f.data.receipt = { message: { ...waReceipt, ...change } };
+    expect(
+      await f.provider.verifyManualReceipt(snap, sentText, receipt.id, "2026-10-08T12:02:00Z"),
+    ).toBe(false);
+  });
+  it("payload nativo WhatsApp: tipo exato, pending, fromNumber/toNumber, sem provedor SMS", async () => {
+    const f = fixture();
+    const snap = await waSnapshot(f);
+    f.call.mockClear();
+    await f.provider.sendManual(snap, sentText).catch(() => null);
+    const post = f.call.mock.calls.find(([, , init]) => init?.method === "POST");
+    expect(post?.[2]?.body).toMatchObject({
+      type: "WhatsApp",
+      status: "pending",
+      message: sentText,
+      fromNumber: "+351210000009",
+      toNumber: "+351910000001",
+    });
+    expect(post?.[2]?.body).not.toHaveProperty("conversationProviderId");
+  });
+
   it("confere SMS/provedor do inbound e não Instagram/provedor do outbound mais recente", async () => {
     const f = fixture();
     const snapshot = await f.provider.manualHistory(scope);

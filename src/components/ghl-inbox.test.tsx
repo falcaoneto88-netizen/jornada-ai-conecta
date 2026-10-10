@@ -71,7 +71,7 @@ vi.mock("@/lib/ghl-observation", () => ({
     },
   }),
 }));
-import { GhlInbox, PRAZO_SEM_REGISTO_MS, lerIntencao, pendentesEnvio } from "./ghl-inbox";
+import { GhlInbox, lerIntencao, pendentesEnvio } from "./ghl-inbox";
 const REV = {
   historyHash: "a".repeat(64),
   sessionVersion: 1,
@@ -255,7 +255,7 @@ it("falha de rede = incerto, mantém texto e não reenvia automaticamente", asyn
   expect(campo().value).toBe("Mensagem");
   expect(screen.getByText(/não confirmado/)).toBeTruthy();
 });
-it("falha antes do POST liberta; nova revisão gera nova chave, mesma revisão reutiliza", async () => {
+it("falha definitiva antes do POST liberta; novo clique explícito gera nova chave", async () => {
   mocks.enviar.mockResolvedValue({ ok: false, code: "send_disabled" });
   render(<GhlInbox />);
   await flush();
@@ -264,7 +264,7 @@ it("falha antes do POST liberta; nova revisão gera nova chave, mesma revisão r
   await act(async () => fireEvent.click(b()));
   await act(async () => fireEvent.click(b()));
   const [a, c] = mocks.enviar.mock.calls.map((x) => x[0].data.requestId);
-  expect(a).toBe(c);
+  expect(c).not.toBe(a);
   escrever("Outra");
   await act(async () => fireEvent.click(b()));
   expect(mocks.enviar.mock.calls[2]![0].data.requestId).not.toBe(a);
@@ -429,14 +429,14 @@ it("timeout antes do prepare + lookup null dentro do prazo: continua bloqueado, 
   await flush();
   fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
   await flush();
-  expect(screen.getByText(/ainda pode estar em processamento/)).toBeTruthy();
+  expect(screen.getByText(/não prova que nada foi enviado/)).toBeTruthy();
   escrever("Texto B");
   const b = screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement;
   expect(b.disabled).toBe(true);
   fireEvent.click(b);
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
 });
-it("lookup null só liberta depois do prazo do servidor ter passado", async () => {
+it("lookup null NUNCA liberta por tempo (entrada HTTP pode chegar >90s depois): zero segundo POST", async () => {
   const agora = Date.now();
   const spy = vi.spyOn(Date, "now").mockReturnValue(agora);
   mocks.enviar.mockRejectedValue(new Error("timeout"));
@@ -446,13 +446,17 @@ it("lookup null só liberta depois do prazo do servidor ter passado", async () =
   escrever("Texto A");
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   await flush();
-  spy.mockReturnValue(agora + PRAZO_SEM_REGISTO_MS + 1);
+  spy.mockReturnValue(agora + 3600_000); // relógio muito adiantado
   fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
   await flush();
-  expect(screen.getByText(/prazo do pedido terminou sem registo/)).toBeTruthy();
+  expect(screen.getByText(/não prova que nada foi enviado/)).toBeTruthy();
+  expect(screen.queryByText(/Nada foi enviado/)).toBeNull();
+  expect(screen.getByText(/Resultado do envio não confirmado/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
   spy.mockRestore();
 });
-it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO texto", async () => {
+it("prepared com relógio do navegador adiantado/expirado continua bloqueado; não há retomada de texto oculto", async () => {
   mocks.enviar.mockRejectedValueOnce(new Error("timeout"));
   mocks.estado.mockResolvedValue({
     ok: true,
@@ -461,7 +465,7 @@ it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO tex
       manualId: "11111111-1111-4111-8111-111111111111",
       messageId: null,
       code: null,
-      expiresAt: new Date(Date.now() + 600000).toISOString(),
+      expiresAt: new Date(Date.now() - 3600_000).toISOString(),
     },
   });
   render(<GhlInbox />);
@@ -469,22 +473,41 @@ it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO tex
   escrever("Texto capturado");
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   await flush();
-  const primeira = mocks.enviar.mock.calls[0]![0].data;
   fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
   await flush();
-  expect(screen.getByText(/Pode retomar o MESMO envio/)).toBeTruthy();
+  expect(
+    screen.getByText(/ainda não enviado. O pedido original ainda pode ser processado/),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Retomar/ })).toBeNull();
   escrever("Texto editado depois");
-  mocks.enviar.mockResolvedValueOnce({
-    ok: true,
-    data: { state: "sent", messageId: "m2", code: null, manualId: "x" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: /Retomar o mesmo envio/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   await flush();
-  const segunda = mocks.enviar.mock.calls[1]![0].data;
-  expect(segunda.requestId).toBe(primeira.requestId);
-  expect(segunda.text).toBe("Texto capturado");
-  // A edição posterior é preservada.
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
   expect(campo().value).toBe("Texto editado depois");
+});
+it("rejeição definitiva: novo clique com o MESMO texto gera nova intenção explícita", async () => {
+  mocks.enviar
+    .mockResolvedValueOnce({
+      ok: true,
+      data: { state: "rejected", messageId: null, code: "forbidden", manualId: "x" },
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      data: { state: "sent", messageId: "m3", code: null, manualId: "y" },
+    });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Mesmo texto");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  expect(campo().value).toBe("Mesmo texto");
+  expect(screen.queryByText(/nada foi enviado/i)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  expect(mocks.enviar).toHaveBeenCalledTimes(2);
+  const [a, b] = mocks.enviar.mock.calls.map((c) => c[0].data);
+  expect(b.requestId).not.toBe(a.requestId);
+  expect(b.text).toBe("Mesmo texto");
 });
 it("invalidated vira draft_stale: preserva texto e exige leitura atualizada", async () => {
   mocks.enviar.mockResolvedValue({
@@ -544,7 +567,7 @@ it("Instagram elegível: informa que a conexão é validada no envio; recusa 403
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   await flush();
   expect(mocks.enviar.mock.calls[0]![0].data.revision.channel).toBe("IG");
-  expect(screen.getByText(/GHL recusou o envio/)).toBeTruthy();
+  expect(screen.getByText(/GHL recusou este envio/)).toBeTruthy();
   expect(campo().value).toBe("Olá pelo Instagram");
 });
 it("canal fora da janela mostra motivo verdadeiro (24h)", async () => {

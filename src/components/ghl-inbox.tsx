@@ -29,10 +29,8 @@ type EstadoEnvio =
       estado: "incerto";
       requestId: string | null;
       manualId: string | null;
-      /** Momento do clique (relógio do navegador); o servidor nunca escreve após o prazo. */
+      /** Momento do clique (só informativo; nunca usado para libertar novo envio). */
       desde?: number;
-      /** Só em memória: mesma chave + mesmo texto capturado podem retomar o mesmo pedido. */
-      capturado?: { texto: string; revisao: Revisao };
     };
 type Revisao = {
   historyHash: string;
@@ -50,8 +48,6 @@ type DestinoEnvio = {
   revision: Omit<Revisao, "channel"> & { channel: Revisao["channel"] | null };
   connectionVerifiedAtSend?: boolean;
 };
-/** Prazo do servidor (20 s) com folga: só depois dele um "sem registo" prova que nada sairá. */
-export const PRAZO_SEM_REGISTO_MS = 90_000;
 const CHAVE_INTENCAO = "jornada:envio-pendente:";
 type Intencao = { requestId: string | null; manualId: string | null; desde: number };
 /** Metadados mínimos (sem texto nem dados clínicos) para sobreviver a recarregar a página. */
@@ -492,29 +488,26 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (vivo.current) setCorrigindo(false);
     }
   }
-  async function enviar(retomar?: Extract<EstadoEnvio, { estado: "incerto" }>) {
+  async function enviar() {
     const atual = envioRef.current.estado;
-    if (atual === "a_enviar" || !orgId) return;
-    if (atual === "incerto" && !retomar) return;
-    // Retomar só reutiliza a MESMA chave com o MESMO texto capturado (nunca nova chave).
-    const texto = retomar?.capturado?.texto ?? rascunho;
-    const revisaoEnvio = retomar?.capturado?.revisao ?? referencia;
-    if (retomar && (!retomar.requestId || !retomar.capturado)) return;
-    if (!revisaoEnvio || (!retomar && (!destino?.sendAllowed || revisaoMudou))) return;
-    // Texto EXATO visível: trim só para testar vazio.
+    // Incerto nunca envia: só verificação de leitura. Nenhuma retomada de texto oculto.
+    if (atual === "a_enviar" || atual === "incerto" || !orgId) return;
+    // Texto EXATO visível no campo agora: trim só para testar vazio.
+    const texto = rascunho;
+    const revisaoEnvio = referencia;
+    if (!revisaoEnvio || !destino?.sendAllowed || revisaoMudou) return;
     if (!texto.trim() || texto.length > LIMITE) return;
-    if (!retomar && (!pedido.current || pedido.current.rev !== revisao.current))
+    if (!pedido.current || pedido.current.rev !== revisao.current)
       pedido.current = { rev: revisao.current, id: crypto.randomUUID() };
-    const requestId = retomar?.requestId ?? pedido.current!.id;
-    const rev = retomar ? null : revisao.current;
-    const desde = retomar?.desde ?? Date.now();
-    const capturado = { texto, revisao: revisaoEnvio };
+    const requestId = pedido.current.id;
+    const rev = revisao.current;
+    const desde = Date.now();
     // Intenção gravada ANTES da chamada: um recarregamento a meio não liberta novo envio.
     gravarIntencao(chavePendente, { requestId, manualId: null, desde });
     mudarEnvio({ estado: "a_enviar" });
     setAviso(null);
     const incerto = (manualId: string | null) =>
-      mudarEnvio({ estado: "incerto", requestId, manualId, desde, capturado });
+      mudarEnvio({ estado: "incerto", requestId, manualId, desde });
     try {
       const r = await enviarFn({
         data: {
@@ -528,8 +521,12 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       });
       if (!vivo.current) return;
       if (!r.ok) {
-        if (ANTES_DO_ENVIO.has(r.code)) mudarEnvio({ estado: "livre" });
-        else incerto(null);
+        if (ANTES_DO_ENVIO.has(r.code)) {
+          // Recusa definitiva antes de qualquer POST: nova tentativa explícita gera nova chave.
+          pedido.current = null;
+          mudarEnvio({ estado: "livre" });
+          setTick((t) => t + 1);
+        } else incerto(null);
         setAviso(
           r.code === "revision_changed" || r.code === "route_changed"
             ? "A conversa ou a rota mudou desde a sua revisão. Confira as mensagens e tente de novo; nada foi enviado."
@@ -539,7 +536,6 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       }
       aplicarEstado(r.data.state, r.data.messageId, r.data.manualId, requestId, rev, r.data.code, {
         desde,
-        capturado,
       });
     } catch {
       // Tempo esgotado/rede: o servidor pode ter aceite. Nunca gerar nova chave.
@@ -553,7 +549,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     requestId: string | null,
     rev: number | null,
     code: string | null = null,
-    extra: { desde?: number; capturado?: { texto: string; revisao: Revisao } } = {},
+    extra: { desde?: number } = {},
   ) {
     if (state === "sent" && messageId) {
       mudarEnvio({ estado: "aceite", messageId });
@@ -567,11 +563,14 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       setTick((t) => t + 1);
       void result.refetch();
     } else if (state === "rejected") {
+      // Terminal: a chave antiga não é reutilizada; contexto relido; novo clique é nova intenção.
+      pedido.current = null;
       mudarEnvio({ estado: "livre" });
+      setTick((t) => t + 1);
       setAviso(
         code === "route_changed"
           ? erroEnvio("route_changed")
-          : "O GHL recusou o envio (pode ser permissão, conexão do canal ou janela). O texto foi mantido; nada foi enviado.",
+          : "O GHL recusou este envio (pode ser permissão, conexão do canal ou janela). O texto foi mantido. Pode tentar de novo com um novo clique em Enviar.",
       );
     } else if (state === "invalidated") {
       // Pedido substituído/expirado: não houve POST. Exige leitura atualizada antes de decidir.
@@ -598,15 +597,10 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (!vivo.current) return;
       if (!r.ok) setAviso(erroEnvio(r.code));
       else if (r.data === null) {
-        // Sem registo NÃO prova não-envio enquanto o pedido original puder estar em curso.
-        if (e.desde !== undefined && Date.now() - e.desde > PRAZO_SEM_REGISTO_MS) {
-          mudarEnvio({ estado: "livre" });
-          setAviso("O prazo do pedido terminou sem registo no servidor. Nada foi enviado.");
-        } else
-          setAviso("O pedido ainda pode estar em processamento. Verifique de novo em instantes.");
-      } else if (r.data.state === "prepared" && Date.parse(r.data.expiresAt) + 5000 < Date.now()) {
-        mudarEnvio({ estado: "livre" });
-        setAviso("O pedido expirou antes do envio. Nada foi enviado.");
+        // Sem registo NÃO prova não-envio: o pedido original pode chegar/continuar depois.
+        setAviso(
+          "Ainda não há registo deste pedido no servidor. Isso não prova que nada foi enviado; o envio continua bloqueado. Confira a conversa no GHL.",
+        );
       } else {
         aplicarEstado(
           r.data.state,
@@ -615,13 +609,12 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           e.requestId,
           null,
           r.data.code,
-          {
-            ...(e.desde !== undefined ? { desde: e.desde } : {}),
-            ...(e.capturado ? { capturado: e.capturado } : {}),
-          },
+          e.desde !== undefined ? { desde: e.desde } : {},
         );
         if (r.data.state === "prepared")
-          setAviso("Pedido registado mas ainda não enviado. Pode retomar o MESMO envio.");
+          setAviso(
+            "Pedido registado e ainda não enviado. O pedido original ainda pode ser processado; o envio continua bloqueado.",
+          );
       }
     } catch {
       if (vivo.current) setAviso("Não foi possível verificar agora. O envio continua bloqueado.");
@@ -932,16 +925,6 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
             >
               Verificar estado do envio
             </Button>
-            {envio.requestId && envio.capturado && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={conferindo}
-                onClick={() => void enviar(envio)}
-              >
-                Retomar o mesmo envio
-              </Button>
-            )}
             {envio.manualId && (
               <div className="flex flex-wrap gap-2">
                 <Input

@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { corrigirTexto, violacoesInvariantes } from "./correcao-texto.core";
 
 const resp = (content: unknown, status = 200) =>
@@ -75,5 +75,24 @@ it("erros: 402, 429, timeout, sem chave, acima do limite", async () => {
   });
   expect(await corrigirTexto("a".repeat(1501), { apiKey: "k", fetch: to })).toMatchObject({
     code: "texto_invalido",
+  });
+});
+
+describe("sinais, comparadores e unidades compostas", () => {
+  it.each([
+    ["Perdeu -5 kg em um mes.", "Perdeu 5 kg em um mês."],
+    ["Dose de 5 mg/mL agora.", "Dose de 5 mg/L agora."],
+    ["Valor <5 mg/dL no exame.", "Valor >5 mg/dL no exame."],
+    ["Tomar 5 mg/kg/dia sempre.", "Tomar 5 mg/kg/semana sempre."],
+  ])("recusa %s → %s", (a, b) => {
+    expect(violacoesInvariantes(a, b)).toContain("protegidos");
+  });
+  it("aceita correção gramatical que preserva os valores", () => {
+    expect(
+      violacoesInvariantes(
+        "voce tem -5 kg e <5 mg/dL, tome 5 mg/kg/dia",
+        "Você tem -5 kg e <5 mg/dL, tome 5 mg/kg/dia.",
+      ),
+    ).toEqual([]);
   });
 });

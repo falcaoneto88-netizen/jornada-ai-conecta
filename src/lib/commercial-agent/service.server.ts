@@ -72,7 +72,13 @@ type ManualRow = {
   created_at?: string;
 };
 /** Tempo máximo do pedido do navegador no servidor antes de qualquer escrita/POST. */
+/**
+ * Prazo OPERACIONAL do servidor: depois dele não se reserva nem se inicia o POST. NÃO é prova de
+ * não-envio para o cliente (a entrada HTTP pode chegar tarde); só um estado terminal no ledger liberta.
+ */
 export const INBOX_DEADLINE_MS = 20_000;
+/** Janela de resposta da caixa de entrada: 24 h exatas (24 h já bloqueia). */
+export const INBOX_WINDOW_MS = 24 * 3600000;
 type ManualSession = ManualConversation & {
   busy: boolean;
   lastDispatch?: ManualContext["lastDispatch"];
@@ -327,6 +333,8 @@ export class CommercialAgent {
     snapshot: Snapshot,
     writeEnabled: boolean,
     channels: readonly string[] = ["SMS"],
+    // Fluxos antigos/automáticos mantêm 23 h; a caixa de entrada usa a janela de 24 h do canal.
+    windowMs = 23 * 3600000,
   ): string | null {
     if (
       !this.d.enabled ||
@@ -358,7 +366,7 @@ export class CommercialAgent {
     // channel allowlists are deliberately not extended by this permission.
     if (!channels.includes(inbound.channel)) return "unsupported_channel";
     const age = this.now() - Date.parse(inbound.at);
-    if (!Number.isFinite(age) || age < 0 || age >= 23 * 3600000) return "channel_window";
+    if (!Number.isFinite(age) || age < 0 || age >= windowMs) return "channel_window";
     return null;
   }
   async manualContext(
@@ -429,12 +437,14 @@ export class CommercialAgent {
       },
       actor,
     );
-    const blockedReason = this.manualReason(config, session, snapshot, writeEnabled, [
-      "SMS",
-      "IG",
-      "FB",
-      "WhatsApp",
-    ]);
+    const blockedReason = this.manualReason(
+      config,
+      session,
+      snapshot,
+      writeEnabled,
+      ["SMS", "IG", "FB", "WhatsApp"],
+      INBOX_WINDOW_MS,
+    );
     return {
       snapshot,
       sessionVersion: session.sessionVersion,
@@ -601,9 +611,10 @@ export class CommercialAgent {
       await this.d.store.command(
         "manual_check_dispatch",
         org,
-        { manualId: row.id, dispatchId: claimed.dispatch_id },
+        { manualId: row.id, dispatchId: claimed.dispatch_id, ...(notAfter ? { notAfter } : {}) },
         actor,
       );
+      if (notAfter && this.now() > Date.parse(notAfter)) throw new AgentError("request_expired");
     } catch {
       await this.d.store.command(
         "manual_finish_send",
@@ -678,7 +689,7 @@ export class CommercialAgent {
   /**
    * Leitura do estado durável de um pedido (recuperação após falha do navegador).
    * `null` NÃO prova que nada foi enviado: o pedido original pode ainda estar em curso.
-   * O cliente só liberta após o prazo do servidor (INBOX_DEADLINE_MS) ter passado com folga.
+   * O cliente nunca liberta por tempo decorrido: só estados terminais (sent/rejected/invalidated).
    */
   async inboxStatus(org: string, actor: string, requestId: string) {
     const row = await this.d.store.command<ManualRow | null>(
@@ -728,7 +739,7 @@ export class CommercialAgent {
     configuredProviderId: string | null,
   ): Promise<{ state: string; code: string | null; messageId: string | null; manualId: string }> {
     const { revision, ...scope } = input;
-    // Prazo duro: nenhuma reserva nem POST depois dele (aplicado também no SQL, em now()).
+    // Prazo operacional (também no SQL, com clock_timestamp após os locks). Não prova não-envio.
     const notAfter = new Date(this.now() + INBOX_DEADLINE_MS).toISOString();
     const late = () => this.now() > Date.parse(notAfter);
     let row = await this.lookupOwn(org, actor, input.requestId);
