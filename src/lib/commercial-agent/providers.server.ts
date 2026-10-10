@@ -556,6 +556,12 @@ export class HighLevel {
         ? true
         : (receipt.conversationProviderId ?? null) ===
           (snapshot.route?.providerId ?? inbound.provider)) &&
+      // WhatsApp multi-número: o recibo tem de ter EXATAMENTE o par remetente/destino fixado.
+      (inbound.channel !== "WhatsApp" ||
+        (!!snapshot.route?.fromNumber &&
+          !!snapshot.route?.toNumber &&
+          receipt.from === snapshot.route.fromNumber &&
+          receipt.to === snapshot.route.toNumber)) &&
       ["pending", "sent", "delivered", "read"].includes(receipt.status) &&
       at - approved >= -5000 &&
       at - approved <= 300000
