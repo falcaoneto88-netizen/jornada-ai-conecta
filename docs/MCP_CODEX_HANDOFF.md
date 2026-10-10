@@ -473,3 +473,14 @@ Registro factual do marco final desta etapa. Nada aqui autoriza novo envio, SQL,
 - [Zaptos oficial](https://zaptoscompany.com/zaptoswpp/) — anuncia mídia, sem contrato público preciso de codecs/PTT encontrado.
 
 Estado nesta revisão: **implementado localmente; gates e integração em andamento; publicação e entrega real ainda não verificadas**. Os resultados finais são registrados abaixo após a execução.
+
+### Evidências da integração na prévia (10/10/2026, Lovable)
+
+- Base conferida: HEAD `8ed6dfb` (= 8ed6dfbf84c51a1392243037f380fdfac1cb06a6), sem alterações locais. Pacote SHA256 `9ec9ffcc…886887` conferido.
+- Manifesto: 21/21 hashes `before` coincidiram (11 novos ausentes); bytes de `files/` copiados sem adaptação; 21/21 hashes `after` coincidiram. Este parágrafo é a única alteração posterior (só neste documento).
+- Nenhuma migração, SQL, credencial, flag, n8n, contato/DND, upload GHL ou mensagem real.
+- Gates locais (exit codes reais): `tsgo --noEmit` 0; ESLint dos ficheiros do pacote 0 erros (2 avisos de fast refresh); build automático da prévia OK.
+- Testes sem banco (8 ficheiros: inbox-media UI/servidor, media-http, server-function-body, ghl-inbox, manual-provider, inbox-send, inbox-route): 0 — 230 passaram.
+- Testes de banco em PostgreSQL efémero local (nunca produção): manual-inbox.db + manual.db: 0 — 62 passaram (23 + 39).
+- QA visual: harness Vite temporário isolado (fora da app, já removido) renderizando o `GhlInbox` real com respostas sintéticas; envio simulado nunca chamado (0 chamadas). Chromium headless, 1280 px e 390 px: sem rolagem lateral; anexar imagem → prévia → remover; gravar (microfone falso) → Parar/Cancelar visíveis → prévia de áudio; microfone recusado → aviso "Não foi possível acessar o microfone…".
+- Não verificado: suíte completa, publicação, entrega real de mídia pelo Zaptos/GHL, E2E.
