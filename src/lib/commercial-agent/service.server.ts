@@ -558,6 +558,79 @@ export class CommercialAgent {
     }
     return result;
   }
+  /**
+   * One human click from the GHL inbox: prepare + send through the durable manual ledger.
+   * The requestId is the idempotency key; a repeated request never issues a second POST.
+   */
+  async inboxSend(
+    org: string,
+    actor: string,
+    input: { contactId: string; conversationId: string; text: string; requestId: string },
+    writeEnabled: boolean,
+  ): Promise<{ state: string; code: string | null; messageId: string | null; manualId: string }> {
+    const existing = await this.d.store.command<ManualRow | null>(
+      "manual_lookup",
+      org,
+      { requestId: input.requestId },
+      actor,
+    );
+    let row = existing;
+    if (row) {
+      const old = this.manualPayload(org, row);
+      if (
+        row.prepared_by !== actor ||
+        row.contact_id !== input.contactId ||
+        row.conversation_id !== input.conversationId ||
+        old.text !== input.text.trim()
+      )
+        throw new AgentError("manual_request_mismatch");
+    } else {
+      const context = await this.manualContext(org, actor, input, writeEnabled);
+      if (context.blockedReason) throw new AgentError(context.blockedReason);
+      try {
+        const prepared = await this.manualPrepare(
+          org,
+          actor,
+          {
+            ...input,
+            expectedVersion: context.sessionVersion,
+            historyHash: context.snapshot.historyHash,
+          },
+          writeEnabled,
+        );
+        row = await this.d.store.command<ManualRow>(
+          "manual_detail",
+          org,
+          { manualId: prepared.id },
+          actor,
+        );
+      } catch (e) {
+        // A concurrent request with the same key may have already prepared/claimed it.
+        if (!(e instanceof AgentError) || e.code !== "manual_request_used") throw e;
+        row = await this.d.store.command<ManualRow | null>(
+          "manual_lookup",
+          org,
+          { requestId: input.requestId },
+          actor,
+        );
+        if (!row) throw e;
+      }
+    }
+    if (row.state !== "prepared")
+      return {
+        state: row.state,
+        code: row.error_code,
+        messageId: row.result_message_id,
+        manualId: row.id,
+      };
+    const result = await this.manualSend(
+      org,
+      actor,
+      { manualId: row.id, replyHash: row.reply_hash },
+      writeEnabled,
+    );
+    return { ...result, manualId: row.id };
+  }
   async manualReconcile(
     org: string,
     actor: string,
