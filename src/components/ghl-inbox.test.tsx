@@ -87,17 +87,18 @@ function ctx(over: Record<string, unknown> = {}) {
 }
 afterEach(cleanup);
 beforeEach(() => {
-  for (const f of [mocks.analisar, mocks.corrigir, mocks.enviar, mocks.conferir, mocks.refetch, mocks.estado])
+  for (const f of [
+    mocks.analisar,
+    mocks.corrigir,
+    mocks.enviar,
+    mocks.conferir,
+    mocks.refetch,
+    mocks.estado,
+  ])
     f.mockReset();
   mocks.contexto.mockReset().mockResolvedValue({
     ok: true,
-    data: {
-      name: "Ana",
-      channel: "SMS",
-      sendAllowed: true,
-      blockedReason: null,
-      lastDispatch: null,
-    },
+    data: ctx(),
   });
   mocks.escopo = "conta-a";
   mocks.error = false;
@@ -217,7 +218,6 @@ it("Enviar: um clique envia o texto visível atual; duplo clique não duplica", 
   await flush();
   escrever("Texto final  ");
   const b = screen.getByRole("button", { name: /Enviar para Ana/ });
-  console.log("DBG", (b as HTMLButtonElement).disabled, mocks.contexto.mock.calls.length, document.body.textContent?.match(/Transporte[^·]*/)?.[0]);
   fireEvent.click(b);
   fireEvent.click(b);
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
@@ -283,7 +283,11 @@ it("bloqueio do servidor (DND/canal/escopo) desativa Enviar com motivo", async (
 it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo sucesso", async () => {
   mocks.analisar.mockResolvedValue({
     ok: true,
-    analise: { resumo: "r", revisao_humana: false, sugestoes: [{ tom: "objetiva", texto: "Sugestão" }] },
+    analise: {
+      resumo: "r",
+      revisao_humana: false,
+      sugestoes: [{ tom: "objetiva", texto: "Sugestão" }],
+    },
   });
   let r!: (v: unknown) => void;
   mocks.enviar.mockImplementation(() => new Promise((x) => (r = x)));
@@ -297,14 +301,19 @@ it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo suce
   fireEvent.click(usar);
   fireEvent.change(campo(), { target: { value: "edição forçada" } });
   expect(campo().value).toBe("Texto enviado");
-  await act(async () => r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }));
+  await act(async () =>
+    r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }),
+  );
   expect(campo().value).toBe("");
   fireEvent.click(screen.getByRole("button", { name: "Usar rascunho" }));
   expect(campo().value).toBe("Sugestão");
 });
 it("timeout do navegador: edição posterior não liberta novo POST; só leitura recupera", async () => {
   mocks.enviar.mockRejectedValue(new Error("timeout"));
-  mocks.estado.mockResolvedValue({ ok: true, data: { manualId: "m9", state: "sent", messageId: "g9", code: null } });
+  mocks.estado.mockResolvedValue({
+    ok: true,
+    data: { manualId: "m9", state: "sent", messageId: "g9", code: null },
+  });
   render(<GhlInbox />);
   await flush();
   escrever("Mensagem");
@@ -349,12 +358,20 @@ it("capacidade atualizada: conversa mudou desde a revisão bloqueia sem renovar 
   render(<GhlInbox />);
   await flush();
   escrever("Mensagem");
-  mocks.contexto.mockResolvedValue({ ok: true, data: ctx({ revision: { ...REV, historyHash: "b".repeat(64) } }) });
+  mocks.contexto.mockResolvedValue({
+    ok: true,
+    data: ctx({ revision: { ...REV, historyHash: "b".repeat(64) } }),
+  });
   await act(async () => fireEvent.click(screen.getByRole("button", { name: /Atualizar$/ })));
   expect(screen.getByText(/mudou desde que começou a rever/)).toBeTruthy();
-  expect((screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: /Conferi as mensagens novas/ }));
-  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "sent", messageId: "m", code: null, manualId: "x" } });
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "m", code: null, manualId: "x" },
+  });
   await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
   expect(mocks.enviar.mock.calls[0]![0].data.revision.historyHash).toBe("b".repeat(64));
 });
@@ -364,7 +381,9 @@ it("falha de leitura do contexto torna o envio indisponível", async () => {
   escrever("Mensagem");
   mocks.contexto.mockResolvedValue({ ok: false, code: "route_unverified" });
   await act(async () => fireEvent.click(screen.getByRole("button", { name: /Atualizar$/ })));
-  expect((screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
   expect(screen.getByText(/fornecedor real/)).toBeTruthy();
   expect(screen.getByText(/Transporte: não verificado/)).toBeTruthy();
 });
@@ -374,5 +393,7 @@ it("colar texto acima do limite não corta; mostra contador e bloqueia envio", a
   escrever("x".repeat(1600));
   expect(campo().value.length).toBe(1600);
   expect(screen.getByText(/1600\/1500/)).toBeTruthy();
-  expect((screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 });
