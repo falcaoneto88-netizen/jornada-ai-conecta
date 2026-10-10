@@ -411,7 +411,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     try {
       const r = await corrigirFn({ data: { texto } });
       if (!vivo.current) return;
-      if (revisao.current !== rev || envioRef.current.estado === "a_enviar") {
+      if (revisao.current !== rev || (envioRef.current as EstadoEnvio).estado === "a_enviar") {
         setAviso("O texto foi alterado durante a correção; a sugestão foi descartada.");
         return;
       }
