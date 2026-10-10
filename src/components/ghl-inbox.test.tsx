@@ -217,6 +217,7 @@ it("Enviar: um clique envia o texto visível atual; duplo clique não duplica", 
   await flush();
   escrever("Texto final  ");
   const b = screen.getByRole("button", { name: /Enviar para Ana/ });
+  console.log("DBG", (b as HTMLButtonElement).disabled, mocks.contexto.mock.calls.length, document.body.textContent?.match(/Transporte[^·]*/)?.[0]);
   fireEvent.click(b);
   fireEvent.click(b);
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
