@@ -28,47 +28,42 @@ export type CorrecaoResultado =
     };
 
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"]+/gi;
-const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
-const VAR_RE = /\{\{[^}]*\}\}|\[[^\]\n]{1,60}\]/g;
-const NUM_RE = /\d+(?:[.,:/]\d+)*/g;
-
-function contar(lista: string[]) {
-  const m = new Map<string, number>();
-  for (const x of lista) m.set(x, (m.get(x) ?? 0) + 1);
-  return m;
-}
+// Ordem importa: links, e-mails, variáveis, depois número com moeda/unidade associada.
+const PROTEGIDO_RE = new RegExp(
+  [
+    String.raw`(?:https?:\/\/|www\.)[^\s<>"]+`,
+    String.raw`[\w.+-]+@[\w-]+(?:\.[\w-]+)+`,
+    String.raw`\{\{[^}]*\}\}`,
+    String.raw`\[[^\]\n]{1,60}\]`,
+    String.raw`(?:R\$|[€$£])?\s?\d+(?:[.,:/hH]\d+)*\s?(?:%|€|\$|£|(?:mg|mcg|µg|ug|kg|g|ml|mL|dl|l|L|cm|mm|m|UI|ui|kcal|cal|min|h|hs|horas?|dias?|semanas?|meses|mês|anos?|sessões|sessão)\b)?`,
+    String.raw`R\$|[€$£]`,
+  ].join("|"),
+  "gi",
+);
 const limparUrl = (u: string) => u.replace(/[.,;:!?)]+$/, "");
+const normalizar = (t: string) => limparUrl(t.replace(/\s+/g, ""));
 
-/** Elementos que a correção nunca pode alterar. */
-export function elementosProtegidos(texto: string) {
-  const urls = (texto.match(URL_RE) ?? []).map(limparUrl);
-  const semUrl = texto.replace(URL_RE, " ").replace(EMAIL_RE, " ");
-  return {
-    urls,
-    emails: texto.match(EMAIL_RE) ?? [],
-    variaveis: texto.match(VAR_RE) ?? [],
-    numeros: semUrl.match(NUM_RE) ?? [],
-    moedas: semUrl.match(/[€$£]|R\$/g) ?? [],
-  };
+/** Sequência ordenada de elementos que a correção nunca pode alterar nem reordenar. */
+export function elementosProtegidos(texto: string): string[] {
+  return (texto.match(PROTEGIDO_RE) ?? []).map(normalizar).filter(Boolean);
 }
 
-/** Validação conservadora: qualquer diferença nos elementos protegidos rejeita a correção. */
+/** Validação conservadora: qualquer diferença na sequência protegida rejeita a correção. */
 export function violacoesInvariantes(original: string, corrigido: string): string[] {
   const a = elementosProtegidos(original);
   const b = elementosProtegidos(corrigido);
   const erros: string[] = [];
-  for (const k of Object.keys(a) as (keyof typeof a)[]) {
-    const ma = contar(a[k]);
-    const mb = contar(b[k]);
-    const igual = ma.size === mb.size && [...ma].every(([x, n]) => mb.get(x) === n);
-    if (!igual) erros.push(k);
-  }
+  if (a.length !== b.length || a.some((x, i) => x !== b[i])) erros.push("protegidos");
+  const urlsA = (original.match(URL_RE) ?? []).map(limparUrl).join("\n");
+  const urlsB = (corrigido.match(URL_RE) ?? []).map(limparUrl).join("\n");
+  if (urlsA !== urlsB) erros.push("urls");
   const r = corrigido.length / Math.max(1, original.length);
   if (original.length >= 20 && (r < 0.7 || r > 1.4)) erros.push("comprimento");
   return erros;
 }
 
-export function limparResposta(bruto: string) {
+export function limparResposta(bruto: unknown): string | null {
+  if (typeof bruto !== "string") return null;
   let t = bruto.trim();
   t = t.replace(/^<texto>\s*|\s*<\/texto>$/g, "").trim();
   if (t.length >= 2 && /^["“«']/.test(t) && /["”»']$/.test(t)) t = t.slice(1, -1).trim();
@@ -132,14 +127,16 @@ export async function corrigirTexto(
       code: "erro_ia",
       message: "A IA não conseguiu corrigir agora. O texto foi mantido.",
     };
-  let bruto = "";
+  let bruto: unknown = "";
   try {
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    bruto = json.choices?.[0]?.message?.content ?? "";
+    const json = (await res.json()) as { choices?: { message?: { content?: unknown } }[] };
+    bruto = json?.choices?.[0]?.message?.content ?? "";
   } catch {
     return { ok: false, code: "erro_ia", message: "Resposta da IA inválida. O texto foi mantido." };
   }
   const corrigido = limparResposta(bruto);
+  if (corrigido === null)
+    return { ok: false, code: "erro_ia", message: "Resposta da IA inválida. O texto foi mantido." };
   if (!corrigido)
     return {
       ok: false,
