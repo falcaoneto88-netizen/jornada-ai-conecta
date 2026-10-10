@@ -72,7 +72,13 @@ vi.mock("@/lib/ghl-observation", () => ({
   }),
 }));
 import { GhlInbox, PRAZO_SEM_REGISTO_MS, lerIntencao, pendentesEnvio } from "./ghl-inbox";
-const REV = { historyHash: "a".repeat(64), sessionVersion: 1, channel: "SMS" as const, providerId: "zap", defaultId: "zap" };
+const REV = {
+  historyHash: "a".repeat(64),
+  sessionVersion: 1,
+  channel: "SMS" as const,
+  providerId: "zap",
+  defaultId: "zap",
+};
 function ctx(over: Record<string, unknown> = {}) {
   return {
     name: "Ana",
@@ -402,7 +408,10 @@ it("colar texto acima do limite não corta; mostra contador e bloqueia envio", a
 });
 
 it("quebras de linha e espaços são enviados exatamente como visíveis", async () => {
-  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "sent", messageId: "m9", code: null, manualId: "x" } });
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "m9", code: null, manualId: "x" },
+  });
   render(<GhlInbox />);
   await flush();
   escrever("  Linha 1\n\nLinha 2 ");
@@ -447,7 +456,13 @@ it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO tex
   mocks.enviar.mockRejectedValueOnce(new Error("timeout"));
   mocks.estado.mockResolvedValue({
     ok: true,
-    data: { state: "prepared", manualId: "11111111-1111-4111-8111-111111111111", messageId: null, code: null, expiresAt: new Date(Date.now() + 600000).toISOString() },
+    data: {
+      state: "prepared",
+      manualId: "11111111-1111-4111-8111-111111111111",
+      messageId: null,
+      code: null,
+      expiresAt: new Date(Date.now() + 600000).toISOString(),
+    },
   });
   render(<GhlInbox />);
   await flush();
@@ -459,7 +474,10 @@ it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO tex
   await flush();
   expect(screen.getByText(/Pode retomar o MESMO envio/)).toBeTruthy();
   escrever("Texto editado depois");
-  mocks.enviar.mockResolvedValueOnce({ ok: true, data: { state: "sent", messageId: "m2", code: null, manualId: "x" } });
+  mocks.enviar.mockResolvedValueOnce({
+    ok: true,
+    data: { state: "sent", messageId: "m2", code: null, manualId: "x" },
+  });
   fireEvent.click(screen.getByRole("button", { name: /Retomar o mesmo envio/ }));
   await flush();
   const segunda = mocks.enviar.mock.calls[1]![0].data;
@@ -469,14 +487,19 @@ it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO tex
   expect(campo().value).toBe("Texto editado depois");
 });
 it("invalidated vira draft_stale: preserva texto e exige leitura atualizada", async () => {
-  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "invalidated", messageId: null, code: null, manualId: "x" } });
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "invalidated", messageId: null, code: null, manualId: "x" },
+  });
   render(<GhlInbox />);
   await flush();
   const leituras = mocks.contexto.mock.calls.length;
   escrever("Texto mantido");
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   await flush();
-  expect(screen.getByText(/A conversa mudou. Atualize as mensagens; o texto foi mantido/)).toBeTruthy();
+  expect(
+    screen.getByText(/A conversa mudou. Atualize as mensagens; o texto foi mantido/),
+  ).toBeTruthy();
   expect(screen.queryByText(/Resultado do envio não confirmado/)).toBeNull();
   expect(campo().value).toBe("Texto mantido");
   expect(mocks.contexto.mock.calls.length).toBeGreaterThan(leituras);
@@ -503,9 +526,17 @@ it("recarregar a página não contorna envio incerto (intenção mínima persist
 it("Instagram elegível: informa que a conexão é validada no envio; recusa 403 preserva texto", async () => {
   mocks.contexto.mockResolvedValue({
     ok: true,
-    data: ctx({ channel: "IG", transport: "Instagram (integração nativa)", connectionVerifiedAtSend: true, revision: { ...REV, channel: "IG", providerId: null, defaultId: null } }),
+    data: ctx({
+      channel: "IG",
+      transport: "Instagram (integração nativa)",
+      connectionVerifiedAtSend: true,
+      revision: { ...REV, channel: "IG", providerId: null, defaultId: null },
+    }),
   });
-  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "rejected", messageId: null, code: "forbidden_provider", manualId: "x" } });
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "rejected", messageId: null, code: "forbidden_provider", manualId: "x" },
+  });
   render(<GhlInbox />);
   await flush();
   expect(screen.getByText(/conexão e a permissão serão validadas pelo GHL no envio/)).toBeTruthy();
@@ -517,7 +548,10 @@ it("Instagram elegível: informa que a conexão é validada no envio; recusa 403
   expect(campo().value).toBe("Olá pelo Instagram");
 });
 it("canal fora da janela mostra motivo verdadeiro (24h)", async () => {
-  mocks.contexto.mockResolvedValue({ ok: true, data: ctx({ channel: "IG", sendAllowed: false, blockedReason: "channel_window" }) });
+  mocks.contexto.mockResolvedValue({
+    ok: true,
+    data: ctx({ channel: "IG", sendAllowed: false, blockedReason: "channel_window" }),
+  });
   render(<GhlInbox />);
   await flush();
   expect(screen.getByText(/mais de 24 horas/)).toBeTruthy();

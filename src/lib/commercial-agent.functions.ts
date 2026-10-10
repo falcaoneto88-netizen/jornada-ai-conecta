@@ -166,13 +166,11 @@ const exactText = z
 export const sendInboxMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    manualPrepareSchema
-      .pick({ contactId: true, conversationId: true, requestId: true })
-      .extend({
-        organizationId: listSchema.shape.organizationId,
-        text: exactText,
-        revision: revisionSchema,
-      }),
+    manualPrepareSchema.pick({ contactId: true, conversationId: true, requestId: true }).extend({
+      organizationId: listSchema.shape.organizationId,
+      text: exactText,
+      revision: revisionSchema,
+    }),
   )
   .handler(async ({ data, context }) => {
     const { safe, authenticatedAgent, configuredSmsProvider } =

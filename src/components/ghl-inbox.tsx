@@ -62,8 +62,10 @@ export function lerIntencao(chave: string): Intencao | null {
     const o = v as Record<string, unknown>;
     const uuid = /^[0-9a-f-]{36}$/;
     return {
-      requestId: typeof o["requestId"] === "string" && uuid.test(o["requestId"]) ? o["requestId"] : null,
-      manualId: typeof o["manualId"] === "string" && uuid.test(o["manualId"]) ? o["manualId"] : null,
+      requestId:
+        typeof o["requestId"] === "string" && uuid.test(o["requestId"]) ? o["requestId"] : null,
+      manualId:
+        typeof o["manualId"] === "string" && uuid.test(o["manualId"]) ? o["manualId"] : null,
       desde: typeof o["desde"] === "number" ? o["desde"] : 0,
     };
   } catch {
@@ -117,7 +119,8 @@ const ANTES_DO_ENVIO = new Set([
 const ERROS_ENVIO: Record<string, string> = {
   send_disabled: "O envio por esta tela ainda não está liberado nesta clínica.",
   forbidden: "A sua conta não tem permissão para enviar nesta clínica.",
-  scope_mismatch: "Esta conversa não pertence à subconta GHL vinculada a esta clínica. Envio bloqueado.",
+  scope_mismatch:
+    "Esta conversa não pertence à subconta GHL vinculada a esta clínica. Envio bloqueado.",
   not_configured: "O envio manual não está configurado nesta clínica.",
   manual_not_configured: "O envio manual não está configurado nesta clínica.",
   encryption_not_configured: "O envio manual não está configurado nesta clínica.",
@@ -599,18 +602,24 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
         if (e.desde !== undefined && Date.now() - e.desde > PRAZO_SEM_REGISTO_MS) {
           mudarEnvio({ estado: "livre" });
           setAviso("O prazo do pedido terminou sem registo no servidor. Nada foi enviado.");
-        } else setAviso("O pedido ainda pode estar em processamento. Verifique de novo em instantes.");
-      } else if (
-        r.data.state === "prepared" &&
-        Date.parse(r.data.expiresAt) + 5000 < Date.now()
-      ) {
+        } else
+          setAviso("O pedido ainda pode estar em processamento. Verifique de novo em instantes.");
+      } else if (r.data.state === "prepared" && Date.parse(r.data.expiresAt) + 5000 < Date.now()) {
         mudarEnvio({ estado: "livre" });
         setAviso("O pedido expirou antes do envio. Nada foi enviado.");
       } else {
-        aplicarEstado(r.data.state, r.data.messageId, r.data.manualId, e.requestId, null, r.data.code, {
-          ...(e.desde !== undefined ? { desde: e.desde } : {}),
-          ...(e.capturado ? { capturado: e.capturado } : {}),
-        });
+        aplicarEstado(
+          r.data.state,
+          r.data.messageId,
+          r.data.manualId,
+          e.requestId,
+          null,
+          r.data.code,
+          {
+            ...(e.desde !== undefined ? { desde: e.desde } : {}),
+            ...(e.capturado ? { capturado: e.capturado } : {}),
+          },
+        );
         if (r.data.state === "prepared")
           setAviso("Pedido registado mas ainda não enviado. Pode retomar o MESMO envio.");
       }

@@ -111,7 +111,8 @@ it("clique cria exatamente um despacho e um POST, sem fila nem IA; sessão criad
   expect(s).toMatchObject({ paused: true, version: 1, opt_out: false });
   const [d] = await db.sql`select channel,state from commercial_agent_manual_dispatches`;
   expect(d).toMatchObject({ channel: "SMS", state: "sent" });
-  const [cfg] = await db.sql`select allowed_channels from commercial_agent_settings where organization_id=${ORG}`;
+  const [cfg] =
+    await db.sql`select allowed_channels from commercial_agent_settings where organization_id=${ORG}`;
   expect(cfg!["allowed_channels"]).toEqual(["WhatsApp", "SMS"]);
 });
 it("contato/conversa/localização inválidos bloqueiam sem escrita", async () => {
@@ -127,7 +128,12 @@ it("contato/conversa/localização inválidos bloqueiam sem escrita", async () =
     db.store.command("manual_inbox_context", ORG, { ...scope, locationId: "loc-outra" }, ACTOR),
   ).rejects.toMatchObject({ code: "scope_mismatch" });
   await expect(
-    db.store.command("manual_inbox_context", ORG, { contactId: "bad id!", conversationId: "v", locationId: "loc-test" }, ACTOR),
+    db.store.command(
+      "manual_inbox_context",
+      ORG,
+      { contactId: "bad id!", conversationId: "v", locationId: "loc-test" },
+      ACTOR,
+    ),
   ).rejects.toMatchObject({ code: "scope_mismatch" });
   // Utilizador de outra organização: proibido.
   await expect(
@@ -137,9 +143,9 @@ it("contato/conversa/localização inválidos bloqueiam sem escrita", async () =
   expect(await counts()).toEqual(before);
 });
 it("o fluxo antigo (manual_context/prepare) continua a exigir a fila e só SMS", async () => {
-  await expect(
-    db.store.command("manual_context", ORG, scope, ACTOR),
-  ).rejects.toMatchObject({ code: "scope_mismatch" });
+  await expect(db.store.command("manual_context", ORG, scope, ACTOR)).rejects.toMatchObject({
+    code: "scope_mismatch",
+  });
 });
 it("mesma chave em paralelo: um despacho, um POST", async () => {
   const id = randomUUID();
@@ -167,16 +173,34 @@ it("novo inbound desde a revisão bloqueia sem escrita", async () => {
   snapshot.historyHash = sha("inbox-fict-2");
   const before = await counts();
   await expect(
-    agent.inboxSend(ORG, ACTOR, { ...scope, text: "T", requestId: randomUUID(), revision: c.revision }, true, "zap"),
+    agent.inboxSend(
+      ORG,
+      ACTOR,
+      { ...scope, text: "T", requestId: randomUUID(), revision: c.revision },
+      true,
+      "zap",
+    ),
   ).rejects.toMatchObject({ code: "revision_changed" });
   expect(await counts()).toEqual(before);
   expect(sendManual).not.toHaveBeenCalled();
 });
 it("rota mudou desde a revisão bloqueia sem escrita", async () => {
   const c = await ctx();
-  provider.smsChannels = vi.fn(async () => ({ defaultId: "outro", providers: new Map([["zap", "Zaptos"], ["outro", "X"]]) }));
+  provider.smsChannels = vi.fn(async () => ({
+    defaultId: "outro",
+    providers: new Map([
+      ["zap", "Zaptos"],
+      ["outro", "X"],
+    ]),
+  }));
   await expect(
-    agent.inboxSend(ORG, ACTOR, { ...scope, text: "T", requestId: randomUUID(), revision: c.revision }, true, "zap"),
+    agent.inboxSend(
+      ORG,
+      ACTOR,
+      { ...scope, text: "T", requestId: randomUUID(), revision: c.revision },
+      true,
+      "zap",
+    ),
   ).rejects.toMatchObject({ code: "route_changed" });
   expect((await counts()).d).toBe(0);
 });
@@ -208,7 +232,13 @@ it("pedido substituído (invalidated) é devolvido como tal, sem POST", async ()
   await agent.manualPrepare(
     ORG,
     ACTOR,
-    { ...scope, expectedVersion: 0, historyHash: c.revision.historyHash, text: "A", requestId: first },
+    {
+      ...scope,
+      expectedVersion: 0,
+      historyHash: c.revision.historyHash,
+      text: "A",
+      requestId: first,
+    },
     true,
     { channel: "SMS", providerId: "zap", name: "Zaptos", defaultId: "zap" },
     new Date(Date.now() + 20000).toISOString(),
@@ -217,12 +247,24 @@ it("pedido substituído (invalidated) é devolvido como tal, sem POST", async ()
   await agent.manualPrepare(
     ORG,
     ACTOR,
-    { ...scope, expectedVersion: c2.revision.sessionVersion, historyHash: c2.revision.historyHash, text: "B", requestId: randomUUID() },
+    {
+      ...scope,
+      expectedVersion: c2.revision.sessionVersion,
+      historyHash: c2.revision.historyHash,
+      text: "B",
+      requestId: randomUUID(),
+    },
     true,
     { channel: "SMS", providerId: "zap", name: "Zaptos", defaultId: "zap" },
     new Date(Date.now() + 20000).toISOString(),
   );
-  const r = await agent.inboxSend(ORG, ACTOR, { ...scope, text: "A", requestId: first, revision: c.revision }, true, "zap");
+  const r = await agent.inboxSend(
+    ORG,
+    ACTOR,
+    { ...scope, text: "A", requestId: first, revision: c.revision },
+    true,
+    "zap",
+  );
   expect(r.state).toBe("invalidated");
   expect(sendManual).not.toHaveBeenCalled();
   expect((await agent.inboxStatus(ORG, ACTOR, first))?.state).toBe("invalidated");
@@ -234,7 +276,13 @@ it("prazo do pedido ultrapassado no SQL: request_expired sem escrita", async () 
     agent.manualPrepare(
       ORG,
       ACTOR,
-      { ...scope, expectedVersion: 0, historyHash: c.revision.historyHash, text: "A", requestId: randomUUID() },
+      {
+        ...scope,
+        expectedVersion: 0,
+        historyHash: c.revision.historyHash,
+        text: "A",
+        requestId: randomUUID(),
+      },
       true,
       { channel: "SMS", providerId: "zap", name: "Zaptos", defaultId: "zap" },
       new Date(Date.now() - 1000).toISOString(),
@@ -246,7 +294,8 @@ it("prepared consultado em paralelo com o envio: estado nunca é terminal falso,
   const id = randomUUID();
   let release!: () => void;
   sendManual.mockImplementationOnce(
-    () => new Promise((r) => (release = () => r({ state: "sent", code: null, messageId: "rcpt-2" }))),
+    () =>
+      new Promise((r) => (release = () => r({ state: "sent", code: null, messageId: "rcpt-2" }))),
   );
   const p = send("T", id);
   for (let i = 0; i < 50 && !release; i++) await new Promise((r) => setTimeout(r, 20));
@@ -279,7 +328,11 @@ it("Instagram e WhatsApp: canal gravado; IG sem conversationProviderId; WA fora 
   snapshot.historyHash = sha("wa");
   await send("Olá WA");
   const wa = sendManual.mock.calls[1]![0] as Snapshot;
-  expect(wa.route).toMatchObject({ channel: "WhatsApp", fromNumber: "+351210000009", toNumber: "+351910000001" });
+  expect(wa.route).toMatchObject({
+    channel: "WhatsApp",
+    fromNumber: "+351210000009",
+    toNumber: "+351910000001",
+  });
 });
 it("credenciais negadas pelo GHL (403): rejeitado, sem segundo POST", async () => {
   sendManual.mockResolvedValueOnce({ state: "rejected", code: "forbidden", messageId: null });

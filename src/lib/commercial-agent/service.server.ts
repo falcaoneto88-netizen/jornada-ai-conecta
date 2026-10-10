@@ -406,7 +406,8 @@ export class CommercialAgent {
   ): Promise<ManualContext> {
     if (!this.d.provider.manualHistory) throw new AgentError("manual_not_configured");
     const config = await this.d.store.command<Settings>("settings", org);
-    if (config.organization_id !== org || !config.location_id) throw new AgentError("scope_mismatch");
+    if (config.organization_id !== org || !config.location_id)
+      throw new AgentError("scope_mismatch");
     const snapshot = await this.d.provider.manualHistory({
       locationId: config.location_id,
       contactId: input.contactId,

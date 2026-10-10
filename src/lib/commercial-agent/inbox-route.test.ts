@@ -100,18 +100,37 @@ describe("resolução explícita da rota", () => {
   });
   it("WhatsApp: fixa o par número comercial ↔ contato da mensagem recebida", () => {
     const s = snap(null);
-    s.messages[1] = { ...s.messages[1]!, channel: "WhatsApp", from: "+351910000001", to: "+351210000009" };
+    s.messages[1] = {
+      ...s.messages[1]!,
+      channel: "WhatsApp",
+      from: "+351910000001",
+      to: "+351210000009",
+    };
     expect(resolveInboxRoute(s, null, Z)).toMatchObject({
       ok: true,
-      route: { channel: "WhatsApp", fromNumber: "+351210000009", toNumber: "+351910000001", providerId: null },
+      route: {
+        channel: "WhatsApp",
+        fromNumber: "+351210000009",
+        toNumber: "+351910000001",
+        providerId: null,
+      },
     });
   });
   it("WhatsApp sem número comercial identificado bloqueia (nunca o default)", () => {
     const s = snap(null);
     s.messages[1] = { ...s.messages[1]!, channel: "WhatsApp", from: "+351910000001", to: null };
-    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({ code: "whatsapp_sender_unverified" });
-    s.messages[1] = { ...s.messages[1]!, channel: "WhatsApp", from: "+351910000001", to: "invalido" };
-    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({ code: "whatsapp_sender_unverified" });
+    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({
+      code: "whatsapp_sender_unverified",
+    });
+    s.messages[1] = {
+      ...s.messages[1]!,
+      channel: "WhatsApp",
+      from: "+351910000001",
+      to: "invalido",
+    };
+    expect(resolveInboxRoute(s, canais(Z), Z)).toMatchObject({
+      code: "whatsapp_sender_unverified",
+    });
   });
   it("canal desconhecido fica indisponível com motivo", () => {
     const s = snap("p");

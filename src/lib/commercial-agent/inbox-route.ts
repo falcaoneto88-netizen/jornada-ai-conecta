@@ -73,14 +73,23 @@ export function resolveInboxRoute(
         channel: inbound.channel,
         providerId: null,
         defaultId: null,
-        name: inbound.channel === "IG" ? "Instagram (integração nativa)" : "Facebook Messenger (integração nativa)",
+        name:
+          inbound.channel === "IG"
+            ? "Instagram (integração nativa)"
+            : "Facebook Messenger (integração nativa)",
       },
     };
   if (inbound.channel === "WhatsApp") {
     // Entrada: from = contato, to = número comercial que recebeu (e que tem a janela aberta).
     const business = inbound.to ?? null;
     const contact = inbound.from ?? null;
-    if (!business || !contact || !PHONE.test(business) || !PHONE.test(contact) || business === contact)
+    if (
+      !business ||
+      !contact ||
+      !PHONE.test(business) ||
+      !PHONE.test(contact) ||
+      business === contact
+    )
       return { ok: false, code: "whatsapp_sender_unverified" };
     return {
       ok: true,
