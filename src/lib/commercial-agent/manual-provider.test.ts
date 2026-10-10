@@ -542,7 +542,13 @@ describe("recibo manual vinculado ao inbound de origem", () => {
     const snap = await f.provider.manualHistory(scope);
     snap.messages = snap.messages.map((m) =>
       m.id === snap.event.messageId
-        ? { ...m, channel: "WhatsApp" as const, provider: null, from: "+351910000001", to: "+351210000009" }
+        ? {
+            ...m,
+            channel: "WhatsApp" as const,
+            provider: null,
+            from: "+351910000001",
+            to: "+351210000009",
+          }
         : m,
     );
     snap.route = {

@@ -373,7 +373,13 @@ it("SQL: prepare do inbox recusa 24h exatas mesmo que o servidor tente (janela n
     agent.manualPrepare(
       ORG,
       ACTOR,
-      { ...scope, expectedVersion: 0, historyHash: c.revision.historyHash, text: "A", requestId: randomUUID() },
+      {
+        ...scope,
+        expectedVersion: 0,
+        historyHash: c.revision.historyHash,
+        text: "A",
+        requestId: randomUUID(),
+      },
       true,
       { channel: "IG", providerId: null, name: "Instagram", defaultId: null },
       new Date(Date.now() + 20000).toISOString(),
@@ -389,7 +395,12 @@ it("manual_check_dispatch aplica o prazo com clock_timestamp: prazo vencido bloq
     .spyOn(db.store, "command")
     .mockImplementation(async (op: string, org: string, data?: unknown, actor?: string) => {
       if (op === "manual_check_dispatch")
-        return original(op, org, { ...(data as object), notAfter: new Date(Date.now() - 1).toISOString() }, actor);
+        return original(
+          op,
+          org,
+          { ...(data as object), notAfter: new Date(Date.now() - 1).toISOString() },
+          actor,
+        );
       return original(op, org, data as never, actor);
     });
   try {

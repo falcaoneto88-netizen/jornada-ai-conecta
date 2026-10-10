@@ -475,7 +475,9 @@ it("prepared com relógio do navegador adiantado/expirado continua bloqueado; n�
   await flush();
   fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
   await flush();
-  expect(screen.getByText(/ainda não enviado. O pedido original ainda pode ser processado/)).toBeTruthy();
+  expect(
+    screen.getByText(/ainda não enviado. O pedido original ainda pode ser processado/),
+  ).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Retomar/ })).toBeNull();
   escrever("Texto editado depois");
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
