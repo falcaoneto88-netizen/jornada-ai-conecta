@@ -71,7 +71,7 @@ vi.mock("@/lib/ghl-observation", () => ({
     },
   }),
 }));
-import { GhlInbox } from "./ghl-inbox";
+import { GhlInbox, pendentesEnvio } from "./ghl-inbox";
 const REV = { historyHash: "a".repeat(64), sessionVersion: 1, providerId: "zap", defaultId: "zap" };
 function ctx(over: Record<string, unknown> = {}) {
   return {
@@ -102,6 +102,7 @@ beforeEach(() => {
   });
   mocks.escopo = "conta-a";
   mocks.error = false;
+  pendentesEnvio.clear();
 });
 function bruno() {
   fireEvent.click(screen.getByRole("button", { name: /Bruno/ }));

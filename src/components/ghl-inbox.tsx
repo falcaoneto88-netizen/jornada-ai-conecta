@@ -47,7 +47,7 @@ const mesmaRevisao = (a: Revisao, b: DestinoEnvio["revision"]) =>
   a.providerId === b.providerId &&
   a.defaultId === b.defaultId;
 /** Envios incertos sobrevivem à troca de conversa (o servidor guarda o estado durável). */
-const pendentes = new Map<string, Extract<EstadoEnvio, { estado: "incerto" }>>();
+export const pendentesEnvio = new Map<string, Extract<EstadoEnvio, { estado: "incerto" }>>();
 /** Códigos que comprovadamente acontecem antes de qualquer POST ao GHL. */
 const ANTES_DO_ENVIO = new Set([
   "revision_changed",
@@ -301,8 +301,8 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   function mudarEnvio(e: EstadoEnvio) {
     envioRef.current = e;
     setEnvio(e);
-    if (e.estado === "incerto") pendentes.set(chavePendente, e);
-    else if (e.estado !== "a_enviar") pendentes.delete(chavePendente);
+    if (e.estado === "incerto") pendentesEnvio.set(chavePendente, e);
+    else if (e.estado !== "a_enviar") pendentesEnvio.delete(chavePendente);
   }
   const analisar = useServerFn(aiSupport);
   const corrigirFn = useServerFn(corrigirRascunho);
@@ -314,7 +314,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   useEffect(() => {
     vivo.current = true;
     // Trocar de conversa e voltar não contorna um envio incerto.
-    const p = pendentes.get(chavePendente);
+    const p = pendentesEnvio.get(chavePendente);
     if (p) mudarEnvio(p);
     return () => {
       vivo.current = false;
