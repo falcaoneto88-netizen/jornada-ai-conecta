@@ -25,11 +25,20 @@ type EstadoEnvio =
   | { estado: "livre" }
   | { estado: "a_enviar" }
   | { estado: "aceite"; messageId: string }
-  | { estado: "incerto"; requestId: string | null; manualId: string | null };
+  | {
+      estado: "incerto";
+      requestId: string | null;
+      manualId: string | null;
+      /** Momento do clique (relógio do navegador); o servidor nunca escreve após o prazo. */
+      desde?: number;
+      /** Só em memória: mesma chave + mesmo texto capturado podem retomar o mesmo pedido. */
+      capturado?: { texto: string; revisao: Revisao };
+    };
 type Revisao = {
   historyHash: string;
   sessionVersion: number;
-  providerId: string;
+  channel: "SMS" | "IG" | "FB" | "WhatsApp";
+  providerId: string | null;
   defaultId: string | null;
 };
 type DestinoEnvio = {
@@ -38,12 +47,42 @@ type DestinoEnvio = {
   transport: string | null;
   sendAllowed: boolean;
   blockedReason: string | null;
-  revision: Omit<Revisao, "providerId"> & { providerId: string | null };
+  revision: Omit<Revisao, "channel"> & { channel: Revisao["channel"] | null };
+  connectionVerifiedAtSend?: boolean;
 };
+/** Prazo do servidor (20 s) com folga: só depois dele um "sem registo" prova que nada sairá. */
+export const PRAZO_SEM_REGISTO_MS = 90_000;
+const CHAVE_INTENCAO = "jornada:envio-pendente:";
+type Intencao = { requestId: string | null; manualId: string | null; desde: number };
+/** Metadados mínimos (sem texto nem dados clínicos) para sobreviver a recarregar a página. */
+export function lerIntencao(chave: string): Intencao | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAVE_INTENCAO + chave) ?? "null") as unknown;
+    if (!v || typeof v !== "object") return null;
+    const o = v as Record<string, unknown>;
+    const uuid = /^[0-9a-f-]{36}$/;
+    return {
+      requestId: typeof o["requestId"] === "string" && uuid.test(o["requestId"]) ? o["requestId"] : null,
+      manualId: typeof o["manualId"] === "string" && uuid.test(o["manualId"]) ? o["manualId"] : null,
+      desde: typeof o["desde"] === "number" ? o["desde"] : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+function gravarIntencao(chave: string, i: Intencao | null) {
+  try {
+    if (i) localStorage.setItem(CHAVE_INTENCAO + chave, JSON.stringify(i));
+    else localStorage.removeItem(CHAVE_INTENCAO + chave);
+  } catch {
+    /* armazenamento indisponível: o servidor continua a ser a autoridade */
+  }
+}
 const LIMITE = 1500;
 const mesmaRevisao = (a: Revisao, b: DestinoEnvio["revision"]) =>
   a.historyHash === b.historyHash &&
   a.sessionVersion === b.sessionVersion &&
+  a.channel === b.channel &&
   a.providerId === b.providerId &&
   a.defaultId === b.defaultId;
 /** Envios incertos sobrevivem à troca de conversa (o servidor guarda o estado durável). */
@@ -59,6 +98,9 @@ const ANTES_DO_ENVIO = new Set([
   "do_not_contact",
   "unsupported_channel",
   "channel_window",
+  "whatsapp_sender_unverified",
+  "request_expired",
+  "invalid_manual",
   "send_disabled",
   "forbidden",
   "scope_mismatch",
@@ -75,14 +117,19 @@ const ANTES_DO_ENVIO = new Set([
 const ERROS_ENVIO: Record<string, string> = {
   send_disabled: "O envio por esta tela ainda não está liberado nesta clínica.",
   forbidden: "A sua conta não tem permissão para enviar nesta clínica.",
-  scope_mismatch:
-    "Esta conversa ainda não foi recebida pelo atendimento do Jornada AI; continue no GHL.",
+  scope_mismatch: "Esta conversa não pertence à subconta GHL vinculada a esta clínica. Envio bloqueado.",
   not_configured: "O envio manual não está configurado nesta clínica.",
   manual_not_configured: "O envio manual não está configurado nesta clínica.",
   encryption_not_configured: "O envio manual não está configurado nesta clínica.",
   do_not_contact: "Contato com DND ativo ou pedido de interrupção. Envio bloqueado.",
-  unsupported_channel: "Canal sem envio homologado por esta tela. Continue no GHL.",
-  channel_window: "A janela de resposta deste canal terminou. Continue no GHL.",
+  unsupported_channel:
+    "Este canal não tem envio manual por esta tela (só SMS, Instagram, Facebook e WhatsApp). Continue no GHL.",
+  channel_window:
+    "A última mensagem recebida tem mais de 24 horas: a janela de resposta deste canal fechou. Continue no GHL.",
+  whatsapp_sender_unverified:
+    "Remetente WhatsApp não identificado: o GHL não indicou o número comercial que recebeu a mensagem. Envio bloqueado.",
+  request_expired: "O pedido demorou demais e foi interrompido antes do envio. Nada foi enviado.",
+  invalid_manual: "Texto inválido para envio. O texto foi mantido.",
   inbound_not_verified: "Não há mensagem recebida válida para responder.",
   draft_stale: "A conversa mudou. Atualize as mensagens; o texto foi mantido.",
   version_conflict: "A conversa mudou. Atualize as mensagens; o texto foi mantido.",
@@ -301,8 +348,17 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   function mudarEnvio(e: EstadoEnvio) {
     envioRef.current = e;
     setEnvio(e);
-    if (e.estado === "incerto") pendentesEnvio.set(chavePendente, e);
-    else if (e.estado !== "a_enviar") pendentesEnvio.delete(chavePendente);
+    if (e.estado === "incerto") {
+      pendentesEnvio.set(chavePendente, e);
+      gravarIntencao(chavePendente, {
+        requestId: e.requestId,
+        manualId: e.manualId,
+        desde: e.desde ?? Date.now(),
+      });
+    } else if (e.estado !== "a_enviar") {
+      pendentesEnvio.delete(chavePendente);
+      gravarIntencao(chavePendente, null);
+    }
   }
   const analisar = useServerFn(aiSupport);
   const corrigirFn = useServerFn(corrigirRascunho);
@@ -316,6 +372,11 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     // Trocar de conversa e voltar não contorna um envio incerto.
     const p = pendentesEnvio.get(chavePendente);
     if (p) mudarEnvio(p);
+    else {
+      // Recarregar a página também não contorna: recupera a intenção mínima gravada.
+      const i = lerIntencao(chavePendente);
+      if (i) mudarEnvio({ estado: "incerto", ...i });
+    }
     return () => {
       vivo.current = false;
     };
@@ -334,7 +395,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
         if (r.ok) {
           setDestino(r.data);
           setErroDestino(r.data.blockedReason ? erroEnvio(r.data.blockedReason) : null);
-          if (r.data.sendAllowed && r.data.revision.providerId)
+          if (r.data.sendAllowed && r.data.revision.channel)
             setReferencia((atual) => atual ?? (r.data.revision as Revisao));
           const ultimo = r.data.lastDispatch;
           if (
@@ -343,8 +404,9 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
             envioRef.current.estado !== "a_enviar"
           )
             mudarEnvio({
-              estado: "incerto",
-              requestId: envioRef.current.estado === "incerto" ? envioRef.current.requestId : null,
+              ...(envioRef.current.estado === "incerto"
+                ? envioRef.current
+                : { estado: "incerto" as const, requestId: null }),
               manualId: ultimo.id,
             });
         } else {
@@ -427,20 +489,29 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (vivo.current) setCorrigindo(false);
     }
   }
-  async function enviar() {
+  async function enviar(retomar?: Extract<EstadoEnvio, { estado: "incerto" }>) {
     const atual = envioRef.current.estado;
-    if (atual === "a_enviar" || atual === "incerto" || !orgId) return;
-    if (!referencia || !destino?.sendAllowed || revisaoMudou) return;
-    const texto = rascunho.trim();
-    if (!texto || texto.length > LIMITE) return;
-    if (texto !== rascunho) editar(texto);
-    // A mesma revisão reutiliza a mesma chave: repetições não geram segundo POST.
-    if (!pedido.current || pedido.current.rev !== revisao.current)
+    if (atual === "a_enviar" || !orgId) return;
+    if (atual === "incerto" && !retomar) return;
+    // Retomar só reutiliza a MESMA chave com o MESMO texto capturado (nunca nova chave).
+    const texto = retomar?.capturado?.texto ?? rascunho;
+    const revisaoEnvio = retomar?.capturado?.revisao ?? referencia;
+    if (retomar && (!retomar.requestId || !retomar.capturado)) return;
+    if (!revisaoEnvio || (!retomar && (!destino?.sendAllowed || revisaoMudou))) return;
+    // Texto EXATO visível: trim só para testar vazio.
+    if (!texto.trim() || texto.length > LIMITE) return;
+    if (!retomar && (!pedido.current || pedido.current.rev !== revisao.current))
       pedido.current = { rev: revisao.current, id: crypto.randomUUID() };
-    const requestId = pedido.current.id;
-    const rev = revisao.current;
+    const requestId = retomar?.requestId ?? pedido.current!.id;
+    const rev = retomar ? null : revisao.current;
+    const desde = retomar?.desde ?? Date.now();
+    const capturado = { texto, revisao: revisaoEnvio };
+    // Intenção gravada ANTES da chamada: um recarregamento a meio não liberta novo envio.
+    gravarIntencao(chavePendente, { requestId, manualId: null, desde });
     mudarEnvio({ estado: "a_enviar" });
     setAviso(null);
+    const incerto = (manualId: string | null) =>
+      mudarEnvio({ estado: "incerto", requestId, manualId, desde, capturado });
     try {
       const r = await enviarFn({
         data: {
@@ -449,13 +520,13 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           conversationId: conversa.id,
           text: texto,
           requestId,
-          revision: referencia,
+          revision: revisaoEnvio,
         },
       });
       if (!vivo.current) return;
       if (!r.ok) {
         if (ANTES_DO_ENVIO.has(r.code)) mudarEnvio({ estado: "livre" });
-        else mudarEnvio({ estado: "incerto", requestId, manualId: null });
+        else incerto(null);
         setAviso(
           r.code === "revision_changed" || r.code === "route_changed"
             ? "A conversa ou a rota mudou desde a sua revisão. Confira as mensagens e tente de novo; nada foi enviado."
@@ -463,9 +534,13 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
         );
         return;
       }
-      aplicarEstado(r.data.state, r.data.messageId, r.data.manualId, requestId, rev);
+      aplicarEstado(r.data.state, r.data.messageId, r.data.manualId, requestId, rev, r.data.code, {
+        desde,
+        capturado,
+      });
     } catch {
-      if (vivo.current) mudarEnvio({ estado: "incerto", requestId, manualId: null });
+      // Tempo esgotado/rede: o servidor pode ter aceite. Nunca gerar nova chave.
+      if (vivo.current) incerto(null);
     }
   }
   function aplicarEstado(
@@ -474,6 +549,8 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     manualId: string,
     requestId: string | null,
     rev: number | null,
+    code: string | null = null,
+    extra: { desde?: number; capturado?: { texto: string; revisao: Revisao } } = {},
   ) {
     if (state === "sent" && messageId) {
       mudarEnvio({ estado: "aceite", messageId });
@@ -486,11 +563,24 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       setReferencia(null);
       setTick((t) => t + 1);
       void result.refetch();
-    } else if (state === "rejected" || state === "prepared" || state === "invalidated") {
+    } else if (state === "rejected") {
       mudarEnvio({ estado: "livre" });
-      if (state === "rejected")
-        setAviso("O envio foi recusado. O texto foi mantido; confira a conversa.");
-    } else mudarEnvio({ estado: "incerto", requestId, manualId });
+      setAviso(
+        code === "route_changed"
+          ? erroEnvio("route_changed")
+          : "O GHL recusou o envio (pode ser permissão, conexão do canal ou janela). O texto foi mantido; nada foi enviado.",
+      );
+    } else if (state === "invalidated") {
+      // Pedido substituído/expirado: não houve POST. Exige leitura atualizada antes de decidir.
+      mudarEnvio({ estado: "livre" });
+      pedido.current = null;
+      setReferencia(null);
+      setTick((t) => t + 1);
+      void result.refetch();
+      setAviso(erroEnvio("draft_stale"));
+    } else
+      // prepared/sending/unknown não são terminais: o pedido original pode ainda enviar.
+      mudarEnvio({ estado: "incerto", requestId, manualId, ...extra });
   }
   async function verificarEstado() {
     const e = envioRef.current;
@@ -505,9 +595,25 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (!vivo.current) return;
       if (!r.ok) setAviso(erroEnvio(r.code));
       else if (r.data === null) {
+        // Sem registo NÃO prova não-envio enquanto o pedido original puder estar em curso.
+        if (e.desde !== undefined && Date.now() - e.desde > PRAZO_SEM_REGISTO_MS) {
+          mudarEnvio({ estado: "livre" });
+          setAviso("O prazo do pedido terminou sem registo no servidor. Nada foi enviado.");
+        } else setAviso("O pedido ainda pode estar em processamento. Verifique de novo em instantes.");
+      } else if (
+        r.data.state === "prepared" &&
+        Date.parse(r.data.expiresAt) + 5000 < Date.now()
+      ) {
         mudarEnvio({ estado: "livre" });
-        setAviso("O servidor não registou esse envio. Nada foi enviado; pode tentar de novo.");
-      } else aplicarEstado(r.data.state, r.data.messageId, r.data.manualId, e.requestId, null);
+        setAviso("O pedido expirou antes do envio. Nada foi enviado.");
+      } else {
+        aplicarEstado(r.data.state, r.data.messageId, r.data.manualId, e.requestId, null, r.data.code, {
+          ...(e.desde !== undefined ? { desde: e.desde } : {}),
+          ...(e.capturado ? { capturado: e.capturado } : {}),
+        });
+        if (r.data.state === "prepared")
+          setAviso("Pedido registado mas ainda não enviado. Pode retomar o MESMO envio.");
+      }
     } catch {
       if (vivo.current) setAviso("Não foi possível verificar agora. O envio continua bloqueado.");
     } finally {
@@ -730,16 +836,21 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
         />
         <p
           id="rascunho-contador"
-          className={`text-xs ${rascunho.trim().length > LIMITE ? "text-destructive" : "text-muted-foreground"}`}
+          className={`text-xs ${rascunho.length > LIMITE ? "text-destructive" : "text-muted-foreground"}`}
         >
-          {rascunho.trim().length}/{LIMITE} caracteres
-          {rascunho.trim().length > LIMITE ? " · reduza o texto para poder corrigir ou enviar" : ""}
+          {rascunho.length}/{LIMITE} caracteres
+          {rascunho.length > LIMITE ? " · reduza o texto para poder corrigir ou enviar" : ""}
         </p>
         <p className="text-xs text-muted-foreground">
           Destinatário: {destino?.name ?? conversa.nome} · Canal:{" "}
           {destino?.channel ?? "não verificado"} · Transporte:{" "}
           {destino?.transport ?? "não verificado"}
         </p>
+        {destino?.sendAllowed && destino.connectionVerifiedAtSend && (
+          <p className="text-xs text-muted-foreground">
+            Canal identificado; a conexão e a permissão serão validadas pelo GHL no envio.
+          </p>
+        )}
         {revisaoMudou && (
           <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
             <p>
@@ -751,7 +862,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
               variant="outline"
               disabled={enviando}
               onClick={() =>
-                destino?.revision.providerId && setReferencia(destino.revision as Revisao)
+                destino?.revision.channel && setReferencia(destino.revision as Revisao)
               }
             >
               Conferi as mensagens novas
@@ -775,7 +886,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
               !destino?.sendAllowed ||
               !referencia ||
               revisaoMudou ||
-              rascunho.trim().length > LIMITE
+              rascunho.length > LIMITE
             }
             onClick={() => void enviar()}
           >
@@ -812,6 +923,16 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
             >
               Verificar estado do envio
             </Button>
+            {envio.requestId && envio.capturado && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={conferindo}
+                onClick={() => void enviar(envio)}
+              >
+                Retomar o mesmo envio
+              </Button>
+            )}
             {envio.manualId && (
               <div className="flex flex-wrap gap-2">
                 <Input

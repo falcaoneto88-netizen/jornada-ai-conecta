@@ -71,8 +71,8 @@ vi.mock("@/lib/ghl-observation", () => ({
     },
   }),
 }));
-import { GhlInbox, pendentesEnvio } from "./ghl-inbox";
-const REV = { historyHash: "a".repeat(64), sessionVersion: 1, providerId: "zap", defaultId: "zap" };
+import { GhlInbox, PRAZO_SEM_REGISTO_MS, lerIntencao, pendentesEnvio } from "./ghl-inbox";
+const REV = { historyHash: "a".repeat(64), sessionVersion: 1, channel: "SMS" as const, providerId: "zap", defaultId: "zap" };
 function ctx(over: Record<string, unknown> = {}) {
   return {
     name: "Ana",
@@ -103,6 +103,7 @@ beforeEach(() => {
   mocks.escopo = "conta-a";
   mocks.error = false;
   pendentesEnvio.clear();
+  localStorage.clear();
 });
 function bruno() {
   fireEvent.click(screen.getByRole("button", { name: /Bruno/ }));
@@ -227,7 +228,8 @@ it("Enviar: um clique envia o texto visível atual; duplo clique não duplica", 
     organizationId: "orgA",
     contactId: "Ana",
     conversationId: "Ana",
-    text: "Texto final",
+    // Texto EXATO visível, com espaços intencionais (sem trim silencioso).
+    text: "Texto final  ",
   });
   expect(campo().disabled).toBe(true);
   await act(async () =>
@@ -397,4 +399,126 @@ it("colar texto acima do limite não corta; mostra contador e bloqueia envio", a
   expect(
     (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
   ).toBe(true);
+});
+
+it("quebras de linha e espaços são enviados exatamente como visíveis", async () => {
+  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "sent", messageId: "m9", code: null, manualId: "x" } });
+  render(<GhlInbox />);
+  await flush();
+  escrever("  Linha 1\n\nLinha 2 ");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  expect(mocks.enviar.mock.calls[0]![0].data.text).toBe("  Linha 1\n\nLinha 2 ");
+});
+it("timeout antes do prepare + lookup null dentro do prazo: continua bloqueado, zero segundo POST", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  mocks.estado.mockResolvedValue({ ok: true, data: null });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto A");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
+  await flush();
+  expect(screen.getByText(/ainda pode estar em processamento/)).toBeTruthy();
+  escrever("Texto B");
+  const b = screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement;
+  expect(b.disabled).toBe(true);
+  fireEvent.click(b);
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+it("lookup null só liberta depois do prazo do servidor ter passado", async () => {
+  const agora = Date.now();
+  const spy = vi.spyOn(Date, "now").mockReturnValue(agora);
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  mocks.estado.mockResolvedValue({ ok: true, data: null });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto A");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  spy.mockReturnValue(agora + PRAZO_SEM_REGISTO_MS + 1);
+  fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
+  await flush();
+  expect(screen.getByText(/prazo do pedido terminou sem registo/)).toBeTruthy();
+  spy.mockRestore();
+});
+it("prepared não expirado não liberta; retomar usa a MESMA chave e o MESMO texto", async () => {
+  mocks.enviar.mockRejectedValueOnce(new Error("timeout"));
+  mocks.estado.mockResolvedValue({
+    ok: true,
+    data: { state: "prepared", manualId: "11111111-1111-4111-8111-111111111111", messageId: null, code: null, expiresAt: new Date(Date.now() + 600000).toISOString() },
+  });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto capturado");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  const primeira = mocks.enviar.mock.calls[0]![0].data;
+  fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ }));
+  await flush();
+  expect(screen.getByText(/Pode retomar o MESMO envio/)).toBeTruthy();
+  escrever("Texto editado depois");
+  mocks.enviar.mockResolvedValueOnce({ ok: true, data: { state: "sent", messageId: "m2", code: null, manualId: "x" } });
+  fireEvent.click(screen.getByRole("button", { name: /Retomar o mesmo envio/ }));
+  await flush();
+  const segunda = mocks.enviar.mock.calls[1]![0].data;
+  expect(segunda.requestId).toBe(primeira.requestId);
+  expect(segunda.text).toBe("Texto capturado");
+  // A edição posterior é preservada.
+  expect(campo().value).toBe("Texto editado depois");
+});
+it("invalidated vira draft_stale: preserva texto e exige leitura atualizada", async () => {
+  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "invalidated", messageId: null, code: null, manualId: "x" } });
+  render(<GhlInbox />);
+  await flush();
+  const leituras = mocks.contexto.mock.calls.length;
+  escrever("Texto mantido");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  expect(screen.getByText(/A conversa mudou. Atualize as mensagens; o texto foi mantido/)).toBeTruthy();
+  expect(screen.queryByText(/Resultado do envio não confirmado/)).toBeNull();
+  expect(campo().value).toBe("Texto mantido");
+  expect(mocks.contexto.mock.calls.length).toBeGreaterThan(leituras);
+});
+it("recarregar a página não contorna envio incerto (intenção mínima persistida, sem texto)", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  const { unmount } = render(<GhlInbox />);
+  await flush();
+  escrever("Texto clínico não persistido");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  const gravado = JSON.stringify(Object.fromEntries(Object.entries(localStorage)));
+  expect(gravado).not.toContain("Texto clínico");
+  unmount();
+  pendentesEnvio.clear(); // simula recarregar: memória perdida
+  render(<GhlInbox />);
+  await flush();
+  expect(screen.getByText(/Resultado do envio não confirmado/)).toBeTruthy();
+  escrever("Outro");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  expect(lerIntencao("orgA:Ana:Ana")?.requestId).toMatch(/^[0-9a-f-]{36}$/);
+});
+it("Instagram elegível: informa que a conexão é validada no envio; recusa 403 preserva texto", async () => {
+  mocks.contexto.mockResolvedValue({
+    ok: true,
+    data: ctx({ channel: "IG", transport: "Instagram (integração nativa)", connectionVerifiedAtSend: true, revision: { ...REV, channel: "IG", providerId: null, defaultId: null } }),
+  });
+  mocks.enviar.mockResolvedValue({ ok: true, data: { state: "rejected", messageId: null, code: "forbidden_provider", manualId: "x" } });
+  render(<GhlInbox />);
+  await flush();
+  expect(screen.getByText(/conexão e a permissão serão validadas pelo GHL no envio/)).toBeTruthy();
+  escrever("Olá pelo Instagram");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await flush();
+  expect(mocks.enviar.mock.calls[0]![0].data.revision.channel).toBe("IG");
+  expect(screen.getByText(/GHL recusou o envio/)).toBeTruthy();
+  expect(campo().value).toBe("Olá pelo Instagram");
+});
+it("canal fora da janela mostra motivo verdadeiro (24h)", async () => {
+  mocks.contexto.mockResolvedValue({ ok: true, data: ctx({ channel: "IG", sendAllowed: false, blockedReason: "channel_window" }) });
+  render(<GhlInbox />);
+  await flush();
+  expect(screen.getByText(/mais de 24 horas/)).toBeTruthy();
 });
