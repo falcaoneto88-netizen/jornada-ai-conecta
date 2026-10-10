@@ -255,7 +255,7 @@ it("falha de rede = incerto, mantém texto e não reenvia automaticamente", asyn
   expect(campo().value).toBe("Mensagem");
   expect(screen.getByText(/não confirmado/)).toBeTruthy();
 });
-it("falha antes do POST liberta; nova revisão gera nova chave, mesma revisão reutiliza", async () => {
+it("falha definitiva antes do POST liberta; novo clique explícito gera nova chave", async () => {
   mocks.enviar.mockResolvedValue({ ok: false, code: "send_disabled" });
   render(<GhlInbox />);
   await flush();
@@ -264,7 +264,7 @@ it("falha antes do POST liberta; nova revisão gera nova chave, mesma revisão r
   await act(async () => fireEvent.click(b()));
   await act(async () => fireEvent.click(b()));
   const [a, c] = mocks.enviar.mock.calls.map((x) => x[0].data.requestId);
-  expect(a).toBe(c);
+  expect(c).not.toBe(a);
   escrever("Outra");
   await act(async () => fireEvent.click(b()));
   expect(mocks.enviar.mock.calls[2]![0].data.requestId).not.toBe(a);
