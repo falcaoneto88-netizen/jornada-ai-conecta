@@ -76,7 +76,13 @@ beforeEach(() => {
     f.mockReset();
   mocks.contexto.mockReset().mockResolvedValue({
     ok: true,
-    data: { name: "Ana", channel: "SMS", sendAllowed: true, blockedReason: null, lastDispatch: null },
+    data: {
+      name: "Ana",
+      channel: "SMS",
+      sendAllowed: true,
+      blockedReason: null,
+      lastDispatch: null,
+    },
   });
   mocks.escopo = "conta-a";
   mocks.error = false;
@@ -168,7 +174,11 @@ it("edição durante a correção (mesmo voltando ao original) descarta a respos
   expect(screen.getByText(/descartada/)).toBeTruthy();
 });
 it("erro da correção mantém o texto e mostra a mensagem", async () => {
-  mocks.corrigir.mockResolvedValue({ ok: false, code: "sem_creditos", message: "Sem créditos de IA disponíveis. O texto foi mantido." });
+  mocks.corrigir.mockResolvedValue({
+    ok: false,
+    code: "sem_creditos",
+    message: "Sem créditos de IA disponíveis. O texto foi mantido.",
+  });
   render(<GhlInbox />);
   escrever("Ola");
   await act(async () => fireEvent.click(screen.getByRole("button", { name: /Corrigir/ })));
@@ -196,9 +206,16 @@ it("Enviar: um clique envia o texto visível atual; duplo clique não duplica", 
   fireEvent.click(b);
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
   const arg = mocks.enviar.mock.calls[0]![0].data;
-  expect(arg).toMatchObject({ organizationId: "orgA", contactId: "Ana", conversationId: "Ana", text: "Texto final" });
+  expect(arg).toMatchObject({
+    organizationId: "orgA",
+    contactId: "Ana",
+    conversationId: "Ana",
+    text: "Texto final",
+  });
   expect(campo().readOnly).toBe(true);
-  await act(async () => r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }));
+  await act(async () =>
+    r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }),
+  );
   expect(screen.getByText(/aceite pelo GHL \(ID m1\)/)).toBeTruthy();
   expect(mocks.refetch).toHaveBeenCalled();
   expect(campo().value).toBe("");
@@ -230,11 +247,19 @@ it("repetição manual da mesma revisão reutiliza a chave de idempotência", as
 it("bloqueio do servidor (DND/canal/escopo) desativa Enviar com motivo", async () => {
   mocks.contexto.mockResolvedValue({
     ok: true,
-    data: { name: "Ana", channel: "SMS", sendAllowed: false, blockedReason: "do_not_contact", lastDispatch: null },
+    data: {
+      name: "Ana",
+      channel: "SMS",
+      sendAllowed: false,
+      blockedReason: "do_not_contact",
+      lastDispatch: null,
+    },
   });
   render(<GhlInbox />);
   await flush();
   escrever("Mensagem");
-  expect((screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
   expect(screen.getByText(/DND ativo/)).toBeTruthy();
 });

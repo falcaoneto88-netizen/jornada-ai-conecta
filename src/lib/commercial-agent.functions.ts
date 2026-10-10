@@ -132,7 +132,11 @@ export const getInboxSendContext = createServerFn({ method: "GET" })
         sendAllowed: c.sendAllowed,
         blockedReason: c.blockedReason,
         lastDispatch: c.lastDispatch
-          ? { id: c.lastDispatch.id, state: c.lastDispatch.state, messageId: c.lastDispatch.messageId }
+          ? {
+              id: c.lastDispatch.id,
+              state: c.lastDispatch.state,
+              messageId: c.lastDispatch.messageId,
+            }
           : null,
       };
     });

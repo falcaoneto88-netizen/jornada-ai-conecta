@@ -117,7 +117,8 @@ export async function corrigirTexto(
     return {
       ok: false,
       code: "rate_limited",
-      message: "Limite de pedidos de IA atingido. Tente novamente em instantes; o texto foi mantido.",
+      message:
+        "Limite de pedidos de IA atingido. Tente novamente em instantes; o texto foi mantido.",
     };
   if (res.status === 402)
     return {
