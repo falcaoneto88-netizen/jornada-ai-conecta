@@ -507,3 +507,10 @@ Estado nesta revisão: **implementado localmente; gates e integração em andame
 - QA sintético em componentes reais via harness local separado: desktop 1415×1024, mobile 390×844 e 360×740; sem rolagem lateral, rodapé acessível com IA/detalhes abertos. Abertura no fim, texto preservado na alternância, filtro sem resultados mantém paginação, chegada de nova mensagem preserva leitura e invalida sugestão antiga. Revisão independente corrigiu corrida da correção textual após confirmação tardia e retorno móvel quando a conversa some/falha. Nenhum envio real ou chamada de IA real foi disparado.
 - Implementado e testado localmente; integração/publicação ainda pendentes nesta revisão.
 - Fora desta entrega: reprodução segura de anexos recebidos, atribuição/SLA/resolução de atendimentos, contagem global por filtro e ligação direta da agenda a uma conversa. Os contratos atuais não comprovam esses estados; nenhum indicador fictício foi introduzido.
+
+## Integração UX inbox/visão geral — 12/10/2026 20:17 UTC
+
+- Pacote revisão `438f6cf`, base `7af723d`. HEAD local `155ccc9` (descendente; só difere em `src/integrations/supabase/types.ts`, fora do pacote).
+- Implementado: 13/13 `before_sha256` conferidos (2 novos ausentes) e 13/13 `after_sha256` conferidos após cópia exata. Este registo altera depois o hash deste documento.
+- Testado: `tsgo --noEmit` 0; `vite build` 0; `git diff --check` 0; 12 suítes pedidas — 265 testes passaram (exit 0). Sem banco, IA real, envios ou harness na app.
+- Publicação: pendente (coordenador).
