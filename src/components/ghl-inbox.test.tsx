@@ -11,6 +11,14 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(),
   escopo: "conta-a",
   error: false,
+  org: "orgA",
+  brunoChannel: "SMS",
+  brunoUnread: 1,
+  hasNextPage: false,
+  nextPage: vi.fn(),
+  messageText: "SIM",
+  extraMessage: false,
+  olderMessage: false,
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
 vi.mock("@/lib/ai.functions", () => ({ aiSupport: mocks.analisar }));
@@ -23,7 +31,7 @@ vi.mock("@/lib/commercial-agent.functions", () => ({
 }));
 vi.mock("@/lib/jev-pedidos.functions", () => ({ classificarPedido: vi.fn() }));
 vi.mock("@/lib/organization", () => ({
-  useOrganizacao: () => ({ data: { organizacao: { id: "orgA", timezone: "Europe/Lisbon" } } }),
+  useOrganizacao: () => ({ data: { organizacao: { id: mocks.org, timezone: "Europe/Lisbon" } } }),
 }));
 vi.mock("@/lib/repo", () => ({ useModoDados: () => ({ escopo: mocks.escopo }) }));
 vi.mock("@/lib/ghl-observation", () => ({
@@ -38,14 +46,16 @@ vi.mock("@/lib/ghl-observation", () => ({
             locationId: "locA",
             nome,
             ultimaMensagem: "Olá",
-            tipo: "SMS",
+            tipo: nome === "Bruno" ? mocks.brunoChannel : "SMS",
             ultimaData: "2026-09-14T12:00:00Z",
-            naoLidas: 1,
+            naoLidas: nome === "Bruno" ? mocks.brunoUnread : 1,
           })),
         },
       ],
     },
     refetch: vi.fn(),
+    hasNextPage: mocks.hasNextPage,
+    fetchNextPage: mocks.nextPage,
   }),
   useMensagensGhl: (id: string) => ({
     isError: mocks.error,
@@ -56,15 +66,41 @@ vi.mock("@/lib/ghl-observation", () => ({
         {
           consultadoEm: "2026-09-14T12:00:00Z",
           mensagens: [
+            ...(mocks.olderMessage
+              ? [
+                  {
+                    id: "older",
+                    texto: "Mensagem anterior",
+                    tipo: "SMS",
+                    direcao: "inbound",
+                    data: "2026-09-13T12:00:00Z",
+                    estado: "delivered",
+                    anexos: 0,
+                  },
+                ]
+              : []),
             {
               id: `msg-${id}`,
-              texto: "SIM",
+              texto: mocks.messageText,
               tipo: "SMS",
               direcao: "inbound",
               data: "2026-09-14T12:00:00Z",
               estado: "delivered",
               anexos: 0,
             },
+            ...(mocks.extraMessage
+              ? [
+                  {
+                    id: "new",
+                    texto: "Outra dúvida",
+                    tipo: "SMS",
+                    direcao: "inbound",
+                    data: "2026-09-14T12:01:00Z",
+                    estado: "delivered",
+                    anexos: 0,
+                  },
+                ]
+              : []),
           ],
         },
       ],
@@ -113,6 +149,14 @@ beforeEach(() => {
     data: ctx(),
   });
   mocks.escopo = "conta-a";
+  mocks.org = "orgA";
+  mocks.brunoChannel = "SMS";
+  mocks.brunoUnread = 1;
+  mocks.hasNextPage = false;
+  mocks.messageText = "SIM";
+  mocks.extraMessage = false;
+  mocks.olderMessage = false;
+  mocks.nextPage.mockReset();
   mocks.error = false;
   pendentesEnvio.clear();
   localStorage.clear();
@@ -331,7 +375,7 @@ it("recuperação do envio incerto limpa só o anexo que pertence ao pedido conf
 function bruno() {
   fireEvent.click(screen.getByRole("button", { name: /Bruno/ }));
 }
-it("rascunho não acompanha a troca de conversa nem volta ao reabrir", () => {
+it("rascunhos de texto são separados por conversa e voltam ao reabrir", () => {
   render(<GhlInbox />);
   fireEvent.change(screen.getByLabelText("Rascunho para Ana"), {
     target: { value: "Privado de Ana" },
@@ -339,7 +383,11 @@ it("rascunho não acompanha a troca de conversa nem volta ao reabrir", () => {
   bruno();
   expect((screen.getByLabelText("Rascunho para Bruno") as HTMLTextAreaElement).value).toBe("");
   fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
-  expect((screen.getByLabelText("Rascunho para Ana") as HTMLTextAreaElement).value).toBe("");
+  expect((screen.getByLabelText("Rascunho para Ana") as HTMLTextAreaElement).value).toBe(
+    "Privado de Ana",
+  );
+  expect(screen.getByText("Rascunho")).toBeTruthy();
+  expect(localStorage.length).toBe(0);
 });
 it("resultado tardio da IA não contamina o novo atendimento", async () => {
   let resolver!: (data: unknown) => void;
@@ -350,7 +398,7 @@ it("resultado tardio da IA não contamina o novo atendimento", async () => {
       }),
   );
   render(<GhlInbox />);
-  fireEvent.click(screen.getByText("Analisar mensagens carregadas"));
+  fireEvent.click(screen.getByText("Analisar conversa"));
   bruno();
   await act(async () =>
     resolver({
@@ -385,9 +433,7 @@ it("erro de leitura oculta conteúdo antigo e bloqueia nova análise", () => {
   render(<GhlInbox />);
   expect(screen.getByRole("alert").textContent).toContain("Token sem escopo");
   expect(screen.queryByText("Texto recebido: SIM")).toBeNull();
-  expect((screen.getByText("Analisar mensagens carregadas") as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect((screen.getByText("Analisar conversa") as HTMLButtonElement).disabled).toBe(true);
 });
 
 const campo = (n = "Ana") => screen.getByLabelText(`Rascunho para ${n}`) as HTMLTextAreaElement;
@@ -519,7 +565,7 @@ it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo suce
   mocks.enviar.mockImplementation(() => new Promise((x) => (r = x)));
   render(<GhlInbox />);
   await flush();
-  await act(async () => fireEvent.click(screen.getByText("Analisar mensagens carregadas")));
+  await act(async () => fireEvent.click(screen.getByText("Analisar conversa")));
   escrever("Texto enviado");
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   const usar = screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement;
@@ -795,4 +841,208 @@ it("canal fora da janela mostra motivo verdadeiro (24h)", async () => {
   render(<GhlInbox />);
   await flush();
   expect(screen.getByText(/mais de 24 horas/)).toBeTruthy();
+});
+
+it("filtros só usam conversas carregadas e carregar mais continua disponível sem correspondências", async () => {
+  mocks.brunoChannel = "TYPE_INSTAGRAM";
+  mocks.brunoUnread = 0;
+  mocks.hasNextPage = true;
+  render(<GhlInbox />);
+  await flush();
+  escrever("Rascunho de Ana");
+  fireEvent.change(screen.getByLabelText("Filtrar por canal"), { target: { value: "Instagram" } });
+  expect(screen.queryByRole("button", { name: /Ana Olá/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /Bruno Olá/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Não lidas no GHL" }));
+  expect(screen.getByText(/0 de 2 · das conversas carregadas/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Carregar mais conversas" }));
+  expect(mocks.nextPage).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText("Filtrar por canal"), { target: { value: "all" } });
+  fireEvent.click(screen.getByRole("button", { name: "Todas" }));
+  expect(campo().value).toBe("Rascunho de Ana");
+});
+
+it("trocar organização mantém textos separados, sem conteúdo no armazenamento persistente", async () => {
+  const { rerender } = render(<GhlInbox />);
+  await flush();
+  escrever("Texto da organização A");
+  mocks.org = "orgB";
+  rerender(<GhlInbox />);
+  await flush();
+  expect(campo().value).toBe("");
+  escrever("Texto da organização B");
+  mocks.org = "orgA";
+  rerender(<GhlInbox />);
+  await flush();
+  expect(campo().value).toBe("Texto da organização A");
+  expect(localStorage.length).toBe(0);
+});
+
+it("voltar à lista mantém texto, descarta anexo e oferece retorno quando seleção desaparece", async () => {
+  const { rerender } = render(<GhlInbox />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+  escrever("Rascunho móvel");
+  await attach();
+  fireEvent.click(screen.getByRole("button", { name: "Voltar às conversas" }));
+  expect(screen.queryByLabelText("Prévia do anexo")).toBeNull();
+  expect(campo().value).toBe("Rascunho móvel");
+  expect(URL.revokeObjectURL).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Não lidas no GHL" }));
+  bruno();
+  mocks.brunoUnread = 0;
+  rerender(<GhlInbox />);
+  await flush();
+  expect(screen.getByRole("button", { name: "Voltar às conversas" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Voltar às conversas" }));
+  expect(screen.getByLabelText("Conversas reais").className).not.toContain("hidden lg:flex");
+});
+
+const analysis = {
+  resumo: "Resumo da conversa",
+  intencao: "agendamento",
+  revisao_humana: false,
+  sugestoes: [{ tom: "objetiva", texto: "Sugestão revista" }],
+};
+it.each(["texto", "histórico anterior", "nova mensagem", "rota"])(
+  "sugestão IA fica bloqueada após mudança de %s e não apaga texto autorado",
+  async (change) => {
+    mocks.analisar.mockResolvedValue({ ok: true, analise: analysis });
+    const { rerender } = render(<GhlInbox />);
+    await flush();
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Analisar conversa" })),
+    );
+    escrever("Meu texto autorado");
+    if (change === "texto") mocks.messageText = "Pergunta editada no mesmo ID";
+    if (change === "histórico anterior") mocks.olderMessage = true;
+    if (change === "nova mensagem") mocks.extraMessage = true;
+    if (change === "rota") {
+      mocks.contexto.mockResolvedValue({
+        ok: true,
+        data: ctx({ revision: { ...REV, providerId: "outro" } }),
+      });
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: /Atualizar$/ })));
+    }
+    rerender(<GhlInbox />);
+    await flush();
+    const use = screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement;
+    expect(use.disabled).toBe(true);
+    fireEvent.click(use);
+    expect(campo().value).toBe("Meu texto autorado");
+    expect(screen.getByText(/Analise novamente para usar uma sugestão/)).toBeTruthy();
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Analisar conversa" })),
+    );
+    expect(
+      (screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(campo().value).toBe("Meu texto autorado");
+  },
+);
+
+it("mensagem durante análise mantém resposta antiga marcada desatualizada sem aplicar rascunho", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.analisar.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const { rerender } = render(<GhlInbox />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Analisar conversa" }));
+  escrever("Não substituir");
+  mocks.extraMessage = true;
+  rerender(<GhlInbox />);
+  await flush();
+  await act(async () => resolve({ ok: true, analise: analysis }));
+  expect(
+    (screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(campo().value).toBe("Não substituir");
+});
+
+it("sucesso tardio após trocar de conversa limpa só o texto enviado e não reapresenta envio incerto", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.enviar.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto enviado");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  bruno();
+  await flush();
+  escrever("Texto privado de Bruno", "Bruno");
+  await act(async () =>
+    resolve({ ok: true, data: { state: "sent", messageId: "late", code: null, manualId: "m" } }),
+  );
+  expect(campo("Bruno").value).toBe("Texto privado de Bruno");
+  fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+  await flush();
+  expect(campo().value).toBe("");
+  expect(screen.queryByText(/Resultado do envio não confirmado/)).toBeNull();
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("sucesso tardio não apaga texto editado ao reabrir conversa; correção tardia não ressuscita envio", async () => {
+  let send!: (value: unknown) => void;
+  let correct!: (value: unknown) => void;
+  mocks.enviar.mockImplementation(
+    () =>
+      new Promise((r) => {
+        send = r;
+      }),
+  );
+  mocks.corrigir.mockImplementation(
+    () =>
+      new Promise((r) => {
+        correct = r;
+      }),
+  );
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto enviado");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  bruno();
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Corrigir" }));
+  await act(async () =>
+    send({ ok: true, data: { state: "sent", messageId: "late", code: null, manualId: "m" } }),
+  );
+  expect(campo().value).toBe("");
+  await act(async () => correct({ ok: true, texto: "Texto enviado corrigido" }));
+  expect(campo().value).toBe("");
+  expect(screen.getByText(/sugestão foi descartada/)).toBeTruthy();
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("texto restaurado após timeout continua bloqueado; confirmação preserva edição posterior", async () => {
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  mocks.estado.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "verified", manualId: "manual", code: null },
+  });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Original");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  bruno();
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+  await flush();
+  expect(campo().value).toBe("Original");
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  escrever("Próxima resposta");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Verificar estado/ })));
+  expect(campo().value).toBe("Próxima resposta");
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
 });

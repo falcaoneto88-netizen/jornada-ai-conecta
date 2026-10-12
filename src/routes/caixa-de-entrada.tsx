@@ -52,6 +52,7 @@ function CaixaEntrada() {
     <AppShell
       title="Caixa de Entrada IA"
       description="Conversas e respostas consultadas no GoHighLevel"
+      workspace
     >
       <GhlInbox />
     </AppShell>

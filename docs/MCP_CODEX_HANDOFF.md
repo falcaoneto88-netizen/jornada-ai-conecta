@@ -494,3 +494,16 @@ Estado nesta revisão: **implementado localmente; gates e integração em andame
 - Acesso via ambiente Lovable normal, sem bypass de proteções; nenhum header/cookie registado.
 - Resultados locais do coordenador: 1726 testes / 76 suítes passaram; 11 suítes (169 testes) não executadas (psql ENOENT: 9; embedded-postgres ausente: 2); lint global 3042 erros apenas em ficheiros não modificados; tsc/build/diff check passaram. Testes focados, DB efémero e QA visual conforme secção anterior.
 - Pendente: recebimento real GHL/Zaptos de mídia. Nenhum envio real, server function, SQL, flag, contacto ou n8n alterado.
+
+
+## 2026-10-12 — Experiência da Visão Geral e Caixa de Entrada IA
+
+- Autorização: implementação da primeira etapa da revisão de experiência, no projeto original `36345211-2616-42f7-bb9e-e78a9d00ca22`. Base conferida `7af723df42b8d854e612fc5250e7c7177588e16b`, branch local isolada `codex/inbox-ux-20261012`.
+- Visão Geral: agenda Hoje/Amanhã no fuso da clínica, até cinco marcações ativas por dia; estado local identificado. Confirmação em quantidade, sem atribuir resposta SIM. Indicadores explicitam importações/sincronizações, etapas vazias ficam recolhidas, metodologia expansível. Consultas existentes mantêm o escopo da organização e exclusão de demonstração.
+- Caixa de Entrada: área limitada à altura da janela com rolagem independente, lista/conversa no celular, rascunho textual temporário por sessão/organização/contacto/conversa, filtros nas conversas já carregadas e assistência IA concentrada. Texto não é salvo em localStorage nem no banco; anexos não são preservados ao trocar de conversa.
+- Invariantes: nenhuma mudança de backend de envio, credenciais, canais habilitados, DND, RLS, workflows ou automações. O ledger de envio incerto permanece separado dos rascunhos. O envio continua exigindo ação humana e revisão válida.
+- Marcador candidato: `jornada-inbox-ux-20261012.1`, capacidades novas `inboxWorkspace:1` e `overviewAgenda:1`; capacidades anteriores preservadas.
+- Testado localmente: 265 testes únicos em 12 suítes (52 inbox, 4 rascunhos/scroll, 24 media UI; 20 dashboard/queries/rotas; 135 inbox-send/inbox-route/manual-provider; 30 media backend/HTTP/body). TypeScript e build passaram; ESLint dos arquivos alterados sem erros, duas advertências preexistentes. Nenhuma suíte de banco exigida nesta mudança de interface; isso não revalida a migração ou o provedor externo.
+- QA sintético em componentes reais via harness local separado: desktop 1415×1024, mobile 390×844 e 360×740; sem rolagem lateral, rodapé acessível com IA/detalhes abertos. Abertura no fim, texto preservado na alternância, filtro sem resultados mantém paginação, chegada de nova mensagem preserva leitura e invalida sugestão antiga. Revisão independente corrigiu corrida da correção textual após confirmação tardia e retorno móvel quando a conversa some/falha. Nenhum envio real ou chamada de IA real foi disparado.
+- Implementado e testado localmente; integração/publicação ainda pendentes nesta revisão.
+- Fora desta entrega: reprodução segura de anexos recebidos, atribuição/SLA/resolução de atendimentos, contagem global por filtro e ligação direta da agenda a uma conversa. Os contratos atuais não comprovam esses estados; nenhum indicador fictício foi introduzido.

@@ -43,7 +43,7 @@ vi.mock("@/integrations/supabase/client", () => ({
     },
   },
 }));
-import { usePainel } from "./dashboard";
+import { intervalosAgendaPainel, usePainel } from "./dashboard";
 
 const clientes: QueryClient[] = [];
 function preparar() {
@@ -93,13 +93,39 @@ it("alterar o período e a identidade refaz a consulta com escopo correto", asyn
   });
   await waitFor(() => expect(result.current.isSuccess).toBe(true));
   const inicio7 = result.current.data?.periodo.inicio;
+  const agenda7 = result.current.data?.agenda;
   estado.chamadas.length = 0;
   estado.user = "user-b";
   rerender({ dias: 30 });
   await waitFor(() => expect(result.current.isSuccess).toBe(true));
   expect(result.current.data?.periodo.inicio).not.toBe(inicio7);
+  expect(result.current.data?.agenda).toEqual(agenda7);
   for (const c of estado.chamadas)
     expect(c.filtros).toContainEqual(["eq", "organization_id", "org-user-b"]);
+});
+it("consulta hoje e amanhã separadamente, com limite por dia e sem estados inativos", async () => {
+  const { result } = renderHook(() => usePainel(30), { wrapper: preparar() });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  const dias = intervalosAgendaPainel(new Date(result.current.data!.consultadoEm), "Europe/Lisbon");
+  const agenda = estado.chamadas.filter((c) => c.filtros.some((f) => f[0] === "limit"));
+  expect(agenda).toHaveLength(2);
+  for (const [indice, dia] of [dias.hoje, dias.amanha].entries()) {
+    const filtros = agenda[indice]!.filtros;
+    expect(filtros).toContainEqual(["gte", "start_at", dia.inicio]);
+    expect(filtros).toContainEqual(["lt", "start_at", dia.fim]);
+    expect(filtros).toContainEqual(["limit", 5]);
+    expect(filtros).toContainEqual([
+      "not",
+      "status",
+      "in",
+      '("cancelada","invalid","realizada","faltou")',
+    ]);
+    expect(filtros).toContainEqual(["order", "start_at"]);
+  }
+  expect(result.current.data?.agenda).toEqual({
+    hoje: { dia: dias.hoje.dia, marcacoes: [] },
+    amanha: { dia: dias.amanha.dia, marcacoes: [] },
+  });
 });
 it("recusa apresentar indicadores quando uma fonte falha", async () => {
   estado.falhar = true;

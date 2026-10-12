@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ExternalLink,
+  ArrowLeft,
+  ArrowDown,
   Mic,
   Paperclip,
   RefreshCw,
@@ -28,9 +30,15 @@ import {
   reconcileManualAgentMessage,
   sendInboxMessage,
 } from "@/lib/commercial-agent.functions";
-import { JevPedido } from "@/components/jev-pedido";
-import { JevMensagem } from "@/components/jev-mensagem";
 import { useInboxMedia, type InboxAttachment } from "@/components/inbox-media";
+import {
+  createInboxDraftStore,
+  filterLoadedConversations,
+  inboxAnalysisFingerprint,
+  inboxDraftKey,
+  useInboxHistoryScroll,
+  type InboxDraftStore,
+} from "@/components/inbox-workspace";
 
 type EstadoEnvio =
   | { estado: "livre" }
@@ -182,6 +190,7 @@ const erroEnvio = (code: string) =>
 export function GhlInbox() {
   const contexto = useOrganizacao();
   const { escopo } = useModoDados();
+  const [drafts] = useState(createInboxDraftStore);
   if (contexto.isError)
     return <p role="alert">Não foi possível identificar a clínica. Atualize a página.</p>;
   if (!contexto.data) return <p>A carregar a clínica…</p>;
@@ -189,47 +198,69 @@ export function GhlInbox() {
     <CaixaGhl
       key={`${escopo}:${contexto.data.organizacao.id}`}
       fuso={contexto.data.organizacao.timezone}
+      organizationId={contexto.data.organizacao.id}
+      scope={escopo}
+      drafts={drafts}
     />
   );
 }
 
-function CaixaGhl({ fuso }: { fuso: string }) {
+function CaixaGhl({
+  fuso,
+  organizationId,
+  scope,
+  drafts,
+}: {
+  fuso: string;
+  organizationId: string;
+  scope: string;
+  drafts: InboxDraftStore;
+}) {
   const [pesquisa, setPesquisa] = useState("");
   const [query, setQuery] = useState("");
   const [ativa, setAtiva] = useState<string | null>(null);
+  const [soNaoLidas, setSoNaoLidas] = useState(false);
+  const [canalFiltro, setCanalFiltro] = useState("all");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useSyncExternalStore(drafts.subscribe, drafts.getVersion, drafts.getVersion);
   const result = useConversasGhl(query);
   const paginas = result.data?.pages ?? [];
   const conversas = Array.from(
     new Map(paginas.flatMap((p) => p.conversas).map((c) => [c.id, c])).values(),
   );
+  const visiveis = filterLoadedConversations(conversas, soNaoLidas, canalFiltro);
+  const canais = Array.from(
+    new Set([
+      ...conversas.map((c) => canalMensagem(c.tipo)),
+      ...(canalFiltro === "all" ? [] : [canalFiltro]),
+    ]),
+  ).sort();
   const selecionada =
-    conversas.find((c) => c.id === ativa) ?? (ativa === null ? conversas[0] : undefined);
+    visiveis.find((c) => c.id === ativa) ?? (ativa === null ? visiveis[0] : undefined);
   return (
-    <div className="space-y-4">
-      <div className="surface-card space-y-2 p-5">
-        <h2 className="font-semibold">Conversas do GoHighLevel</h2>
-        <p className="text-sm text-muted-foreground">
-          Consulta direta à subconta da clínica, atualizada a cada 30 segundos enquanto esta página
-          está visível. Horários: {fuso}.
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Abrir uma conversa aqui não a marca como lida no GHL. Resposta recebida, leitura e estado
-          do agendamento são informações diferentes.
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <details className="shrink-0 text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Origem e atualização das conversas</summary>
+        <p className="mt-2">
+          GoHighLevel · atualização a cada 30 segundos · horários {fuso}. Abrir aqui não marca como
+          lida no GHL.
         </p>
         {paginas[0] && !result.isError && (
-          <p className="text-xs text-muted-foreground">
-            Última consulta: {formatarDataHora(paginas[0].consultadoEm, fuso)}
-          </p>
+          <p className="mt-1">Última consulta: {formatarDataHora(paginas[0].consultadoEm, fuso)}</p>
         )}
-      </div>
-      <div className="grid gap-5 lg:grid-cols-[330px_1fr]">
-        <section className="surface-card self-start overflow-hidden" aria-label="Conversas reais">
+      </details>
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)]">
+        <section
+          className={`surface-card min-h-0 flex-col overflow-hidden ${mobileOpen ? "hidden lg:flex" : "flex"}`}
+          aria-label="Conversas reais"
+        >
           <form
-            className="flex gap-2 p-4"
+            className="flex shrink-0 gap-2 p-3"
             onSubmit={(e) => {
               e.preventDefault();
               setQuery(pesquisa.trim());
               setAtiva(null);
+              setMobileOpen(false);
             }}
           >
             <Input
@@ -243,86 +274,159 @@ function CaixaGhl({ fuso }: { fuso: string }) {
               Buscar
             </Button>
           </form>
-          <div className="flex items-center justify-between px-4 pb-3">
-            <span className="text-xs text-muted-foreground">
-              {conversas.length} conversas carregadas
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={result.isFetching}
-              onClick={() => void result.refetch()}
-              aria-label="Atualizar conversas"
-            >
-              <RefreshCw className="size-4" />
-            </Button>
-          </div>
-          {result.isError ? (
-            <ErroLeitura erro={result.error} repetir={() => void result.refetch()} />
-          ) : (
-            <>
-              <ul className="divide-y divide-border">
-                {conversas.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      className={`w-full p-4 text-left hover:bg-secondary/60 ${selecionada?.id === c.id ? "bg-secondary" : ""}`}
-                      onClick={() => setAtiva(c.id)}
-                      aria-pressed={selecionada?.id === c.id}
-                    >
-                      <p className="font-medium">{c.nome}</p>
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                        {c.ultimaMensagem || "Sem prévia textual"}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge variant="outline">{canalMensagem(c.tipo)}</Badge>
-                        {c.naoLidas !== null && c.naoLidas > 0 && (
-                          <Badge>{c.naoLidas} por ler no GHL</Badge>
-                        )}
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {c.ultimaData ? formatarDataHora(c.ultimaData, fuso) : "Data não informada"}
-                      </p>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {conversas.length === 0 && (
-                <p className="p-6 text-sm text-muted-foreground">
-                  {result.isPending
-                    ? "A consultar o GHL…"
-                    : "Nenhuma conversa encontrada no GHL para esta pesquisa."}
-                </p>
-              )}
-              {result.hasNextPage && (
-                <Button
-                  className="m-4"
-                  variant="outline"
-                  disabled={result.isFetching}
-                  onClick={() => void result.fetchNextPage()}
+          <div className="shrink-0 space-y-2 px-3 pb-3">
+            <div className="flex flex-wrap gap-2" aria-label="Filtrar conversas carregadas">
+              <Button
+                type="button"
+                size="sm"
+                variant={soNaoLidas ? "outline" : "secondary"}
+                aria-pressed={!soNaoLidas}
+                onClick={() => {
+                  setSoNaoLidas(false);
+                  setAtiva(null);
+                }}
+              >
+                Todas
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={soNaoLidas ? "secondary" : "outline"}
+                aria-pressed={soNaoLidas}
+                onClick={() => {
+                  setSoNaoLidas(true);
+                  setAtiva(null);
+                }}
+              >
+                Não lidas no GHL
+              </Button>
+              <label className="flex w-full min-w-0 basis-full items-center gap-2 text-xs">
+                Canal
+                <select
+                  aria-label="Filtrar por canal"
+                  value={canalFiltro}
+                  onChange={(e) => {
+                    setCanalFiltro(e.target.value);
+                    setAtiva(null);
+                  }}
+                  className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                 >
-                  Carregar mais conversas
-                </Button>
-              )}
-              {paginas.some((p) => p.limitePaginacao) && (
-                <p className="p-4 text-sm">
-                  O GHL não forneceu um cursor que permita continuar. Refine a pesquisa ou consulte
-                  o GHL para o histórico completo.
-                </p>
-              )}
-            </>
-          )}
+                  <option value="all">Todos os canais</option>
+                  {canais.map((canal) => (
+                    <option key={canal} value={canal}>
+                      {canal}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                {visiveis.length} de {conversas.length} · das conversas carregadas
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={result.isFetching}
+                onClick={() => void result.refetch()}
+                aria-label="Atualizar conversas"
+              >
+                <RefreshCw className="size-4" />
+              </Button>
+            </div>
+          </div>
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            aria-label="Lista de conversas"
+          >
+            {result.isError ? (
+              <ErroLeitura erro={result.error} repetir={() => void result.refetch()} />
+            ) : (
+              <>
+                <ul className="divide-y divide-border">
+                  {visiveis.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        className={`w-full p-4 text-left hover:bg-secondary/60 ${selecionada?.id === c.id ? "bg-secondary" : ""}`}
+                        onClick={() => {
+                          setAtiva(c.id);
+                          setMobileOpen(true);
+                        }}
+                        aria-pressed={selecionada?.id === c.id}
+                      >
+                        <p className="font-medium">{c.nome}</p>
+                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                          {c.ultimaMensagem || "Sem prévia textual"}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Badge variant="outline">{canalMensagem(c.tipo)}</Badge>
+                          {drafts.get(inboxDraftKey(scope, organizationId, c.contactId, c.id))
+                            .text && <Badge variant="secondary">Rascunho</Badge>}
+                          {c.naoLidas !== null && c.naoLidas > 0 && (
+                            <Badge>{c.naoLidas} por ler no GHL</Badge>
+                          )}
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {c.ultimaData
+                            ? formatarDataHora(c.ultimaData, fuso)
+                            : "Data não informada"}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {visiveis.length === 0 && (
+                  <p className="p-6 text-sm text-muted-foreground">
+                    {result.isPending
+                      ? "A consultar o GHL…"
+                      : "Nenhuma conversa carregada corresponde aos filtros. Carregue mais ou ajuste a pesquisa."}
+                  </p>
+                )}
+                {result.hasNextPage && (
+                  <Button
+                    className="m-4"
+                    variant="outline"
+                    disabled={result.isFetching}
+                    onClick={() => void result.fetchNextPage()}
+                  >
+                    Carregar mais conversas
+                  </Button>
+                )}
+                {paginas.some((p) => p.limitePaginacao) && (
+                  <p className="p-4 text-sm">
+                    O GHL não forneceu um cursor que permita continuar. Refine a pesquisa ou
+                    consulte o GHL para o histórico completo.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </section>
-        {!result.isError && selecionada ? (
-          <ConversaReal
-            key={`${selecionada.id}:${selecionada.contactId}`}
-            conversa={selecionada}
-            fuso={fuso}
-          />
-        ) : (
-          <p className="surface-card p-8 text-sm text-muted-foreground">
-            Selecione uma conversa disponível para ler as mensagens.
-          </p>
-        )}
+        <div className={`min-h-0 min-w-0 flex-col ${mobileOpen ? "flex" : "hidden lg:flex"}`}>
+          {!result.isError && selecionada ? (
+            <ConversaReal
+              key={`${selecionada.id}:${selecionada.contactId}`}
+              conversa={selecionada}
+              fuso={fuso}
+              drafts={drafts}
+              draftKey={inboxDraftKey(scope, organizationId, selecionada.contactId, selecionada.id)}
+              onBack={() => setMobileOpen(false)}
+            />
+          ) : (
+            <div className="surface-card space-y-3 p-5 text-sm text-muted-foreground">
+              <Button
+                size="sm"
+                variant="outline"
+                className="lg:hidden"
+                onClick={() => setMobileOpen(false)}
+              >
+                <ArrowLeft className="size-4" />
+                Voltar às conversas
+              </Button>
+              <p>Selecione uma conversa disponível para ler as mensagens.</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -344,17 +448,37 @@ export function ErroLeitura({ erro, repetir }: { erro: unknown; repetir: () => v
   );
 }
 
-function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string }) {
+function ConversaReal({
+  conversa,
+  fuso,
+  drafts,
+  draftKey,
+  onBack,
+}: {
+  conversa: ConversaGhl;
+  fuso: string;
+  drafts: InboxDraftStore;
+  draftKey: string;
+  onBack: () => void;
+}) {
   const result = useMensagensGhl(conversa.id);
   const paginas = result.data?.pages ?? [];
   const mensagens = Array.from(
     new Map(paginas.flatMap((p) => p.mensagens).map((m) => [m.id, m])).values(),
   ).sort((a, b) => (a.data ?? "").localeCompare(b.data ?? ""));
-  const [rascunho, setRascunho] = useState("");
+  const draft = useSyncExternalStore(
+    drafts.subscribe,
+    () => drafts.get(draftKey),
+    () => drafts.get(draftKey),
+  );
+  const rascunho = draft.text;
+  const setRascunho = (text: string) => drafts.set(draftKey, text);
+  const historyScroll = useInboxHistoryScroll(mensagens);
   const [analise, setAnalise] = useState<AnaliseIA | null>(null);
   const [erroIA, setErroIA] = useState<string | null>(null);
   const [pendente, setPendente] = useState(false);
-  const [analisadoAte, setAnalisadoAte] = useState<string | null>(null);
+  const [analiseContexto, setAnaliseContexto] = useState<string | null>(null);
+  const [mostrarAnalise, setMostrarAnalise] = useState(false);
   const [corrigindo, setCorrigindo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [envio, setEnvio] = useState<EstadoEnvio>({ estado: "livre" });
@@ -459,12 +583,18 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   const revisaoMudou = Boolean(
     referencia && destino && !mesmaRevisao(referencia, destino.revision),
   );
+  const contextoAnalise = inboxAnalysisFingerprint(mensagens, destino?.revision ?? null);
+  const contextoAnaliseRef = useRef(contextoAnalise);
+  contextoAnaliseRef.current = contextoAnalise;
+  const analiseDesatualizada = Boolean(
+    analise && (result.isError || erroDestino || analiseContexto !== contextoAnalise),
+  );
   // Remontado por conversationId/contactId: uma promessa antiga não altera o novo atendimento.
   async function gerarAnalise() {
     if (pendente || result.isError || mensagens.length === 0) return;
     setPendente(true);
     setErroIA(null);
-    const ultima = mensagens.at(-1)?.id ?? null;
+    const contextoCapturado = contextoAnalise;
     try {
       const texto = mensagens
         .map((m) => `${m.direcao}: ${m.texto}`)
@@ -474,13 +604,25 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       if (!vivo.current) return;
       if (resposta.ok) {
         setAnalise(resposta.analise);
-        setAnalisadoAte(ultima);
+        setAnaliseContexto(contextoCapturado);
+        setMostrarAnalise(true);
       } else setErroIA(resposta.message);
     } catch {
       if (vivo.current) setErroIA("Não foi possível consultar a IA.");
     } finally {
       if (vivo.current) setPendente(false);
     }
+  }
+  function usarSugestao(text: string) {
+    if (
+      pendente ||
+      result.isError ||
+      erroDestino ||
+      analiseContexto !== contextoAnaliseRef.current ||
+      envioRef.current.estado === "a_enviar"
+    )
+      return;
+    editar(text);
   }
   // Cada alteração do campo (digitação, sugestão, Jev, correção) gera nova revisão.
   // Durante o envio todas as entradas são recusadas no próprio handler.
@@ -492,7 +634,8 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     if (envioRef.current.estado === "aceite") mudarEnvio({ estado: "livre" });
   }
   async function corrigir() {
-    const texto = rascunho;
+    const draftCapturado = drafts.get(draftKey);
+    const texto = draftCapturado.text;
     if (!texto.trim() || corrigindo || envioRef.current.estado === "a_enviar") return;
     if (texto.length > LIMITE) {
       setAviso(`A correção aceita até ${LIMITE} caracteres. O texto foi mantido.`);
@@ -504,7 +647,11 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     try {
       const r = await corrigirFn({ data: { texto } });
       if (!vivo.current) return;
-      if (revisao.current !== rev || (envioRef.current as EstadoEnvio).estado === "a_enviar") {
+      if (
+        revisao.current !== rev ||
+        drafts.get(draftKey).version !== draftCapturado.version ||
+        (envioRef.current as EstadoEnvio).estado === "a_enviar"
+      ) {
         setAviso("O texto foi alterado durante a correção; a sugestão foi descartada.");
         return;
       }
@@ -526,7 +673,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     // Incerto nunca envia: só verificação de leitura. Nenhuma retomada de texto oculto.
     if (atual === "a_enviar" || atual === "incerto" || !orgId || media.isBusy()) return;
     // Texto EXATO visível no campo agora: trim só para testar vazio.
-    const texto = rascunho;
+    const texto = drafts.get(draftKey).text;
     const revisaoEnvio = referencia;
     if (!revisaoEnvio || !destino?.sendAllowed || revisaoMudou) return;
     const attachments = media.snapshot();
@@ -535,6 +682,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     if (!pedido.current || pedido.current.rev !== revisao.current)
       pedido.current = { rev: revisao.current, id: crypto.randomUUID() };
     const requestId = pedido.current.id;
+    drafts.submitted(requestId, draftKey);
     anexoEmEnvio.current = attachments[0] ? { requestId, attachment: attachments[0] } : null;
     const rev = revisao.current;
     const desde = Date.now();
@@ -556,11 +704,21 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           revision: revisaoEnvio,
         },
       });
+      // A late, proven result belongs to the original conversation, even after switching away.
+      if (r.ok && r.data.state === "sent" && r.data.messageId) {
+        drafts.confirmed(requestId);
+        if (!vivo.current && lerIntencao(chavePendente)?.requestId === requestId) {
+          gravarIntencao(chavePendente, null);
+          if (pendentesEnvio.get(chavePendente)?.requestId === requestId)
+            pendentesEnvio.delete(chavePendente);
+        }
+      }
       if (!vivo.current) return;
       if (!r.ok) {
         if (ANTES_DO_ENVIO.has(r.code)) {
           // Recusa definitiva antes de qualquer POST: nova tentativa explícita gera nova chave.
           pedido.current = null;
+          drafts.forget(requestId);
           mudarEnvio({ estado: "livre" });
           setTick((t) => t + 1);
         } else incerto(null);
@@ -603,18 +761,19 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
     extra: { desde?: number } = {},
   ) {
     if (state === "sent" && messageId) {
+      drafts.confirmed(requestId);
       mudarEnvio({ estado: "aceite", messageId });
       limparAnexoEnviado(requestId);
       pedido.current = null;
       // Só limpa se ninguém editou depois da captura.
       if (rev !== null && revisao.current === rev) {
         revisao.current += 1;
-        setRascunho("");
       }
       setReferencia(null);
       setTick((t) => t + 1);
       void result.refetch();
     } else if (state === "rejected") {
+      drafts.forget(requestId);
       // Terminal: a chave antiga não é reutilizada; contexto relido; novo clique é nova intenção.
       pedido.current = null;
       mudarEnvio({ estado: "livre" });
@@ -625,6 +784,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
           : "O GHL recusou este envio (pode ser permissão, conexão do canal ou janela). O texto foi mantido. Pode tentar de novo com um novo clique em Enviar.",
       );
     } else if (state === "invalidated") {
+      drafts.forget(requestId);
       // Pedido substituído/expirado: não houve POST. Exige leitura atualizada antes de decidir.
       mudarEnvio({ estado: "livre" });
       pedido.current = null;
@@ -684,6 +844,7 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
       });
       if (!vivo.current) return;
       if (r.ok) {
+        drafts.confirmed(e.requestId);
         mudarEnvio({ estado: "aceite", messageId: recibo.trim() });
         limparAnexoEnviado(e.requestId);
         setRecibo("");
@@ -704,448 +865,541 @@ function ConversaReal({ conversa, fuso }: { conversa: ConversaGhl; fuso: string 
   const mediaBloqueada = enviando || envio.estado === "incerto";
   const url = `https://app.gohighlevel.com/v2/location/${conversa.locationId}/contacts/detail/${conversa.contactId}`;
   return (
-    <section className="min-w-0 space-y-4" aria-label={`Atendimento de ${conversa.nome}`}>
-      <div className="surface-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">{conversa.nome}</h2>
-          <Button variant="outline" asChild>
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4" /> Abrir atendimento no GHL
-            </a>
-          </Button>
+    <section
+      className="surface-card flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      aria-label={`Atendimento de ${conversa.nome}`}
+    >
+      <header className="max-h-[30%] shrink-0 overflow-y-auto border-b border-border px-3 py-3 sm:px-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-start gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="lg:hidden"
+              aria-label="Voltar às conversas"
+              onClick={() => {
+                media.remove();
+                onBack();
+              }}
+            >
+              <ArrowLeft className="size-4" />
+            </Button>
+            <div className="min-w-0">
+              <h2 className="truncate font-semibold">{conversa.nome}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                <Badge variant="outline">{destino?.channel ?? canalMensagem(conversa.tipo)}</Badge>
+                <span className="text-muted-foreground">
+                  {destino?.transport ?? "Verificando canal…"}
+                </span>
+                {(erroDestino || envio.estado === "incerto") && (
+                  <Badge variant="destructive">Envio bloqueado</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={result.isFetching}
+              onClick={() => {
+                setTick((t) => t + 1);
+                void result.refetch();
+              }}
+            >
+              <RefreshCw className="size-4" />
+              <span className="hidden sm:inline">Atualizar</span>
+              <span className="sr-only sm:hidden">Atualizar</span>
+            </Button>
+            <Button size="sm" variant="ghost" asChild>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Abrir atendimento no GHL"
+              >
+                <ExternalLink className="size-4" />
+                <span className="hidden sm:inline">GHL</span>
+              </a>
+            </Button>
+          </div>
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">
-          As etiquetas SIM/NÃO indicam apenas o texto recebido. A associação à consulta e o avanço
-          do workflow precisam ser conferidos nos registros do GHL.
-        </p>
-        <div className="my-4 flex items-center justify-between gap-3">
-          <span className="text-xs text-muted-foreground">
+        <details className="mt-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Detalhes da conversa</summary>
+          <p className="mt-2 break-all">
+            Contato: {conversa.contactId} · Conversa: {conversa.id}
+          </p>
+          <p>
             {!result.isError && paginas[0]
               ? `Mensagens consultadas: ${formatarDataHora(paginas[0].consultadoEm, fuso)}`
               : "Consulta de mensagens"}
-          </span>
+          </p>
+          <p>
+            SIM/NÃO são textos recebidos. A confirmação da consulta depende dos registros do GHL.
+          </p>
+        </details>
+      </header>
+      <div className="relative min-h-20 flex-1">
+        <div
+          ref={historyScroll.ref}
+          onScroll={historyScroll.onScroll}
+          tabIndex={0}
+          role="region"
+          className="h-full overflow-y-auto overscroll-contain px-3 py-3 sm:px-4"
+          aria-label="Histórico da conversa"
+        >
+          {result.isError ? (
+            <ErroLeitura erro={result.error} repetir={() => void result.refetch()} />
+          ) : (
+            <>
+              {result.hasNextPage && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={result.isFetching}
+                  onClick={() => void result.fetchNextPage()}
+                >
+                  Carregar mensagens anteriores
+                </Button>
+              )}
+              {paginas.some((p) => p.limitePaginacao) && (
+                <p className="my-3 text-sm">
+                  Histórico parcial: consulte o GHL para mensagens anteriores.
+                </p>
+              )}
+              <ul className="space-y-3" aria-label="Mensagens do GHL">
+                {mensagens.map((m) => (
+                  <li
+                    key={m.id}
+                    className={`max-w-[92%] rounded-xl border border-border p-4 ${m.direcao === "outbound" ? "ml-auto bg-secondary/60" : "bg-card"}`}
+                  >
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <Badge variant="outline">
+                        {m.direcao === "inbound"
+                          ? "Recebida"
+                          : m.direcao === "outbound"
+                            ? "Enviada"
+                            : "Direção não informada"}
+                      </Badge>
+                      <Badge variant="secondary">{canalMensagem(m.tipo)}</Badge>
+                      {respostaLiteral(m) && <Badge>Texto recebido: {respostaLiteral(m)}</Badge>}
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap break-words text-sm">
+                      {m.texto ||
+                        (m.anexos ? "Mensagem com anexo" : "Sem conteúdo textual disponível")}
+                    </p>
+                    {m.html && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Conteúdo HTML apresentado como texto. Abra o GHL para ver a formatação.
+                      </p>
+                    )}
+                    {m.anexos > 0 && (
+                      <p className="mt-2 text-xs">{m.anexos} anexo(s) — disponíveis no GHL</p>
+                    )}
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {m.data ? formatarDataHora(m.data, fuso) : "Data não informada"} · Estado no
+                      GHL: {m.estado ?? "não informado"}
+                      {m.origem ? ` · Origem: ${m.origem}` : ""}
+                    </p>
+                    {m.provedor && (
+                      <p className="mt-1 break-all text-xs text-muted-foreground">
+                        Provedor: {m.provedor}
+                      </p>
+                    )}
+                    {m.erro && (
+                      <p className="mt-2 text-sm text-destructive">
+                        Erro informado pelo GHL: {m.erro}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {mensagens.length === 0 && (
+                <p className="py-5 text-sm text-muted-foreground">
+                  {result.isPending
+                    ? "A carregar mensagens…"
+                    : "O GHL não devolveu mensagens para esta conversa."}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+        {historyScroll.hasNewMessages && (
           <Button
             size="sm"
-            variant="ghost"
-            disabled={result.isFetching}
-            onClick={() => {
-              setTick((t) => t + 1);
-              void result.refetch();
-            }}
+            variant="secondary"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-md"
+            onClick={historyScroll.toLatest}
           >
-            <RefreshCw className="size-4" /> Atualizar
+            <ArrowDown className="size-4" />
+            Novas mensagens
           </Button>
-        </div>
-        {result.isError ? (
-          <ErroLeitura erro={result.error} repetir={() => void result.refetch()} />
-        ) : (
-          <>
-            {result.hasNextPage && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={result.isFetching}
-                onClick={() => void result.fetchNextPage()}
-              >
-                Carregar mensagens anteriores
-              </Button>
-            )}
-            {paginas.some((p) => p.limitePaginacao) && (
-              <p className="my-3 text-sm">
-                Histórico parcial: consulte o GHL para mensagens anteriores.
-              </p>
-            )}
-            <ul
-              className="mt-4 max-h-[600px] space-y-3 overflow-y-auto"
-              aria-label="Mensagens do GHL"
-            >
-              {mensagens.map((m) => (
-                <li
-                  key={m.id}
-                  className={`max-w-[92%] rounded-xl border border-border p-4 ${m.direcao === "outbound" ? "ml-auto bg-secondary/60" : "bg-card"}`}
-                >
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <Badge variant="outline">
-                      {m.direcao === "inbound"
-                        ? "Recebida"
-                        : m.direcao === "outbound"
-                          ? "Enviada"
-                          : "Direção não informada"}
-                    </Badge>
-                    <Badge variant="secondary">{canalMensagem(m.tipo)}</Badge>
-                    {respostaLiteral(m) && <Badge>Texto recebido: {respostaLiteral(m)}</Badge>}
-                  </div>
-                  <p className="mt-3 whitespace-pre-wrap break-words text-sm">
-                    {m.texto ||
-                      (m.anexos ? "Mensagem com anexo" : "Sem conteúdo textual disponível")}
-                  </p>
-                  {m.html && (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Conteúdo HTML apresentado como texto. Abra o GHL para ver a formatação.
-                    </p>
-                  )}
-                  {m.anexos > 0 && (
-                    <p className="mt-2 text-xs">{m.anexos} anexo(s) — disponíveis no GHL</p>
-                  )}
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {m.data ? formatarDataHora(m.data, fuso) : "Data não informada"} · Estado no
-                    GHL: {m.estado ?? "não informado"}
-                    {m.origem ? ` · Origem: ${m.origem}` : ""}
-                  </p>
-                  {m.provedor && (
-                    <p className="mt-1 break-all text-xs text-muted-foreground">
-                      Provedor: {m.provedor}
-                    </p>
-                  )}
-                  {m.erro && (
-                    <p className="mt-2 text-sm text-destructive">
-                      Erro informado pelo GHL: {m.erro}
-                    </p>
-                  )}
-                  {m.direcao === "inbound" && m.texto && <JevMensagem texto={m.texto} />}
-                </li>
-              ))}
-            </ul>
-            {mensagens.length === 0 && (
-              <p className="py-5 text-sm text-muted-foreground">
-                {result.isPending
-                  ? "A carregar mensagens…"
-                  : "O GHL não devolveu mensagens para esta conversa."}
-              </p>
-            )}
-          </>
         )}
       </div>
-      {!result.isError && (
-        <JevPedido
-          texto={mensagens
-            .filter((m) => m.direcao === "inbound" && m.texto)
-            .slice(-3)
-            .map((m) => m.texto)
-            .join("\n")
-            .slice(-4000)}
-          nome={conversa.nome}
-          usarRascunho={editar}
-        />
-      )}
-      <div className="surface-card space-y-4 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-semibold">Preparar resposta</h3>
+      <section
+        className="max-h-[24%] min-h-12 shrink overflow-y-auto border-t border-border px-3 py-2 sm:px-4"
+        aria-label="Assistência IA"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-2 text-sm font-medium"
+            onClick={() => setMostrarAnalise((value) => !value)}
+            aria-expanded={mostrarAnalise}
+          >
+            <Sparkles className="size-4" />
+            Assistência IA{analiseDesatualizada && <Badge variant="outline">Desatualizada</Badge>}
+          </button>
           <Button
             size="sm"
             variant="outline"
             disabled={pendente || result.isError || mensagens.length === 0}
             onClick={() => void gerarAnalise()}
           >
-            <Sparkles className="size-4" />
-            {pendente ? "A analisar…" : "Analisar mensagens carregadas"}
+            {pendente ? "A analisar…" : "Analisar conversa"}
           </Button>
         </div>
-        <p className="text-sm text-muted-foreground">
-          O rascunho é temporário e exclusivo desta conversa. Corrigir é opcional; Enviar usa o
-          canal verificado no servidor e fica indisponível quando não há garantia.
-        </p>
         {erroIA && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="mt-2 text-sm text-destructive">
             {erroIA}
           </p>
         )}
-        {analise && (
-          <div className="space-y-3">
-            <p className="text-sm">{analise.resumo}</p>
-            {analisadoAte !== (mensagens.at(-1)?.id ?? null) && (
-              <p className="text-sm text-destructive">
-                Chegaram novas mensagens. Atualize a análise antes de usar as sugestões.
-              </p>
-            )}
-            {analise.revisao_humana && (
-              <p className="text-sm">
-                Tema sensível: precisa de revisão por um profissional de saúde.
-              </p>
-            )}
-            <div className="grid gap-3 md:grid-cols-3">
-              {analise.sugestoes.map((s) => (
-                <article key={s.tom} className="rounded-xl border border-border p-3">
-                  <Badge variant="outline">{s.tom}</Badge>
-                  <p className="my-3 text-sm">{s.texto}</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={enviando}
-                    onClick={() => editar(s.texto)}
-                  >
-                    Usar rascunho
-                  </Button>
-                </article>
-              ))}
-            </div>
-          </div>
-        )}
-        <label className="block text-sm font-medium" htmlFor="rascunho-ghl">
-          Rascunho para {conversa.nome}
-        </label>
-        <Textarea
-          id="rascunho-ghl"
-          value={rascunho}
-          onChange={(e) => editar(e.target.value)}
-          readOnly={enviando}
-          disabled={enviando}
-          aria-busy={enviando}
-          aria-describedby="rascunho-contador"
-          rows={4}
-        />
-        <p
-          id="rascunho-contador"
-          className={`text-xs ${rascunho.length > LIMITE ? "text-destructive" : "text-muted-foreground"}`}
-        >
-          {rascunho.length}/{LIMITE} caracteres
-          {rascunho.length > LIMITE ? " · reduza o texto para poder corrigir ou enviar" : ""}
-        </p>
-        <div
-          className="space-y-3 rounded-xl border border-border p-4"
-          aria-label="Anexo da resposta"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={arquivoInput}
-              type="file"
-              aria-label="Selecionar imagem ou áudio"
-              className="sr-only"
-              accept="image/jpeg,image/png,image/gif,audio/mpeg,audio/wav,audio/x-wav,audio/ogg,audio/mp4,audio/x-m4a,audio/aac,.jpg,.jpeg,.png,.gif,.mp3,.wav,.ogg,.m4a,.aac"
-              disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
-              onChange={(e) => {
-                const file = e.currentTarget.files?.[0];
-                e.currentTarget.value = "";
-                if (
-                  file &&
-                  !mediaBloqueada &&
-                  mediaPermitida &&
-                  envioRef.current.estado !== "a_enviar" &&
-                  envioRef.current.estado !== "incerto"
-                )
-                  void media.select(file);
-              }}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
-              onClick={() => arquivoInput.current?.click()}
-            >
-              <Paperclip className="size-4" /> Anexar imagem ou áudio
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
-              onClick={() => {
-                if (envioRef.current.estado !== "a_enviar" && envioRef.current.estado !== "incerto")
-                  void media.start();
-              }}
-            >
-              <Mic className="size-4" /> Gravar áudio
-            </Button>
-            {media.state === "recording" && (
+        {mostrarAnalise && (
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Sugestões sobre as mensagens carregadas. Reveja antes de usar; a IA não confirma
+              consultas nem envia respostas.
+            </p>
+            {analise && (
               <>
-                <span role="status" className="text-sm">
-                  Gravando {Math.floor(media.seconds / 60)}:
-                  {String(media.seconds % 60).padStart(2, "0")} / 2:00
-                </span>
-                <Button type="button" size="sm" variant="outline" onClick={media.stop}>
-                  <Square className="size-4" /> Parar e ouvir
-                </Button>
+                {analiseDesatualizada && (
+                  <p role="status" className="text-sm text-destructive">
+                    A conversa ou o contexto mudou. Analise novamente para usar uma sugestão. Seu
+                    rascunho foi preservado.
+                  </p>
+                )}
+                <p className="text-sm">
+                  <span className="font-medium">Resumo: </span>
+                  {analise.resumo}
+                </p>
+                {analise.intencao && (
+                  <p className="text-sm">
+                    <span className="font-medium">Intenção sugerida: </span>
+                    {
+                      {
+                        informacao: "Informação",
+                        preco: "Preço",
+                        agendamento: "Agendamento",
+                        objecao: "Objeção",
+                        pos_procedimento: "Pós-procedimento",
+                        urgencia: "Urgência",
+                      }[analise.intencao]
+                    }
+                  </p>
+                )}
+                {analise.revisao_humana && (
+                  <p className="text-sm">
+                    Próxima ação: encaminhar para revisão por um profissional de saúde.
+                  </p>
+                )}
+                <div className="grid gap-2 xl:grid-cols-3">
+                  {analise.sugestoes.map((suggestion) => (
+                    <article key={suggestion.tom} className="rounded-lg border border-border p-3">
+                      <Badge variant="outline">{suggestion.tom}</Badge>
+                      <p className="my-2 whitespace-pre-wrap text-sm">{suggestion.texto}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={enviando || pendente || analiseDesatualizada}
+                        onClick={() => usarSugestao(suggestion.texto)}
+                      >
+                        Usar rascunho
+                      </Button>
+                    </article>
+                  ))}
+                </div>
               </>
             )}
-            {media.state === "permission" && (
-              <span role="status" className="text-sm">
-                Aguardando permissão do microfone…
-              </span>
-            )}
-            {media.state === "loading" && (
-              <span role="status" className="text-sm">
-                Preparando anexo…
-              </span>
-            )}
-            {media.state !== "idle" && (
-              <Button type="button" size="sm" variant="ghost" onClick={media.cancel}>
-                Cancelar preparação
+          </div>
+        )}
+      </section>
+      <div
+        className="flex max-h-[50%] min-h-[11rem] shrink flex-col border-t border-border bg-card"
+        aria-label="Preparar resposta"
+      >
+        <div className="min-h-0 space-y-2 overflow-y-auto px-3 pt-3 sm:px-4">
+          <label className="block text-sm font-medium" htmlFor="rascunho-ghl">
+            Rascunho para {conversa.nome}
+          </label>
+          <Textarea
+            id="rascunho-ghl"
+            value={rascunho}
+            onChange={(e) => editar(e.target.value)}
+            readOnly={enviando}
+            disabled={enviando}
+            aria-busy={enviando}
+            aria-describedby="rascunho-contador"
+            rows={2}
+            className="min-h-[68px] max-h-40 resize-y"
+          />
+          <p
+            id="rascunho-contador"
+            className={`text-xs ${rascunho.length > LIMITE ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {rascunho.length}/{LIMITE} caracteres
+            {rascunho.length > LIMITE ? " · reduza o texto para poder corrigir ou enviar" : ""}
+          </p>
+          <div className="space-y-2" aria-label="Anexo da resposta">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={arquivoInput}
+                type="file"
+                aria-label="Selecionar imagem ou áudio"
+                className="sr-only"
+                accept="image/jpeg,image/png,image/gif,audio/mpeg,audio/wav,audio/x-wav,audio/ogg,audio/mp4,audio/x-m4a,audio/aac,.jpg,.jpeg,.png,.gif,.mp3,.wav,.ogg,.m4a,.aac"
+                disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  e.currentTarget.value = "";
+                  if (
+                    file &&
+                    !mediaBloqueada &&
+                    mediaPermitida &&
+                    envioRef.current.estado !== "a_enviar" &&
+                    envioRef.current.estado !== "incerto"
+                  )
+                    void media.select(file);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
+                onClick={() => arquivoInput.current?.click()}
+              >
+                <Paperclip className="size-4" /> Anexar imagem ou áudio
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={mediaBloqueada || media.state !== "idle" || !mediaPermitida}
+                onClick={() => {
+                  if (
+                    envioRef.current.estado !== "a_enviar" &&
+                    envioRef.current.estado !== "incerto"
+                  )
+                    void media.start();
+                }}
+              >
+                <Mic className="size-4" /> Gravar áudio
+              </Button>
+              {media.state === "recording" && (
+                <>
+                  <span role="status" className="text-sm">
+                    Gravando {Math.floor(media.seconds / 60)}:
+                    {String(media.seconds % 60).padStart(2, "0")} / 2:00
+                  </span>
+                  <Button type="button" size="sm" variant="outline" onClick={media.stop}>
+                    <Square className="size-4" /> Parar e ouvir
+                  </Button>
+                </>
+              )}
+              {media.state === "permission" && (
+                <span role="status" className="text-sm">
+                  Aguardando permissão do microfone…
+                </span>
+              )}
+              {media.state === "loading" && (
+                <span role="status" className="text-sm">
+                  Preparando anexo…
+                </span>
+              )}
+              {media.state !== "idle" && (
+                <Button type="button" size="sm" variant="ghost" onClick={media.cancel}>
+                  Cancelar preparação
+                </Button>
+              )}
+            </div>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Formatos e limites de anexos</summary>
+              <p className="mt-1">
+                Um anexo por mensagem, até 5 MB. JPG, PNG, GIF, MP3, WAV, OGG, M4A ou AAC. Gravação
+                de até 2 minutos. Selecione, confira a prévia e clique em Enviar. Nada é enviado ao
+                selecionar ou gravar.
+              </p>
+            </details>
+            {!mediaPermitida && (
+              <p className="text-xs text-muted-foreground">
+                Anexos disponíveis na rota SMS com fornecedor identificado, como o Zaptos. O envio
+                de texto segue as regras do canal acima.
+              </p>
+            )}
+            {media.error && (
+              <p role="alert" className="text-sm text-destructive">
+                {media.error}
+              </p>
+            )}
+            {media.draft && (
+              <div className="space-y-3" aria-label="Prévia do anexo">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm">
+                    {media.draft.name} · {(media.draft.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={mediaBloqueada || media.state !== "idle"}
+                    onClick={() => {
+                      if (
+                        envioRef.current.estado !== "a_enviar" &&
+                        envioRef.current.estado !== "incerto"
+                      )
+                        media.remove();
+                    }}
+                  >
+                    <X className="size-4" /> Remover anexo
+                  </Button>
+                </div>
+                {media.draft.kind === "image" ? (
+                  <img
+                    src={media.draft.url}
+                    alt={`Prévia de ${media.draft.name}`}
+                    className="max-h-28 max-w-full rounded-lg object-contain"
+                  />
+                ) : (
+                  <>
+                    <audio
+                      src={media.draft.url}
+                      controls
+                      preload="metadata"
+                      className="w-full"
+                      aria-label="Ouvir áudio antes de enviar"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O áudio será enviado como anexo. A aparência da mensagem depende do canal e do
+                      fornecedor.
+                    </p>
+                  </>
+                )}
+              </div>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Um anexo por mensagem, até 5 MB. JPG, PNG, GIF, MP3, WAV, OGG, M4A ou AAC. Gravação de
-            até 2 minutos. Selecione, confira a prévia e clique em Enviar. Nada é enviado ao
-            selecionar ou gravar.
+            Só o texto é preservado ao trocar de conversa, enquanto esta caixa estiver aberta.
+            Anexos e gravações são descartados.
           </p>
-          {!mediaPermitida && (
+          <p className="text-xs text-muted-foreground">
+            Destinatário: {destino?.name ?? conversa.nome} · Canal:{" "}
+            {destino?.channel ?? "não verificado"} · Transporte:{" "}
+            {destino?.transport ?? "não verificado"}
+          </p>
+          {destino?.sendAllowed && destino.connectionVerifiedAtSend && (
             <p className="text-xs text-muted-foreground">
-              Anexos disponíveis na rota SMS com fornecedor identificado, como o Zaptos. O envio de
-              texto segue as regras do canal acima.
+              Canal identificado; a conexão e a permissão serão validadas pelo GHL no envio.
             </p>
           )}
-          {media.error && (
+          {revisaoMudou && (
+            <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
+              <p>
+                A conversa ou a rota de envio mudou desde que começou a rever. Confira as mensagens
+                novas antes de enviar; nada foi enviado.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={enviando}
+                onClick={() =>
+                  destino?.revision.channel && setReferencia(destino.revision as Revisao)
+                }
+              >
+                Conferi as mensagens novas
+              </Button>
+            </div>
+          )}
+          {aviso && (
+            <p role="status" className="text-sm">
+              {aviso}
+            </p>
+          )}
+          {erroDestino && (
             <p role="alert" className="text-sm text-destructive">
-              {media.error}
+              {erroDestino}
             </p>
           )}
-          {media.draft && (
-            <div className="space-y-3" aria-label="Prévia do anexo">
-              <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 break-words text-sm">
-                  {media.draft.name} · {(media.draft.size / (1024 * 1024)).toFixed(2)} MB
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={mediaBloqueada || media.state !== "idle"}
-                  onClick={() => {
-                    if (
-                      envioRef.current.estado !== "a_enviar" &&
-                      envioRef.current.estado !== "incerto"
-                    )
-                      media.remove();
-                  }}
-                >
-                  <X className="size-4" /> Remover anexo
-                </Button>
-              </div>
-              {media.draft.kind === "image" ? (
-                <img
-                  src={media.draft.url}
-                  alt={`Prévia de ${media.draft.name}`}
-                  className="max-h-64 max-w-full rounded-lg object-contain"
-                />
-              ) : (
-                <>
-                  <audio
-                    src={media.draft.url}
-                    controls
-                    preload="metadata"
-                    className="w-full"
-                    aria-label="Ouvir áudio antes de enviar"
+          {envio.estado === "aceite" && (
+            <p role="status" className="text-sm">
+              Mensagem aceite pelo GHL (ID {envio.messageId}). A entrega só fica comprovada quando o
+              estado da mensagem no histórico mudar para entregue.
+            </p>
+          )}
+          {envio.estado === "incerto" && (
+            <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
+              <p>
+                Resultado do envio não confirmado. Não repita: confira a conversa no GHL. O texto
+                foi mantido e novos envios ficam bloqueados até o estado ser recuperado.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={conferindo}
+                onClick={() => void verificarEstado()}
+              >
+                Verificar estado do envio
+              </Button>
+              {envio.manualId && (
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    aria-label="ID da mensagem encontrada no GHL"
+                    placeholder="ID da mensagem no GHL"
+                    maxLength={100}
+                    value={recibo}
+                    onChange={(e) => setRecibo(e.target.value)}
+                    className="max-w-xs"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    O áudio será enviado como anexo. A aparência da mensagem depende do canal e do
-                    fornecedor.
-                  </p>
-                </>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={conferindo || !/^[A-Za-z0-9_-]{1,100}$/.test(recibo.trim())}
+                    onClick={() => void conferir()}
+                  >
+                    Conferir no GHL
+                  </Button>
+                </div>
               )}
             </div>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Destinatário: {destino?.name ?? conversa.nome} · Canal:{" "}
-          {destino?.channel ?? "não verificado"} · Transporte:{" "}
-          {destino?.transport ?? "não verificado"}
-        </p>
-        {destino?.sendAllowed && destino.connectionVerifiedAtSend && (
-          <p className="text-xs text-muted-foreground">
-            Canal identificado; a conexão e a permissão serão validadas pelo GHL no envio.
-          </p>
-        )}
-        {revisaoMudou && (
-          <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
-            <p>
-              A conversa ou a rota de envio mudou desde que começou a rever. Confira as mensagens
-              novas antes de enviar; nada foi enviado.
-            </p>
+        <div className="shrink-0 border-t border-border px-3 py-2 sm:px-4">
+          <div className="flex flex-wrap gap-2">
             <Button
-              size="sm"
               variant="outline"
-              disabled={enviando}
-              onClick={() =>
-                destino?.revision.channel && setReferencia(destino.revision as Revisao)
+              disabled={!rascunho.trim() || corrigindo || enviando || rascunho.length > LIMITE}
+              onClick={() => void corrigir()}
+            >
+              <SpellCheck className="size-4" /> {corrigindo ? "A corrigir…" : "Corrigir"}
+            </Button>
+            <Button
+              disabled={
+                (!rascunho.trim() && !media.draft) ||
+                corrigindo ||
+                enviando ||
+                media.state !== "idle" ||
+                (Boolean(media.draft) && !mediaPermitida) ||
+                envio.estado === "incerto" ||
+                !destino?.sendAllowed ||
+                !referencia ||
+                revisaoMudou ||
+                rascunho.length > LIMITE
               }
+              onClick={() => void enviar()}
             >
-              Conferi as mensagens novas
+              <Send className="size-4" /> {enviando ? "A enviar…" : `Enviar para ${conversa.nome}`}
             </Button>
           </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            disabled={!rascunho.trim() || corrigindo || enviando || rascunho.length > LIMITE}
-            onClick={() => void corrigir()}
-          >
-            <SpellCheck className="size-4" /> {corrigindo ? "A corrigir…" : "Corrigir"}
-          </Button>
-          <Button
-            disabled={
-              (!rascunho.trim() && !media.draft) ||
-              corrigindo ||
-              enviando ||
-              media.state !== "idle" ||
-              (Boolean(media.draft) && !mediaPermitida) ||
-              envio.estado === "incerto" ||
-              !destino?.sendAllowed ||
-              !referencia ||
-              revisaoMudou ||
-              rascunho.length > LIMITE
-            }
-            onClick={() => void enviar()}
-          >
-            <Send className="size-4" /> {enviando ? "A enviar…" : `Enviar para ${conversa.nome}`}
-          </Button>
         </div>
-        {aviso && (
-          <p role="status" className="text-sm">
-            {aviso}
-          </p>
-        )}
-        {erroDestino && (
-          <p role="alert" className="text-sm text-destructive">
-            {erroDestino}
-          </p>
-        )}
-        {envio.estado === "aceite" && (
-          <p role="status" className="text-sm">
-            Mensagem aceite pelo GHL (ID {envio.messageId}). A entrega só fica comprovada quando o
-            estado da mensagem no histórico mudar para entregue.
-          </p>
-        )}
-        {envio.estado === "incerto" && (
-          <div role="alert" className="space-y-2 rounded-xl border border-border p-4 text-sm">
-            <p>
-              Resultado do envio não confirmado. Não repita: confira a conversa no GHL. O texto foi
-              mantido e novos envios ficam bloqueados até o estado ser recuperado.
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={conferindo}
-              onClick={() => void verificarEstado()}
-            >
-              Verificar estado do envio
-            </Button>
-            {envio.manualId && (
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  aria-label="ID da mensagem encontrada no GHL"
-                  placeholder="ID da mensagem no GHL"
-                  maxLength={100}
-                  value={recibo}
-                  onChange={(e) => setRecibo(e.target.value)}
-                  className="max-w-xs"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={conferindo || !/^[A-Za-z0-9_-]{1,100}$/.test(recibo.trim())}
-                  onClick={() => void conferir()}
-                >
-                  Conferir no GHL
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Confira o destinatário, o canal, o texto e o anexo antes de enviar. Enviar usa exatamente
-          o conteúdo visível. A IA não faz diagnósticos.
-        </p>
       </div>
     </section>
   );
