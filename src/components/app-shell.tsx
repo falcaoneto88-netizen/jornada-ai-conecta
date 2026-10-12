@@ -115,11 +115,13 @@ export function AppShell({
   description,
   actions,
   children,
+  workspace = false,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   children: ReactNode;
+  workspace?: boolean;
 }) {
   const organizacao = useOrganizacao();
   const [collapsed, setCollapsed] = useState(false);
@@ -153,7 +155,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={cn("bg-background", workspace ? "h-dvh overflow-hidden" : "min-h-screen")}>
       {/* Sidebar desktop */}
       <aside
         className={cn(
@@ -217,9 +219,13 @@ export function AppShell({
       )}
 
       <div
-        className={cn("transition-all duration-200", collapsed ? "md:pl-[76px]" : "md:pl-[264px]")}
+        className={cn(
+          "transition-all duration-200",
+          collapsed ? "md:pl-[76px]" : "md:pl-[264px]",
+          workspace && "flex h-full min-h-0 flex-col",
+        )}
       >
-        <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur">
+        <header className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/85 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
             <button
               type="button"
@@ -256,7 +262,14 @@ export function AppShell({
             </div>
           </div>
         </header>
-        <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main
+          className={cn(
+            "px-4 sm:px-6 lg:px-8",
+            workspace ? "min-h-0 flex-1 overflow-hidden py-3 sm:py-4" : "py-6",
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

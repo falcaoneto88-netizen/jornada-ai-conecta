@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarCheck, TrendingUp, UserPlus, Users } from "lucide-react";
+import { ArrowUpRight, CalendarCheck, CheckCheck, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -11,7 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePainel } from "@/lib/dashboard";
-import { formatarDataHora } from "@/lib/clinic-time";
+import { formatarDataHora, formatarHora } from "@/lib/clinic-time";
+import { rotuloEstadoMarcacao } from "@/lib/repo";
 import { useSessao } from "@/lib/session";
 
 export const Route = createFileRoute("/")({
@@ -21,7 +23,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Indicadores dos contactos, consultas e oportunidades importados para a organização.",
+          "Agenda e indicadores dos contactos, consultas e oportunidades importados para a organização.",
       },
     ],
   }),
@@ -30,35 +32,41 @@ export const Route = createFileRoute("/")({
 
 function VisaoGeral() {
   const [periodo, setPeriodo] = useState("30");
+  const [diaAgenda, setDiaAgenda] = useState<"hoje" | "amanha">("hoje");
+  const [todasEtapas, setTodasEtapas] = useState(false);
   const { modo, carregando } = useSessao();
   const painel = usePainel(Number(periodo));
   const dados = painel.data;
-  const maximo = Math.max(1, ...(dados?.distribuicao.map((e) => e.quantidade) ?? []));
+  const agenda = dados?.agenda[diaAgenda];
+  const etapas = [...(dados?.distribuicao ?? [])].sort((a, b) => b.quantidade - a.quantidade);
+  const etapasVisiveis = todasEtapas ? etapas : etapas.filter((e) => e.quantidade > 0).slice(0, 5);
+  const etapasRestantes = etapas.length - etapasVisiveis.length;
+  const maximo = Math.max(1, ...etapas.map((e) => e.quantidade));
   const cards = dados
     ? [
         {
-          label: "Contactos adicionados",
+          label: "Contactos adicionados à base",
           valor: dados.contactos,
           icon: UserPlus,
-          criterio: "Criados na base local no período, incluindo importações.",
+          criterio: "Inclui importações; não representa apenas novos leads.",
         },
         {
           label: "Marcações no período",
           valor: dados.marcacoes,
           icon: CalendarCheck,
-          criterio: "Pela data da consulta; inclui canceladas.",
+          criterio: "Pela data da consulta, incluindo canceladas.",
         },
         {
-          label: "Estado «Confirmada» no app",
-          valor: dados.taxaConfirmacao === null ? "—" : `${dados.taxaConfirmacao}%`,
-          icon: TrendingUp,
-          criterio: `${dados.confirmadas} de ${dados.elegiveis} marcações não canceladas/inválidas. Estado registrado no app; não comprova resposta SIM.`,
+          label: "Com estado Confirmada no app",
+          valor: dados.confirmadas,
+          icon: CheckCheck,
+          criterio: `${dados.elegiveis} marcações elegíveis. Não comprova resposta SIM.`,
         },
         {
           label: "Oportunidades atualizadas",
           valor: dados.oportunidades,
           icon: Users,
-          criterio: "Atualizadas na base local no período, incluindo sincronizações.",
+          criterio: "Inclui sincronizações; não representa novas vendas.",
         },
       ]
     : [];
@@ -66,18 +74,13 @@ function VisaoGeral() {
   return (
     <AppShell
       title="Visão Geral"
-      description="Dados importados da organização"
+      description="Agenda da clínica e atividade da base local"
       actions={
-        <Select value={periodo} onValueChange={setPeriodo}>
-          <SelectTrigger className="w-[170px] bg-card" aria-label="Período">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="7">Últimos 7 dias</SelectItem>
-            <SelectItem value="30">Últimos 30 dias</SelectItem>
-            <SelectItem value="90">Últimos 90 dias</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button asChild>
+          <Link to="/agenda">
+            <CalendarCheck className="size-4" aria-hidden /> Abrir agenda
+          </Link>
+        </Button>
       }
     >
       <div className="space-y-6">
@@ -85,8 +88,8 @@ function VisaoGeral() {
           <section className="surface-card p-6">
             <h2 className="font-semibold">Modo demonstração</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Os indicadores reais ficam disponíveis ao iniciar sessão. As outras páginas de
-              demonstração contêm exemplos identificados.
+              A agenda e os indicadores reais ficam disponíveis ao iniciar sessão. As outras páginas
+              de demonstração contêm exemplos identificados.
             </p>
             <Button asChild variant="outline" className="mt-4">
               <Link to="/auth" search={{ next: "" }}>
@@ -96,104 +99,232 @@ function VisaoGeral() {
           </section>
         )}
         {(carregando || (modo === "conta" && painel.isPending)) && (
-          <p role="status">A carregar indicadores…</p>
+          <section role="status" className="surface-card p-6">
+            <p className="font-medium">A carregar agenda e indicadores…</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              A consultar os dados da organização.
+            </p>
+          </section>
         )}
         {modo === "conta" && painel.isError && (
           <section role="alert" className="surface-card p-6">
-            <p>Não foi possível carregar os indicadores da organização.</p>
+            <h2 className="font-semibold">Não foi possível carregar a visão geral.</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Uma falha na consulta não significa que não existam marcações ou contactos.
+            </p>
             <Button variant="outline" className="mt-3" onClick={() => void painel.refetch()}>
               Tentar novamente
             </Button>
           </section>
         )}
-        {modo === "conta" && dados && !painel.isError && (
+        {modo === "conta" && dados && !painel.isError && agenda && (
           <>
-            <p className="text-sm text-muted-foreground">
-              De {dados.periodo.primeiroDia} a {dados.periodo.ultimoDia}, incluindo hoje. Horário da
-              clínica: <strong>{dados.fuso}</strong>. Dados consultados em{" "}
-              {formatarDataHora(dados.consultadoEm, dados.fuso)}. A consulta ao app não força nova
-              sincronização com o GHL.
-            </p>
-            <section
-              aria-label="Indicadores do período"
-              className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
-            >
-              {cards.map(({ label, valor, icon: Icon, criterio }) => (
-                <article key={label} className="surface-card p-5">
-                  <div className="flex justify-between gap-3">
-                    <h2 className="text-sm text-muted-foreground">{label}</h2>
-                    <Icon className="size-4 shrink-0 text-primary" aria-hidden />
-                  </div>
-                  <p className="mt-3 text-3xl font-semibold text-heading">{valor}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">{criterio}</p>
-                </article>
-              ))}
-            </section>
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-              <section className="surface-card p-6 lg:col-span-3">
-                <h2 className="text-base font-semibold">Etapa atual dos contactos adicionados</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Distribuição local dos contactos criados no período. Não representa conversão
-                  histórica nem a etapa da oportunidade no GHL.
+            <section className="surface-card overflow-hidden" aria-label="Agenda da clínica">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border p-5 sm:p-6">
+                <div>
+                  <h2 className="text-base font-semibold">Agenda da clínica</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {agenda.dia.split("-").reverse().join("/")} · {dados.fuso}
+                  </p>
+                </div>
+                <div
+                  className="flex rounded-xl bg-secondary p-1"
+                  role="group"
+                  aria-label="Dia da agenda"
+                >
+                  <Button
+                    size="sm"
+                    variant={diaAgenda === "hoje" ? "default" : "ghost"}
+                    aria-pressed={diaAgenda === "hoje"}
+                    onClick={() => setDiaAgenda("hoje")}
+                  >
+                    Hoje
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={diaAgenda === "amanha" ? "default" : "ghost"}
+                    aria-pressed={diaAgenda === "amanha"}
+                    onClick={() => setDiaAgenda("amanha")}
+                  >
+                    Amanhã
+                  </Button>
+                </div>
+              </div>
+              {agenda.marcacoes.length === 0 ? (
+                <div className="px-5 py-8 sm:px-6" role="status">
+                  <p className="font-medium">
+                    Nenhuma marcação ativa importada para {diaAgenda === "hoje" ? "hoje" : "amanhã"}
+                    .
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Consulte a agenda para outros dias e estados de marcação.
+                  </p>
+                </div>
+              ) : (
+                <ul
+                  className="divide-y divide-border"
+                  aria-label={`Marcações de ${diaAgenda === "hoje" ? "hoje" : "amanhã"}`}
+                >
+                  {agenda.marcacoes.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 sm:px-6"
+                    >
+                      <p className="w-14 shrink-0 text-lg font-semibold tabular-nums text-heading">
+                        {formatarHora(m.start_at, dados.fuso)}
+                      </p>
+                      <div className="min-w-0 flex-1 basis-32">
+                        <p className="break-words font-medium">
+                          {m.contacts?.full_name ?? "Contacto por associar"}
+                        </p>
+                        <p className="mt-0.5 break-words text-sm text-muted-foreground">
+                          {m.title}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="whitespace-normal">
+                        Estado no app: {rotuloEstadoMarcacao(m.status)}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/20 px-5 py-3 sm:px-6">
+                <p className="text-xs text-muted-foreground">
+                  Até 5 marcações ativas por dia, da base local.
                 </p>
-                {dados.contactos === 0 ? (
-                  <p className="mt-5 text-sm">Nenhum contacto real adicionado neste período.</p>
-                ) : (
-                  <ul className="mt-6 space-y-4">
-                    {dados.distribuicao.map((e) => (
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/agenda">
+                    Ver agenda completa <ArrowUpRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
+              </div>
+            </section>
+
+            <section className="space-y-4" aria-label="Indicadores do período">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold">Atividade da base local</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    De {dados.periodo.primeiroDia.split("-").reverse().join("/")} a{" "}
+                    {dados.periodo.ultimoDia.split("-").reverse().join("/")}, incluindo hoje.
+                  </p>
+                </div>
+                <Select value={periodo} onValueChange={setPeriodo}>
+                  <SelectTrigger className="w-[170px] bg-card" aria-label="Período dos indicadores">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">Últimos 7 dias</SelectItem>
+                    <SelectItem value="30">Últimos 30 dias</SelectItem>
+                    <SelectItem value="90">Últimos 90 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {cards.map(({ label, valor, icon: Icon, criterio }) => (
+                  <article key={label} className="surface-card p-5">
+                    <div className="flex justify-between gap-3">
+                      <h3 className="text-sm text-muted-foreground">{label}</h3>
+                      <Icon className="size-4 shrink-0 text-primary" aria-hidden />
+                    </div>
+                    <p className="mt-3 text-3xl font-semibold tabular-nums text-heading">{valor}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">{criterio}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="surface-card p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold">Etapa atual dos contactos adicionados</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Distribuição local no período. Não representa conversão nem as etapas do GHL.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/jornada">
+                    Ver jornada <ArrowUpRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
+              </div>
+              {dados.contactos === 0 ? (
+                <p className="mt-5 text-sm text-muted-foreground">
+                  Nenhum contacto real adicionado neste período.
+                </p>
+              ) : (
+                <>
+                  <ul id="distribuicao-etapas" className="mt-5 grid gap-x-8 gap-y-4 sm:grid-cols-2">
+                    {etapasVisiveis.map((e) => (
                       <li key={e.key}>
                         <div className="flex justify-between gap-3 text-sm">
                           <span>{e.nome}</span>
-                          <span>{e.quantidade}</span>
+                          <span className="tabular-nums">{e.quantidade}</span>
                         </div>
-                        <div className="mt-2 h-2 rounded-full bg-secondary">
+                        <div className="mt-2 h-1.5 rounded-full bg-secondary">
                           <div
-                            className="h-2 rounded-full bg-primary"
+                            className="h-1.5 rounded-full bg-primary"
                             style={{ width: `${(e.quantidade / maximo) * 100}%` }}
                           />
                         </div>
                       </li>
                     ))}
                   </ul>
-                )}
-                <Button asChild variant="outline" className="mt-5">
-                  <Link to="/jornada">Ver jornada</Link>
-                </Button>
-              </section>
-              <section className="surface-card p-6 lg:col-span-2">
-                <h2 className="text-base font-semibold">Próximas consultas de amanhã</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Até cinco marcações no horário da clínica, independentemente do filtro de
-                  indicadores.
-                </p>
-                {dados.proximas.length === 0 ? (
-                  <p className="mt-5 text-sm">Nenhuma marcação válida importada para amanhã.</p>
-                ) : (
-                  <ul className="mt-5 space-y-3">
-                    {dados.proximas.map((m) => (
-                      <li key={m.id} className="rounded-xl border border-border p-4">
-                        <p className="font-medium">
-                          {m.contacts?.full_name ?? "Contacto por associar"}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatarDataHora(m.start_at, dados.fuso)} · {m.title}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <Button asChild variant="outline" className="mt-5">
-                  <Link to="/agenda">Ver agenda</Link>
-                </Button>
-              </section>
-            </div>
-            <section className="surface-card p-5">
-              <h2 className="text-sm font-semibold">Indicadores ainda indisponíveis</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Respostas SIM/NÃO, falhas de workflows GHL, orçamentos pendentes e conversão por
-                procedimento ainda não têm dados integrados suficientes para um indicador confiável.
-              </p>
+                  {(etapasRestantes > 0 || todasEtapas) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-4"
+                      aria-expanded={todasEtapas}
+                      aria-controls="distribuicao-etapas"
+                      onClick={() => setTodasEtapas((atual) => !atual)}
+                    >
+                      {todasEtapas
+                        ? "Mostrar menos etapas"
+                        : `Mostrar mais ${etapasRestantes} ${etapasRestantes === 1 ? "etapa" : "etapas"}`}
+                    </Button>
+                  )}
+                </>
+              )}
             </section>
+
+            <div className="space-y-3 text-xs text-muted-foreground">
+              <p>
+                Fonte: base local da organização, incluindo importações · Consultada em{" "}
+                {formatarDataHora(dados.consultadoEm, dados.fuso)}. Abrir esta página não força
+                sincronização com o GHL.
+              </p>
+              <details className="rounded-xl border border-border p-4">
+                <summary className="cursor-pointer text-sm font-medium text-foreground">
+                  Como estes dados são calculados
+                </summary>
+                <ul className="mt-3 list-disc space-y-2 pl-4 leading-relaxed">
+                  <li>Contactos: criados na base local no período, incluindo importações.</li>
+                  <li>
+                    Marcações: pela data da consulta. A quantidade total inclui canceladas e
+                    inválidas.
+                  </li>
+                  <li>
+                    Estado Confirmada: {dados.confirmadas} de {dados.elegiveis} marcações não
+                    canceladas ou inválidas. É o estado registado no app, não uma confirmação
+                    recebida do paciente.
+                  </li>
+                  <li>
+                    Oportunidades: atualizadas na base local no período, incluindo sincronizações.
+                  </li>
+                  <li>
+                    Agenda: até cinco marcações por dia, por horário, sem canceladas, inválidas,
+                    realizadas ou faltas. Hoje e amanhã usam o fuso {dados.fuso} e não dependem do
+                    filtro de indicadores.
+                  </li>
+                </ul>
+              </details>
+              <p>
+                <strong className="font-medium">Indicadores ainda indisponíveis:</strong> respostas
+                SIM/NÃO, falhas de workflows GHL, orçamentos pendentes e conversão por procedimento
+                não têm dados integrados suficientes.
+              </p>
+            </div>
           </>
         )}
       </div>

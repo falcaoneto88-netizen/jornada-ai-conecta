@@ -1,5 +1,28 @@
 import { expect, it, vi } from "vitest";
-import { lerPaginas, resumirPainel } from "./dashboard";
+import { intervalosAgendaPainel, lerPaginas, resumirPainel } from "./dashboard";
+
+it("hoje e amanhã seguem a data da clínica mesmo antes da meia-noite UTC", () => {
+  expect(intervalosAgendaPainel(new Date("2026-10-11T23:30:00Z"), "Europe/Lisbon")).toEqual({
+    hoje: {
+      dia: "2026-10-12",
+      inicio: "2026-10-11T23:00:00.000Z",
+      fim: "2026-10-12T23:00:00.000Z",
+    },
+    amanha: {
+      dia: "2026-10-13",
+      inicio: "2026-10-12T23:00:00.000Z",
+      fim: "2026-10-13T23:00:00.000Z",
+    },
+  });
+});
+it.each([
+  ["2026-03-29T12:00:00Z", 23],
+  ["2026-10-25T12:00:00Z", 25],
+])("a agenda respeita o dia com mudança de horário em %s", (agora, horas) => {
+  const { hoje, amanha } = intervalosAgendaPainel(new Date(agora), "Europe/Lisbon");
+  expect((Date.parse(hoje.fim) - Date.parse(hoje.inicio)) / 3_600_000).toBe(horas);
+  expect(amanha.inicio).toBe(hoje.fim);
+});
 
 it("distingue ausência de denominador de taxa zero", () => {
   expect(resumirPainel([], [], 0, []).taxaConfirmacao).toBeNull();

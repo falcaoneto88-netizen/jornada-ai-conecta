@@ -8,6 +8,18 @@ export type ContactoPainel = { id: string; stage_key: string };
 export type MarcacaoPainel = { id: string; status: string };
 export type EtapaPainel = { key: string; name: string };
 
+/** Each day is resolved in the clinic's zone, including daylight-saving transitions. */
+export function intervalosAgendaPainel(agora: Date, fuso: string) {
+  const hoje = chaveDia(agora, fuso);
+  const amanha = deslocarDia(hoje, 1);
+  const intervalo = (dia: string) => ({
+    dia,
+    inicio: inicioDiaUtc(dia, fuso),
+    fim: inicioDiaUtc(deslocarDia(dia, 1), fuso),
+  });
+  return { hoje: intervalo(hoje), amanha: intervalo(amanha) };
+}
+
 export function resumirPainel(
   contactos: ContactoPainel[],
   marcacoes: MarcacaoPainel[],
@@ -67,8 +79,20 @@ export function usePainel(dias: number) {
       const fuso = organizacao.timezone;
       const agora = new Date();
       const periodo = intervaloDias(dias, agora, fuso);
-      const amanha = deslocarDia(chaveDia(agora, fuso), 1);
-      const [contactos, marcacoes, oportunidades, etapas, proximas] = await Promise.all([
+      const diasAgenda = intervalosAgendaPainel(agora, fuso);
+      const consultarDia = (dia: { inicio: string; fim: string }) =>
+        supabase
+          .from("appointments")
+          .select("id,title,start_at,status,contacts(full_name)")
+          .eq("organization_id", organizacao.id)
+          .eq("is_demo", false)
+          .not("status", "in", '("cancelada","invalid","realizada","faltou")')
+          .gte("start_at", dia.inicio)
+          .lt("start_at", dia.fim)
+          .order("start_at")
+          .order("id")
+          .limit(5);
+      const [contactos, marcacoes, oportunidades, etapas, hoje, amanha] = await Promise.all([
         lerPaginas((a, b) =>
           supabase
             .from("contacts")
@@ -103,24 +127,24 @@ export function usePainel(dias: number) {
           .select("key,name")
           .eq("organization_id", organizacao.id)
           .order("position"),
-        supabase
-          .from("appointments")
-          .select("id,title,start_at,status,contacts(full_name)")
-          .eq("organization_id", organizacao.id)
-          .eq("is_demo", false)
-          .not("status", "in", '("cancelada","invalid","realizada","faltou")')
-          .gte("start_at", inicioDiaUtc(amanha, fuso))
-          .lt("start_at", inicioDiaUtc(deslocarDia(amanha, 1), fuso))
-          .order("start_at")
-          .order("id")
-          .limit(5),
+        consultarDia(diasAgenda.hoje),
+        consultarDia(diasAgenda.amanha),
       ]);
-      if (oportunidades.error || oportunidades.count === null || etapas.error || proximas.error) {
+      if (
+        oportunidades.error ||
+        oportunidades.count === null ||
+        etapas.error ||
+        hoje.error ||
+        amanha.error
+      ) {
         throw new Error("Não foi possível obter todos os indicadores. Tente novamente.");
       }
       return {
         ...resumirPainel(contactos, marcacoes, oportunidades.count, etapas.data ?? []),
-        proximas: proximas.data ?? [],
+        agenda: {
+          hoje: { dia: diasAgenda.hoje.dia, marcacoes: hoje.data ?? [] },
+          amanha: { dia: diasAgenda.amanha.dia, marcacoes: amanha.data ?? [] },
+        },
         periodo,
         fuso,
         consultadoEm: agora.toISOString(),
