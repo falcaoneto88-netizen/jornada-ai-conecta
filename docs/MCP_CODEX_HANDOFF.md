@@ -514,3 +514,12 @@ Estado nesta revisão: **implementado localmente; gates e integração em andame
 - Implementado: 13/13 `before_sha256` conferidos (2 novos ausentes) e 13/13 `after_sha256` conferidos após cópia exata. Este registo altera depois o hash deste documento.
 - Testado: `tsgo --noEmit` 0; `vite build` 0; `git diff --check` 0; 12 suítes pedidas — 265 testes passaram (exit 0). Sem banco, IA real, envios ou harness na app.
 - Publicação: pendente (coordenador).
+
+## Verificação pós-publicação UX — 12/10/2026 20:19 UTC (somente leitura)
+
+- Revisão local do pacote: `438f6cf89c4a664d2f1a7e6e4c6e5fee894308fa`; integrada em `7b9ef8a`. Deployment `7ab1bfe5-5e25-43ff-88a3-595d28c17c37` (coordenador; não republicado).
+- Implementado: 13 ficheiros do manifest (12 código/teste coincidentes com origin/main conforme coordenador; docs só com appends). `types.ts` PostgrestVersion 14.5→14.17 preservado, fora do pacote.
+- Testado: tsgo/build/diff-check 0; 12 suítes, 265 testes passaram.
+- Publicado (marcador, 1.ª tentativa): `GET /api/version` → 200, `build` `jornada-inbox-ux-20261012.1`, capabilities `pilotAuthorization:1`, `n8nMessageEvidence:2`, `n8nAcknowledgementActivity:2`, `inboxManualMedia:1`, `inboxWorkspace:1`, `overviewAgenda:1`, `release` null, `checked_at` 2026-10-12T20:19:46.649Z. Com release null, o SHA publicado não é comprovado pelo marcador.
+- Interface: abertura da inbox no navegador do coordenador é evidência separada; /api/version lá deu ERR_BLOCKED_BY_CLIENT.
+- Emissão de mensagens: nenhuma mensagem real nem IA real disparada.
