@@ -2563,6 +2563,18 @@ export type Database = {
         Returns: Json
       }
       attendance_draft_purge_expired: { Args: never; Returns: number }
+      attendance_workspace_read: {
+        Args: {
+          _actor: string
+          _at?: string
+          _org: string
+          _owner?: string
+          _page?: number
+          _size?: number
+          _view?: string
+        }
+        Returns: Json
+      }
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_remote_v2: {
         Args: { _source: string; _submission: string }
