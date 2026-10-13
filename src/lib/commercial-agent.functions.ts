@@ -170,6 +170,7 @@ export const sendInboxMessage = createServerFn({ method: "POST" })
         organizationId: listSchema.shape.organizationId,
         text: z.string().max(1500),
         attachments: inboxAttachmentsSchema.optional(),
+        draftRevision: z.string().uuid().nullable().optional(),
         revision: revisionSchema,
       })
       .refine((v) => v.text.trim().length > 0 || (v.attachments?.length ?? 0) > 0, "empty"),

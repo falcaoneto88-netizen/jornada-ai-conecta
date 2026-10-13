@@ -26,8 +26,8 @@ import { useLigacaoGhl } from "@/lib/repo";
 import { useOrganizacao } from "@/lib/organization";
 
 const navItems = [
-  { to: "/", label: "Visão Geral", icon: LayoutDashboard },
-  { to: "/caixa-de-entrada", label: "Caixa de Entrada IA", icon: Inbox },
+  { to: "/", label: "Meu dia", icon: LayoutDashboard },
+  { to: "/caixa-de-entrada", label: "Atendimento", icon: Inbox },
   { to: "/agente-supervisionado", label: "Agente supervisionado", icon: MessageSquareText },
   { to: "/jornada", label: "Jornada do Cliente", icon: RouteIcon },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
@@ -95,6 +95,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
           to={to}
           onClick={onNavigate}
           title={collapsed ? label : undefined}
+          aria-label={label}
           activeOptions={{ exact: to === "/" }}
           activeProps={{ className: "bg-sidebar-accent text-heading font-medium" }}
           className={cn(
@@ -124,7 +125,7 @@ export function AppShell({
   workspace?: boolean;
 }) {
   const organizacao = useOrganizacao();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { modo, carregando } = useSessao();
   const navigate = useNavigate();
@@ -159,7 +160,7 @@ export function AppShell({
       {/* Sidebar desktop */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200 md:flex",
+          "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200 motion-reduce:transition-none md:flex",
           collapsed ? "w-[76px]" : "w-[264px]",
         )}
       >
@@ -220,13 +221,18 @@ export function AppShell({
 
       <div
         className={cn(
-          "transition-all duration-200",
+          "transition-all duration-200 motion-reduce:transition-none",
           collapsed ? "md:pl-[76px]" : "md:pl-[264px]",
           workspace && "flex h-full min-h-0 flex-col",
         )}
       >
         <header className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/85 backdrop-blur">
-          <div className="flex flex-wrap items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-3 px-4 sm:px-6 lg:px-8",
+              workspace ? "py-2" : "py-4",
+            )}
+          >
             <button
               type="button"
               aria-label="Abrir menu"
@@ -237,7 +243,7 @@ export function AppShell({
             </button>
             <div className="min-w-0 flex-1">
               <h1 className="display-title truncate text-xl sm:text-2xl">{title}</h1>
-              {description && (
+              {description && !workspace && (
                 <p className="mt-0.5 truncate text-sm text-muted-foreground">{description}</p>
               )}
               {modo === "conta" && organizacao.data && (
@@ -247,8 +253,15 @@ export function AppShell({
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <ModoBadge />
-              <ConnectionBadge />
+              <div
+                className={cn(
+                  "items-center gap-2",
+                  workspace ? "hidden lg:flex" : "flex flex-wrap",
+                )}
+              >
+                <ModoBadge />
+                <ConnectionBadge />
+              </div>
               {actions}
               <button
                 type="button"

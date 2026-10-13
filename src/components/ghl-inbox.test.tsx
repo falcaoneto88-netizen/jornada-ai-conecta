@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import { flushSync } from "react-dom";
 import { cleanup, render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { AttendanceDraftSnapshot } from "@/lib/attendance-draft.core";
 const mocks = vi.hoisted(() => ({
   analisar: vi.fn(),
   corrigir: vi.fn(),
@@ -8,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   contexto: vi.fn(),
   conferir: vi.fn(),
   estado: vi.fn(),
+  loadDraft: vi.fn(),
+  saveDraft: vi.fn(),
+  clearDraft: vi.fn(),
   refetch: vi.fn(),
   escopo: "conta-a",
   error: false,
@@ -30,6 +35,14 @@ vi.mock("@/lib/commercial-agent.functions", () => ({
   reconcileManualAgentMessage: mocks.conferir,
 }));
 vi.mock("@/lib/jev-pedidos.functions", () => ({ classificarPedido: vi.fn() }));
+vi.mock("@/components/attendance-context-panel", () => ({
+  AttendanceContextPanel: () => <p>Contexto do contato</p>,
+}));
+vi.mock("@/lib/attendance-draft.functions", () => ({
+  loadAttendanceDraft: mocks.loadDraft,
+  saveAttendanceDraft: mocks.saveDraft,
+  clearAttendanceDraft: mocks.clearDraft,
+}));
 vi.mock("@/lib/organization", () => ({
   useOrganizacao: () => ({ data: { organizacao: { id: mocks.org, timezone: "Europe/Lisbon" } } }),
 }));
@@ -107,6 +120,15 @@ vi.mock("@/lib/ghl-observation", () => ({
     },
   }),
 }));
+vi.mock("@/lib/attendance-workspace.functions", () => ({
+  resolveAttendanceConversations: vi.fn(),
+  readAttendanceWorkspace: vi.fn(),
+}));
+function analysisButton() {
+  if (!screen.queryByRole("button", { name: "Analisar conversa" }))
+    flushSync(() => fireEvent.click(screen.getByRole("button", { name: "Abrir assistente IA" })));
+  return screen.getByRole("button", { name: "Analisar conversa" });
+}
 import { GhlInbox, lerIntencao, pendentesEnvio } from "./ghl-inbox";
 const REV = {
   historyHash: "a".repeat(64),
@@ -149,6 +171,8 @@ beforeEach(() => {
     data: ctx(),
   });
   mocks.escopo = "conta-a";
+  for (const f of [mocks.loadDraft, mocks.saveDraft, mocks.clearDraft])
+    f.mockReset().mockResolvedValue({ ok: false, code: "draft_unavailable" });
   mocks.org = "orgA";
   mocks.brunoChannel = "SMS";
   mocks.brunoUnread = 1;
@@ -192,7 +216,7 @@ it("imagem fica local na prévia; clique final envia arquivo e texto exatos uma 
     send.click();
     send.click();
   });
-  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
   expect(mocks.enviar.mock.calls[0]![0].data).toMatchObject({
     organizationId: "orgA",
     conversationId: "Ana",
@@ -398,7 +422,7 @@ it("resultado tardio da IA não contamina o novo atendimento", async () => {
       }),
   );
   render(<GhlInbox />);
-  fireEvent.click(screen.getByText("Analisar conversa"));
+  fireEvent.click(analysisButton());
   bruno();
   await act(async () =>
     resolver({
@@ -433,7 +457,7 @@ it("erro de leitura oculta conteúdo antigo e bloqueia nova análise", () => {
   render(<GhlInbox />);
   expect(screen.getByRole("alert").textContent).toContain("Token sem escopo");
   expect(screen.queryByText("Texto recebido: SIM")).toBeNull();
-  expect((screen.getByText("Analisar conversa") as HTMLButtonElement).disabled).toBe(true);
+  expect((analysisButton() as HTMLButtonElement).disabled).toBe(true);
 });
 
 const campo = (n = "Ana") => screen.getByLabelText(`Rascunho para ${n}`) as HTMLTextAreaElement;
@@ -491,7 +515,7 @@ it("Enviar: um clique envia o texto visível atual; duplo clique não duplica", 
   const b = screen.getByRole("button", { name: /Enviar para Ana/ });
   fireEvent.click(b);
   fireEvent.click(b);
-  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
   const arg = mocks.enviar.mock.calls[0]![0].data;
   expect(arg).toMatchObject({
     organizationId: "orgA",
@@ -565,7 +589,7 @@ it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo suce
   mocks.enviar.mockImplementation(() => new Promise((x) => (r = x)));
   render(<GhlInbox />);
   await flush();
-  await act(async () => fireEvent.click(screen.getByText("Analisar conversa")));
+  await act(async () => fireEvent.click(analysisButton()));
   escrever("Texto enviado");
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
   const usar = screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement;
@@ -573,6 +597,7 @@ it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo suce
   fireEvent.click(usar);
   fireEvent.change(campo(), { target: { value: "edição forçada" } });
   expect(campo().value).toBe("Texto enviado");
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
   await act(async () =>
     r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }),
   );
@@ -624,7 +649,7 @@ it("duplo clique síncrono produz um único pedido", async () => {
     b.click();
     b.click();
   });
-  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
 });
 it("capacidade atualizada: conversa mudou desde a revisão bloqueia sem renovar sozinha", async () => {
   render(<GhlInbox />);
@@ -910,9 +935,7 @@ it.each(["texto", "histórico anterior", "nova mensagem", "rota"])(
     mocks.analisar.mockResolvedValue({ ok: true, analise: analysis });
     const { rerender } = render(<GhlInbox />);
     await flush();
-    await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: "Analisar conversa" })),
-    );
+    await act(async () => fireEvent.click(analysisButton()));
     escrever("Meu texto autorado");
     if (change === "texto") mocks.messageText = "Pergunta editada no mesmo ID";
     if (change === "histórico anterior") mocks.olderMessage = true;
@@ -931,9 +954,7 @@ it.each(["texto", "histórico anterior", "nova mensagem", "rota"])(
     fireEvent.click(use);
     expect(campo().value).toBe("Meu texto autorado");
     expect(screen.getByText(/Analise novamente para usar uma sugestão/)).toBeTruthy();
-    await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: "Analisar conversa" })),
-    );
+    await act(async () => fireEvent.click(analysisButton()));
     expect(
       (screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement).disabled,
     ).toBe(false);
@@ -951,7 +972,7 @@ it("mensagem durante análise mantém resposta antiga marcada desatualizada sem 
   );
   const { rerender } = render(<GhlInbox />);
   await flush();
-  fireEvent.click(screen.getByRole("button", { name: "Analisar conversa" }));
+  fireEvent.click(analysisButton());
   escrever("Não substituir");
   mocks.extraMessage = true;
   rerender(<GhlInbox />);
@@ -1044,5 +1065,358 @@ it("texto restaurado após timeout continua bloqueado; confirmação preserva ed
   escrever("Próxima resposta");
   await act(async () => fireEvent.click(screen.getByRole("button", { name: /Verificar estado/ })));
   expect(campo().value).toBe("Próxima resposta");
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("espera rascunho sem gravar intenção de envio antes de iniciar o POST", async () => {
+  let resolveSave!: (value: unknown) => void;
+  mocks.loadDraft.mockResolvedValue({ ok: true, data: { revision: null, draft: null } });
+  mocks.saveDraft.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolveSave = r;
+      }),
+  );
+  mocks.enviar.mockRejectedValue(new Error("timeout"));
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto para conferência");
+  fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
+  await waitFor(() => expect(mocks.saveDraft).toHaveBeenCalledTimes(1));
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
+  const revision = "22222222-2222-4222-8222-222222222222";
+  await act(async () =>
+    resolveSave({
+      ok: true,
+      data: {
+        revision,
+        draft: {
+          text: "Texto para conferência",
+          updatedAt: "2026-10-13T12:00:00.000Z",
+          expiresAt: "2026-10-20T12:00:00.000Z",
+        },
+      },
+    }),
+  );
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+  expect(lerIntencao("orgA:Ana:Ana")?.draftRevision).toBe(revision);
+  expect(mocks.enviar.mock.calls[0]?.[0].data.draftRevision).toBe(revision);
+  expect(JSON.stringify(Object.fromEntries(Object.entries(localStorage)))).not.toContain(
+    "Texto para conferência",
+  );
+});
+
+it("reconciliação após recarregar limpa só o rascunho da revisão enviada", async () => {
+  const revision = "22222222-2222-4222-8222-222222222222";
+  const requestId = "33333333-3333-4333-8333-333333333333";
+  const text = "Texto cujo envio será confirmado";
+  localStorage.setItem(
+    "jornada:envio-pendente:orgA:Ana:Ana",
+    JSON.stringify({ requestId, manualId: null, desde: Date.now(), draftRevision: revision }),
+  );
+  mocks.loadDraft.mockResolvedValue({
+    ok: true,
+    data: {
+      revision,
+      draft: { text, updatedAt: "2026-10-13T12:00:00.000Z", expiresAt: "2026-10-20T12:00:00.000Z" },
+    },
+  });
+  mocks.clearDraft.mockResolvedValue({
+    ok: true,
+    data: { revision: "44444444-4444-4444-8444-444444444444", draft: null },
+  });
+  mocks.estado.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "verified-message", manualId: "manual-id", code: null },
+  });
+  render(<GhlInbox />);
+  await flush();
+  expect(campo().value).toBe(text);
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: /Verificar estado do envio/ })),
+  );
+  await waitFor(() =>
+    expect(mocks.clearDraft).toHaveBeenCalledWith({
+      data: {
+        organizationId: "orgA",
+        contactId: "Ana",
+        conversationId: "Ana",
+        expectedText: text,
+        expectedRevision: revision,
+      },
+    }),
+  );
+  expect(campo().value).toBe("");
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
+});
+
+const cleanupEntries = () =>
+  Object.keys(localStorage).filter((key) => key.startsWith("jornada:rascunho-limpeza:"));
+function privateDraftBackend(initialText = "") {
+  const first = "22222222-2222-4222-8222-222222222222";
+  let remote: AttendanceDraftSnapshot = {
+    revision: initialText ? first : null,
+    draft: initialText
+      ? { text: initialText, updatedAt: "2026-10-13T12:00:00Z", expiresAt: "2026-10-20T12:00:00Z" }
+      : null,
+  };
+  let next = 3;
+  const change = (text: string) => {
+    remote = {
+      revision: `${String(next++).padStart(8, "0")}-3333-4333-8333-333333333333`,
+      draft: text
+        ? { text, updatedAt: "2026-10-13T12:00:00Z", expiresAt: "2026-10-20T12:00:00Z" }
+        : null,
+    };
+  };
+  mocks.loadDraft.mockImplementation(async () => ({ ok: true, data: remote }));
+  mocks.saveDraft.mockImplementation(
+    async ({ data }: { data: { text: string; expectedRevision: string | null } }) => {
+      if (data.expectedRevision !== remote.revision)
+        return { ok: false, code: "draft_conflict", current: remote };
+      change(data.text);
+      return { ok: true, data: remote };
+    },
+  );
+  mocks.clearDraft.mockImplementation(
+    async ({ data }: { data: { expectedText: string; expectedRevision: string | null } }) => {
+      if (
+        data.expectedRevision !== remote.revision ||
+        data.expectedText !== (remote.draft?.text ?? "")
+      )
+        return { ok: false, code: "draft_conflict", current: remote };
+      change("");
+      return { ok: true, data: remote };
+    },
+  );
+  return { current: () => remote, change };
+}
+async function confirmedWithCleanupFailure(text: string) {
+  const backend = privateDraftBackend();
+  mocks.clearDraft.mockResolvedValueOnce({ ok: false, code: "draft_unavailable" });
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "confirmed-message", manualId: "manual", code: null },
+  });
+  render(<GhlInbox />);
+  await flush();
+  escrever(text);
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  await waitFor(() => expect(mocks.clearDraft).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Tentar concluir limpeza" })).toBeTruthy(),
+  );
+  return backend;
+}
+
+it("sent e limpeza falha sobrevivem a reload sem reenviar; recuperação explícita conclui o CAS", async () => {
+  const text = "Mensagem já aceita, não repetir";
+  const backend = await confirmedWithCleanupFailure(text);
+  expect(campo().value).toBe("");
+  expect(backend.current().draft?.text).toBe(text);
+  expect(cleanupEntries()).toHaveLength(1);
+  expect(localStorage.getItem(cleanupEntries()[0]!)).not.toContain(text);
+  expect(Object.keys(JSON.parse(localStorage.getItem(cleanupEntries()[0]!)!)).sort()).toEqual([
+    "confirmedAt",
+    "requestId",
+    "revision",
+  ]);
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
+  cleanup();
+  pendentesEnvio.clear();
+  render(<GhlInbox />);
+  await flush();
+  expect(campo().value).toBe(text);
+  expect(screen.getByText("Envio confirmado; limpeza do rascunho pendente.")).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  await waitFor(() => expect(cleanupEntries()).toHaveLength(0));
+  expect(backend.current().draft).toBeNull();
+  expect(campo().value).toBe("");
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("recuperação offline mantém a pendência e pode ser tentada depois sem repetir mensagem", async () => {
+  const backend = await confirmedWithCleanupFailure("Já enviado");
+  mocks.loadDraft.mockRejectedValueOnce(new Error("offline"));
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  expect(cleanupEntries()).toHaveLength(1);
+  expect(mocks.clearDraft).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Envio confirmado; limpeza do rascunho pendente.")).toBeTruthy();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  await waitFor(() => expect(cleanupEntries()).toHaveLength(0));
+  expect(backend.current().draft).toBeNull();
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("uma revisão posterior comprovada é preservada e encerra somente a pendência antiga", async () => {
+  const backend = await confirmedWithCleanupFailure("Antigo já enviado");
+  cleanup();
+  backend.change("Novo trabalho salvo em outra aba");
+  render(<GhlInbox />);
+  await flush();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  await waitFor(() => expect(cleanupEntries()).toHaveLength(0));
+  expect(mocks.clearDraft).toHaveBeenCalledTimes(1);
+  expect(campo().value).toBe("Novo trabalho salvo em outra aba");
+  expect(backend.current().draft?.text).toBe("Novo trabalho salvo em outra aba");
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("novo texto digitado após reload é preservado ao limpar a revisão enviada", async () => {
+  const backend = await confirmedWithCleanupFailure("Texto enviado");
+  cleanup();
+  render(<GhlInbox />);
+  await flush();
+  escrever("Uma resposta nova");
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  await waitFor(() => expect(cleanupEntries()).toHaveLength(0));
+  expect(campo().value).toBe("Uma resposta nova");
+  await waitFor(() => expect(backend.current().draft?.text).toBe("Uma resposta nova"), {
+    timeout: 2500,
+  });
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("a pendência é privada por usuário, organização, contato e conversa", async () => {
+  await confirmedWithCleanupFailure("Privado de Ana e da conta a");
+  const originalKey = cleanupEntries()[0]!;
+  cleanup();
+  mocks.escopo = "conta-b";
+  mocks.loadDraft.mockResolvedValue({ ok: true, data: { revision: null, draft: null } });
+  render(<GhlInbox />);
+  await flush();
+  expect(screen.queryByText("Envio confirmado; limpeza do rascunho pendente.")).toBeNull();
+  expect(mocks.clearDraft).toHaveBeenCalledTimes(1);
+  expect(cleanupEntries()).toEqual([originalKey]);
+  cleanup();
+  mocks.escopo = "conta-a";
+  mocks.org = "orgB";
+  render(<GhlInbox />);
+  await flush();
+  expect(screen.queryByText("Envio confirmado; limpeza do rascunho pendente.")).toBeNull();
+  cleanup();
+  mocks.org = "orgA";
+  render(<GhlInbox />);
+  await flush();
+  bruno();
+  await flush();
+  expect(screen.queryByText("Envio confirmado; limpeza do rascunho pendente.")).toBeNull();
+  expect(mocks.clearDraft).toHaveBeenCalledTimes(1);
+  expect(cleanupEntries()).toEqual([originalKey]);
+});
+
+it("mídia sem texto e persistência vazia não criam obrigação de limpar rascunho", async () => {
+  privateDraftBackend();
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: { state: "sent", messageId: "audio-only", manualId: "manual", code: null },
+  });
+  render(<GhlInbox />);
+  await flush();
+  await attach(new File(["audio"], "audio.wav", { type: "audio/wav" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+  expect(cleanupEntries()).toHaveLength(0);
+  expect(mocks.clearDraft).not.toHaveBeenCalled();
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
+  expect(mocks.enviar.mock.calls[0]?.[0].data.draftRevision).toBeNull();
+});
+
+it.each(["draft_binding_invalid", "draft_binding_conflict", "draft_binding_unavailable"])(
+  "%s conserva o pedido e o texto até conferir o ledger, sem repetir o envio",
+  async (code) => {
+    const backend = privateDraftBackend("Texto privado a revisar");
+    mocks.enviar.mockResolvedValue({ ok: false, code });
+    mocks.estado.mockResolvedValue({
+      ok: true,
+      data: { state: "prepared", messageId: null, manualId: "manual", code: null },
+    });
+    render(<GhlInbox />);
+    await flush();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ })));
+    await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+    const requestId = mocks.enviar.mock.calls[0]?.[0].data.requestId;
+    expect(lerIntencao("orgA:Ana:Ana")?.requestId).toBe(requestId);
+    expect((screen.getByLabelText(/Rascunho para Ana/) as HTMLTextAreaElement).value).toBe(
+      "Texto privado a revisar",
+    );
+    expect(backend.current().draft?.text).toBe("Texto privado a revisar");
+    expect(mocks.clearDraft).not.toHaveBeenCalled();
+    expect(
+      (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: /Verificar estado/ })),
+    );
+    expect(mocks.estado).toHaveBeenCalledWith({ data: { organizationId: "orgA", requestId } });
+    expect(lerIntencao("orgA:Ana:Ana")?.requestId).toBe(requestId);
+    expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("limpeza confirmada não apaga nem libera um envio incerto independente", async () => {
+  await confirmedWithCleanupFailure("Já enviado antes");
+  cleanup();
+  const unrelated = "55555555-5555-4555-8555-555555555555";
+  localStorage.setItem(
+    "jornada:envio-pendente:orgA:Ana:Ana",
+    JSON.stringify({ requestId: unrelated, manualId: null, desde: Date.now() }),
+  );
+  render(<GhlInbox />);
+  await flush();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  await waitFor(() => expect(cleanupEntries()).toHaveLength(0));
+  expect(lerIntencao("orgA:Ana:Ana")?.requestId).toBe(unrelated);
+  expect(screen.getByRole("button", { name: /Verificar estado do envio/ })).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: /Enviar para Ana/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("falha ao persistir limpeza conserva a intenção confirmada e avisa para manter a página aberta", async () => {
+  const set = Storage.prototype.setItem;
+  const failCleanupStorage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key: string,
+    value: string,
+  ) {
+    if (key.startsWith("jornada:rascunho-limpeza:")) throw new Error("quota");
+    return set.call(this, key, value);
+  });
+  try {
+    await confirmedWithCleanupFailure("Texto confirmado");
+    expect(cleanupEntries()).toHaveLength(0);
+    expect(lerIntencao("orgA:Ana:Ana")?.draftRevision).toBeTruthy();
+    expect(screen.getByText(/recuperação da limpeza não foi gravada neste navegador/)).toBeTruthy();
+    expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  } finally {
+    failCleanupStorage.mockRestore();
+  }
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Tentar concluir limpeza" })),
+  );
+  await waitFor(() =>
+    expect(screen.queryByText("Envio confirmado; limpeza do rascunho pendente.")).toBeNull(),
+  );
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
 });

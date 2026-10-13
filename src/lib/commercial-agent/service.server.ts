@@ -23,6 +23,7 @@ import {
 import { resolveInboxRoute, sameRoute, type InboxRoute, type SmsChannels } from "./inbox-route";
 import { POLICY_HASH, replyHash, seal, sha, unseal } from "./providers.server";
 import type { InboxAttachment } from "./inbox-media";
+import type { AttendanceDraftDispatch } from "../attendance-draft.server";
 import {
   INBOX_MEDIA_TTL_MS,
   mediaManifest,
@@ -123,6 +124,7 @@ export type Dependencies = {
   enabled: boolean;
   sendEnabled: boolean;
   now?: () => number;
+  bindAttendanceDraft?(input: AttendanceDraftDispatch): Promise<void>;
 };
 export class CommercialAgent {
   private now: () => number;
@@ -790,6 +792,7 @@ export class CommercialAgent {
       text: string;
       requestId: string;
       attachments?: InboxAttachment[] | undefined;
+      draftRevision?: string | null | undefined;
       revision: {
         historyHash: string;
         sessionVersion: number;
@@ -808,7 +811,7 @@ export class CommercialAgent {
       (!input.text.trim() && !attachments.length)
     )
       throw new AgentError("invalid_manual");
-    const { revision, ...scope } = input;
+    const { revision, draftRevision, ...scope } = input;
     // Prazo operacional (também no SQL, com clock_timestamp após os locks). Não prova não-envio.
     const notAfter = new Date(this.now() + INBOX_DEADLINE_MS).toISOString();
     const late = () => this.now() > Date.parse(notAfter);
@@ -888,6 +891,20 @@ export class CommercialAgent {
     const pinnedRoute: InboxRoute = { channel: "SMS", ...pinned.route };
     const now = await this.inboxRoute(pinned, configuredProviderId);
     if (!now.ok || !sameRoute(now.route, pinnedRoute)) throw new AgentError("route_changed");
+    if (draftRevision != null) {
+      if (!this.d.bindAttendanceDraft) throw new AgentError("draft_binding_unavailable");
+      await this.d.bindAttendanceDraft({
+        organizationId: org,
+        userId: actor,
+        locationId: row.location_id,
+        contactId: row.contact_id,
+        conversationId: row.conversation_id,
+        manualId: row.id,
+        requestId: input.requestId,
+        revision: draftRevision,
+        text: input.text,
+      });
+    }
     if (late()) throw new AgentError("request_expired");
     const result = await this.manualSend(
       org,

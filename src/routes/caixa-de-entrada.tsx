@@ -26,6 +26,23 @@ import { useContactos, useConversas, useLigacaoGhl, useModoDados } from "@/lib/r
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/caixa-de-entrada")({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { contact?: string; conversation?: string } => {
+    for (const key of ["contact", "conversation"] as const) {
+      if (
+        search[key] !== undefined &&
+        (typeof search[key] !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(search[key]))
+      )
+        throw new Error("O endereço do atendimento contém um identificador inválido.");
+    }
+    if (search["conversation"] && !search["contact"])
+      throw new Error("O contato precisa ser identificado para abrir esta conversa.");
+    return {
+      ...(search["contact"] ? { contact: search["contact"] as string } : {}),
+      ...(search["conversation"] ? { conversation: search["conversation"] as string } : {}),
+    };
+  },
   head: () => ({
     meta: [
       { title: "Caixa de Entrada IA — Jornada AI | Dr. João Falcão" },
@@ -45,16 +62,17 @@ export const Route = createFileRoute("/caixa-de-entrada")({
 });
 
 function CaixaEntrada() {
+  const search = Route.useSearch();
   const { demo } = useModoDados();
   return demo ? (
     <CaixaDemo />
   ) : (
     <AppShell
-      title="Caixa de Entrada IA"
+      title="Atendimento"
       description="Conversas e respostas consultadas no GoHighLevel"
       workspace
     >
-      <GhlInbox />
+      <GhlInbox targetContactId={search.contact} targetConversationId={search.conversation} />
     </AppShell>
   );
 }

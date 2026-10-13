@@ -381,9 +381,7 @@ export function useContactos() {
         ultimaInteracao: dataPt(c.last_interaction_at ?? c.updated_at, fuso),
         agendamento: proximas.has(c.id)
           ? dataHoraPt(proximas.get(c.id), fuso)
-          : c.next_action_at
-            ? dataHoraPt(c.next_action_at, fuso)
-            : null,
+          : null,
         timeline: [
           {
             data: dataPt(c.created_at, fuso),

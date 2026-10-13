@@ -523,3 +523,92 @@ Estado nesta revisão: **implementado localmente; gates e integração em andame
 - Publicado (marcador, 1.ª tentativa): `GET /api/version` → 200, `build` `jornada-inbox-ux-20261012.1`, capabilities `pilotAuthorization:1`, `n8nMessageEvidence:2`, `n8nAcknowledgementActivity:2`, `inboxManualMedia:1`, `inboxWorkspace:1`, `overviewAgenda:1`, `release` null, `checked_at` 2026-10-12T20:19:46.649Z. Com release null, o SHA publicado não é comprovado pelo marcador.
 - Interface: abertura da inbox no navegador do coordenador é evidência separada; /api/version lá deu ERR_BLOCKED_BY_CLIENT.
 - Emissão de mensagens: nenhuma mensagem real nem IA real disparada.
+
+## Atendimento: contexto e rascunhos — 13/10/2026 (local)
+
+Registro histórico: a pendência de fila/Meu dia e a lista de duas migrações desta seção foram superadas no código local pelo adendo “Meu dia e recuperação durável” abaixo. A evidência publicada continua separada.
+
+- Base revalidada por fetch: `62736be971573df7c01f1554ffc3e37e67e9c343`; branch `codex/attendance-workspace-20261013`. Projeto original preservado. Revisão final do código: commit desta entrega; consultar histórico da branch.
+- Implementado: contexto no desktop/painel móvel; responsável interno; retorno com prazo/conclusão/CAS e fuso revisado; rascunho privado cifrado e revisão por atendente; conflitos/recuperação/desfazer; remoção da data de retorno usada como consulta.
+- Testado localmente: 122 testes integrados; 9 PostgreSQL de contexto com todas as migrações reais; 11 PostgreSQL de rascunhos; tsc/build/diff-check; lint sem erros (dois avisos antigos na inbox); QA sintético em 1440/390/360.
+- URLs conferidas nesta etapa: prévia isolada `http://127.0.0.1:4184/caixa-de-entrada`; não representa o backend real. Repositório atualizado via fetch. Nenhuma verificação publicada nova foi feita nesta etapa; o registro publicado de 12/10 acima continua histórico.
+- Configurações: reutiliza `COMMERCIAL_AGENT_ENCRYPTION_KEY` e autenticação/configuração Supabase/GHL existentes. Valores não lidos nem expostos nesta entrega; presença publicada não foi revalidada.
+- MCP/catálogo, conexões Ad Navigator/BioReport, GHL externo e automações: não alterados nesta etapa.
+- Migrações novas preparadas: `20261013100000_attendance_context.sql` e `20261013110000_attendance_drafts.sql`; aplicadas apenas nos testes locais efêmeros, não em produção.
+- Publicado: NÃO. Verificado de ponta a ponta no ambiente publicado: NÃO. Nenhum envio real, ativação, alteração CRM ou publicação.
+- Detalhes e pendências: `docs/ATTENDANCE_WORKSPACE_V1_2026-10-13.md`. Fila/Meu dia e indicador de atendimento simultâneo permanecem pendentes. Validade lógica de rascunho não equivale a expurgo físico agendado.
+
+## Decisão de layout e lógica operacional — 13/10/2026
+
+Registro histórico: a limitação de correlação de limpeza somente no navegador foi corrigida no incremento local descrito abaixo; este registro não é comprovação de implantação da correção.
+
+- Base local analisada: `f13f8a7`, branch `codex/attendance-workspace-20261013`. Incremento de código: commit que contém este adendo, com quatro arquivos de inbox/controlador/testes; não houve push.
+- Decisão: Meu dia pessoal → fila com motivo verificável → conversa dominante → próximo passo/contexto/assistência no mesmo espaço. Estado de atendimento, etapa comercial e consulta permanecem independentes. Modelo, fontes oficiais e sequência de implantação em `docs/JORNADA_AI_OPERATING_MODEL_2026-10-13.md`.
+- Protótipo isolado em `../.attendance-concept-20261013/`, acessível durante a sessão em `http://127.0.0.1:4185/`. Dados fictícios em memória, nenhum backend/IA/envio. Navegação, filtros, retorno, responsável, rascunho e revisão observados em 1440/390/360; sem rolagem lateral em 1440/360; capturas no mesmo diretório. Não integrado ao app público.
+- Corrigido localmente: envio confirmado + falha na limpeza do rascunho agora mantém pendência separada por usuário/org/contato/conversa/revisão; recuperação explícita faz leitura fresca e CAS sem reenviar. Revisões posteriores preservadas. Metadados do navegador só IDs/instante, sem texto ou hash.
+- Limitação restante: a obrigação de limpeza ainda não é persistida no servidor; outro dispositivo ou limpeza do armazenamento local pode perder a correlação. Após reload o texto pode reaparecer com aviso e bloqueio de envio. Consolidar essa obrigação no servidor antes de disponibilizar rascunhos persistentes à equipe.
+- Testado localmente: 134 testes em seis arquivos, TypeScript, build, diff-check; ESLint dos quatro arquivos sem erros, dois avisos antigos. Sem mudanças SQL nesta revisão; suites PostgreSQL anteriores não repetidas. Protótipo: sintaxe e 24 verificações sintéticas, mais verificação direcionada de contagens pessoais após ajuste.
+- Revalidação publicada disponível de 13/10, 14:19 UTC: `https://jornada-ai-conecta.lovable.app/api/version` → build `jornada-inbox-ux-20261012.1`, `release:null`; SHA publicado não comprovado. Leitura do projeto original no Lovable indicou revisão editorial `62736be` e banco ativo; consulta por presença confirmou ausência dos campos/tabela/RPCs das novas migrações de atendimento. Código local não deve ser apresentado como publicado.
+- Configurações: reutilizadas, sem leitura/exposição de valores ou alterações, `COMMERCIAL_AGENT_ENCRYPTION_KEY`, Supabase e GHL existentes. MCP/catálogo, credenciais, GHL, n8n, Ad Navigator e BioReport não alterados por esta entrega.
+- Publicado: NÃO. Verificado de ponta a ponta em produção: NÃO. Nenhuma mensagem real, nova automação ou migração remota.
+
+## Meu dia e recuperação durável — 13/10/2026 (implementação local)
+
+### Revisão e implantação
+
+- Projeto original preservado: `36345211-2616-42f7-bb9e-e78a9d00ca22`. Branch `codex/attendance-workspace-20261013`, base local do incremento `9e7f740`. O coordenador registrará o SHA final e os gates combinados depois do congelamento.
+- Revisão editorial remota observada após a pré-verificação: `161c8998773a04e76edec4b5b64c04766c21fcef`, acrescentando registro em `.lovable/plan.md` sobre a base `62736be`. Preservar essa alteração na integração. Não equivale à integração do código local nem à prova de revisão publicada.
+- **Implementado:** Meu dia/fila de retornos e consultas, abertura por IDs exatos, contexto administrativo e rascunho privado com recuperação de limpeza pelo ledger de envio. **Testado localmente:** suites dirigidas e banco efêmero; gates combinados finais a registrar pelo coordenador. **Publicado:** ainda não. **Verificado de ponta a ponta no publicado:** ainda não.
+- Build candidato `jornada-attendance-workspace-20261013.1`, capacidades `attendanceContext:1`, `attendanceDrafts:1`, `attendanceDraftRecovery:1`, `attendanceDay:1`; capacidades anteriores mantidas. A verificação pública registrada às 14:19 UTC ainda mostrou `jornada-inbox-ux-20261012.1`, `release:null`. O candidato deve ser conferido depois da publicação; marcador sem SHA não identifica univocamente o commit.
+
+### Contrato local de Meu dia e fila
+
+- `src/lib/attendance-workspace.{core,server,functions}.ts` exporta `readAttendanceWorkspace` e `resolveAttendanceConversations`. A primeira deriva a organização do perfil da sessão e usa a RPC `attendance_workspace_read`, somente leitura e executável apenas por `service_role`, com revalidação de ator/organização/papel. Papéis de leitura existentes e filtros meus/todos/sem responsável são preservados, sem conceder escrita ao visualizador.
+- Reutiliza `contacts.attendance_owner_id`, `next_action`, `next_action_at` e `appointments`; não cria tarefas paralelas nem muda GHL. Contagens são completas para o escopo local elegível e calculadas no mesmo snapshot da página de 25/50 itens. Contatos demonstrativos ou sem vínculo GHL válido ficam fora da cobertura declarada; nenhuma busca por nome substitui o vínculo.
+- Critérios explícitos: retorno vencido = prazo anterior ao instante consultado; retornos de hoje = prazos dentro do dia civil da organização; consultas de hoje = agenda local vinculada, dentro desse dia e com estado ativo admitido. Retornos de hoje e vencidos podem se sobrepor; não somar os cartões. Horário passado de consulta não prova falta.
+- `awaitingResponse:null` e `message_coverage_unavailable` representam a ausência de cobertura global de mensagens. Não se publica zero fictício, nem se converte não lido em resposta pendente. Responsável local não significa presença, exclusividade ou trava entre dois atendentes.
+- `checkedAt` representa leitura do banco local; `lastContactSyncAt` representa sincronização de contatos. Consultas GHL são cache identificado como tal, sem alegar leitura de agenda ao vivo. Paginação mantém ordem definida por motivo/prazo/ID, mas dados podem mudar entre pedidos.
+- A resolução de conversa, executada apenas após seleção, confirma contato/location por GET GHL autenticado e busca por `contactId` exato; limita-se a quatro páginas de 25 metadados. Só cobertura completa com total conferido permite concluir unicidade. Zero, múltiplas ou cobertura incompleta ficam explícitas; não cria conversa nem envia mensagem.
+
+### Vínculo durável de rascunho e segurança de repetição
+
+- `attendance_draft_bind_dispatch` vincula o texto privado à linha preparada do ledger manual antes do POST externo. Exige mesmo autor, organização, location, contato, conversa, requestId, revisão e hash calculado no servidor. Não há recibo informado pelo navegador como prova de envio.
+- `attendance_draft_load_reconciled` usa `sent` com aprovação e `messageId` para limpar somente a revisão vinculada; uma nova revisão, mesmo com texto idêntico, é preservada. Recuperação funciona sem depender da correlação do dispositivo anterior. `sending`, `unknown`, rejeição ou recibo ausente não autorizam limpeza nem reenvio.
+- `draft_binding_*` **não é tratado como certeza de não envio**: em concorrência outro pedido pode já ter avançado o mesmo dispatch. A intenção/requestId original é mantida para consulta do estado; não gerar nova chave nem repetir POST automaticamente. O bloqueio conservador também vale para falha da RPC/migração do vínculo.
+- Retenção: validade lógica de sete dias, limpeza no acesso e função de expurgo existente. **Nenhum cron foi criado ou ativado**; rascunhos inativos podem reter ciphertext depois da validade sem manutenção. Não prometer eliminação física em sete dias. O vínculo no ledger não contém texto livre; anexos continuam fora da persistência de rascunho.
+
+### Quatro migrações necessárias
+
+Aplicar em ordem antes de disponibilizar o novo código; até esta anotação foram aplicadas somente em testes PostgreSQL efêmeros:
+
+1. `20261013100000_attendance_context.sql` — responsável, versão, retorno e auditoria.
+2. `20261013110000_attendance_drafts.sql` — rascunho privado cifrado, CAS e validade.
+3. `20261013130000_attendance_draft_dispatch_recovery.sql` — vínculo ao dispatch e limpeza comprovada.
+4. `20261013140000_attendance_workspace.sql` — RPC de leitura e índice da fila, sem tabela de tarefas.
+
+Ausência de estrutura resulta em indisponibilidade explícita. Não há migração remota comprovada por testes locais.
+
+### Pré-verificação publicada e configurações (sem valores)
+
+Evidência de **13/10/2026 fornecida pelo coordenador**, obtida no projeto original; separada dos testes locais desta implementação:
+
+| Verificação | Evidência | Limite |
+|---|---|---|
+| Configurações do servidor | Presença de `COMMERCIAL_AGENT_ENCRYPTION_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GHL_PRIVATE_TOKEN` e `GHL_LOCATION_ID`; chave de cifra validada como 32 bytes | Nenhum valor registrado; presença não comprova persistência nova ou entrega |
+| Location GHL | GET autenticado retornou HTTP 200 e o ID esperado `ok2UHC2QMZsd8UHsAgEa`, conferido no contexto da organização `f07ab3be-7419-4779-a901-ef71c5fc27f0` | IDs servem à conferência; escopo operacional continua derivado da sessão e binding no servidor |
+| Pipelines GHL | GET autenticado retornou HTTP 200 com seis pipelines | Comprova leitura, não escrita, mensagens ou execução de automações |
+| Migrações de atendimento | Pré-verificação publicada anterior encontrou ausentes as estruturas locais novas | Aplicação remota e verificação posterior permanecem pendentes |
+
+URLs/pontos de conferência: projeto original em `https://lovable.dev/projects/36345211-2616-42f7-bb9e-e78a9d00ca22`, revisão pública em `https://jornada-ai-conecta.lovable.app/api/version`, Meu dia em `https://jornada-ai-conecta.lovable.app/` e inbox em `https://jornada-ai-conecta.lovable.app/caixa-de-entrada`. Os dois últimos são destinos para validação após implantação, **não prova de que o incremento já está publicado**. Leituras GHL verificadas correspondem a `GET /locations/:locationId` e `GET /opportunities/pipelines` na API conectada, sem mutações.
+
+### Testes e pendências
+
+- Workspace/resolução: **19 testes locais dirigidos**, 11 de contrato e oito de PostgreSQL. Banco efêmero com a cadeia real de migrações, dados fictícios, mais de mil contatos, escopo, paginação, dias de 23/25 horas e leitura concorrente à conclusão de retorno. Não somar essas contagens aos gates combinados sem verificar sobreposição.
+- Revisão independente somente leitura do vínculo/recuperação não encontrou defeito concreto de acesso entre usuários/tenants/locations, apagamento de revisão nova, duplicação de POST ou deadlock introduzido. Resultados de execução das suites de rascunho/ledger e gates finais serão registrados pelo coordenador.
+- Pendente: integrar preservando a revisão remota, aplicar as quatro migrações, publicar, conferir marcador, autenticação real, contagens/fuso/escopo e persistência/recuperação entre dispositivos no ambiente publicado. Definir manutenção de expurgo físico; medir latência das leituras GHL de escopo.
+- MCP/ferramentas, Ad Navigator, BioReport, n8n e configurações GHL não foram alterados; nenhum novo catálogo MCP foi exposto por estas server functions. Nenhuma mensagem real ou IA real, ativação, edição de workflow/CRM ou migração remota foi realizada por esta etapa local.
+
+Detalhes da release local: `docs/ATTENDANCE_WORKSPACE_V1_2026-10-13.md`. Fila global de respostas, presença de atendentes e exclusividade continuam fora desta etapa.
+
+
+Gates locais finais da candidata: 176 testes combinados; subconjunto inbox/contexto 82 revalidado após wireup; três testes do painel persistente (inclusive SSR/hidratação). PostgreSQL efêmero: 44 rascunhos/ledger, oito workspace e dez contexto. Contagens de subconjuntos se sobrepõem. `booked` alinhado, revisão privada transmitida no pedido, erros concorrentes preservam requestId, Meu dia invalidado após salvar contexto e atualizado a cada minuto. UI conferida em 360/390 e 1280/1440 com dados fictícios. Build/TypeScript passaram; lint dirigido sem erros após formatação, dois avisos Fast Refresh preexistentes. Publicação, revisão editorial e verificação autenticada serão registradas após implantação.
