@@ -1042,6 +1042,8 @@ export type Database = {
       }
       contacts: {
         Row: {
+          attendance_owner_id: string | null
+          attendance_version: number
           created_at: string
           email: string | null
           full_name: string
@@ -1064,6 +1066,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attendance_owner_id?: string | null
+          attendance_version?: number
           created_at?: string
           email?: string | null
           full_name: string
@@ -1086,6 +1090,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attendance_owner_id?: string | null
+          attendance_version?: number
           created_at?: string
           email?: string | null
           full_name?: string
@@ -1108,6 +1114,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "contacts_attendance_owner_id_fkey"
+            columns: ["attendance_owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contacts_organization_id_fkey"
             columns: ["organization_id"]
@@ -2447,6 +2460,16 @@ export type Database = {
           location_id: string
           pipeline_id: string
         }[]
+      }
+      attendance_context_command: {
+        Args: {
+          _actor: string
+          _contact: string
+          _data?: Json
+          _op: string
+          _org: string
+        }
+        Returns: Json
       }
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_remote_v2: {
