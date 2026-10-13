@@ -923,6 +923,8 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          attendance_draft_revision: string | null
+          attendance_draft_text_hash: string | null
           channel: string
           contact_id: string
           conversation_id: string
@@ -947,6 +949,8 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          attendance_draft_revision?: string | null
+          attendance_draft_text_hash?: string | null
           channel: string
           contact_id: string
           conversation_id: string
@@ -971,6 +975,8 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          attendance_draft_revision?: string | null
+          attendance_draft_text_hash?: string | null
           channel?: string
           contact_id?: string
           conversation_id?: string
@@ -2518,7 +2524,33 @@ export type Database = {
         }
         Returns: Json
       }
+      attendance_draft_bind_dispatch: {
+        Args: {
+          _actor: string
+          _contact: string
+          _conversation: string
+          _location: string
+          _manual: string
+          _org: string
+          _request: string
+          _revision: string
+          _text_hash: string
+        }
+        Returns: Json
+      }
       attendance_draft_command: {
+        Args: {
+          _actor: string
+          _contact: string
+          _conversation: string
+          _data?: Json
+          _location: string
+          _op: string
+          _org: string
+        }
+        Returns: Json
+      }
+      attendance_draft_load_reconciled: {
         Args: {
           _actor: string
           _contact: string

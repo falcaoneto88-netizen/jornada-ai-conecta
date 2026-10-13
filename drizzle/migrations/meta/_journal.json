@@ -141,6 +141,13 @@
       "when": 1791921165429,
       "tag": "0019_attendance_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791921192294,
+      "tag": "0020_attendance_draft_dispatch_recovery",
+      "breakpoints": true
     }
   ]
 }
