@@ -336,6 +336,53 @@ export type Database = {
           },
         ]
       }
+      attendance_drafts: {
+        Row: {
+          contact_id: string
+          conversation_id: string
+          expires_at: string | null
+          location_id: string
+          organization_id: string
+          payload: string | null
+          revision: string
+          text_hash: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_id: string
+          conversation_id: string
+          expires_at?: string | null
+          location_id: string
+          organization_id: string
+          payload?: string | null
+          revision?: string
+          text_hash?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_id?: string
+          conversation_id?: string
+          expires_at?: string | null
+          location_id?: string
+          organization_id?: string
+          payload?: string | null
+          revision?: string
+          text_hash?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_drafts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -2471,6 +2518,19 @@ export type Database = {
         }
         Returns: Json
       }
+      attendance_draft_command: {
+        Args: {
+          _actor: string
+          _contact: string
+          _conversation: string
+          _data?: Json
+          _location: string
+          _op: string
+          _org: string
+        }
+        Returns: Json
+      }
+      attendance_draft_purge_expired: { Args: never; Returns: number }
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_remote_v2: {
         Args: { _source: string; _submission: string }
