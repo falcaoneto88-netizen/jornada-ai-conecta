@@ -127,6 +127,34 @@
       "when": 1791595258867,
       "tag": "0017_commercial_agent_manual_inbox_window",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791921132011,
+      "tag": "0018_attendance_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791921165429,
+      "tag": "0019_attendance_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791921192294,
+      "tag": "0020_attendance_draft_dispatch_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791921221267,
+      "tag": "0021_attendance_workspace",
+      "breakpoints": true
     }
   ]
 }

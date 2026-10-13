@@ -5,6 +5,7 @@ import { CommercialAgent } from "./service.server";
 const Z = "zap";
 const store = { command: vi.fn() };
 const channels = vi.fn();
+const bindAttendanceDraft = vi.fn();
 const agent = new CommercialAgent({
   store,
   provider: { history: vi.fn(), send: vi.fn(), smsChannels: channels },
@@ -12,6 +13,7 @@ const agent = new CommercialAgent({
   encryptionKey: "x",
   enabled: true,
   sendEnabled: true,
+  bindAttendanceDraft,
 });
 const a = agent as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const H = "a".repeat(64);
@@ -67,10 +69,12 @@ const row = (state: string) => ({
   error_code: null,
   result_message_id: state === "sent" ? "g1" : null,
 });
-const send = (i = input) => agent.inboxSend("o", "u1", i, true, Z);
+const send = (i: Parameters<CommercialAgent["inboxSend"]>[2] = input) =>
+  agent.inboxSend("o", "u1", i, true, Z);
 beforeEach(() => {
   store.command.mockReset();
   channels.mockReset().mockResolvedValue(ch(Z));
+  bindAttendanceDraft.mockReset().mockResolvedValue(undefined);
   a["manualPayload"] = vi.fn(() => ({ text: "Olá", snapshot: { ...snapshot, route } }));
   a["manualContext"] = vi.fn(async () => ({ blockedReason: null, sessionVersion: 3, snapshot }));
   a["manualPrepare"] = vi.fn(async () => ({ id: "m1" }));
@@ -184,4 +188,39 @@ it("resultado incerto é devolvido sem nova tentativa; estado lido por requestId
     state: "unknown",
   });
   await expect(agent.inboxStatus("o", "u2", input.requestId)).rejects.toThrow("forbidden");
+});
+
+it("vincula o rascunho antes do POST; não vaza revisão ao strict schema do preparo", async () => {
+  prepared();
+  const draftRevision = "11111111-1111-4111-8111-111111111111";
+  await send({ ...input, draftRevision });
+  expect(bindAttendanceDraft).toHaveBeenCalledWith(
+    expect.objectContaining({
+      organizationId: "o",
+      userId: "u1",
+      manualId: "m1",
+      requestId: input.requestId,
+      revision: draftRevision,
+      text: input.text,
+    }),
+  );
+  expect(a["manualPrepare"]!.mock.calls[0]![2]).not.toHaveProperty("draftRevision");
+  expect(bindAttendanceDraft.mock.invocationCallOrder[0]).toBeLessThan(
+    a["manualSend"]!.mock.invocationCallOrder[0]!,
+  );
+});
+
+it("falha de vínculo impede qualquer POST, sem transformar envio incerto em nova tentativa", async () => {
+  prepared();
+  const draftRevision = "11111111-1111-4111-8111-111111111111";
+  bindAttendanceDraft.mockRejectedValue(new AgentError("draft_binding_unavailable"));
+  await expect(send({ ...input, draftRevision })).rejects.toThrow("draft_binding_unavailable");
+  expect(a["manualSend"]).not.toHaveBeenCalled();
+  bindAttendanceDraft.mockClear();
+  for (const state of ["unknown", "sending", "sent", "rejected"]) {
+    store.command.mockResolvedValue(row(state));
+    expect((await send({ ...input, draftRevision })).state).toBe(state);
+  }
+  expect(bindAttendanceDraft).not.toHaveBeenCalled();
+  expect(a["manualSend"]).not.toHaveBeenCalled();
 });

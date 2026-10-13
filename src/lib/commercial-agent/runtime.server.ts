@@ -4,6 +4,7 @@ import { resolverAcesso } from "../ghl.functions";
 import { AgentError } from "./core";
 import { configuredGenerator, HighLevel } from "./providers.server";
 import { CommercialAgent, type Store } from "./service.server";
+import { bindAttendanceDraftDispatch } from "../attendance-draft.server";
 
 type Rpc = {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>;
@@ -49,6 +50,8 @@ export function runtime(locationId: string) {
     encryptionKey: key,
     enabled: process.env["COMMERCIAL_AGENT_ENABLED"] === "true",
     sendEnabled: process.env["COMMERCIAL_AGENT_SEND_ENABLED"] === "true",
+    bindAttendanceDraft: (input) =>
+      bindAttendanceDraftDispatch(supabaseAdmin as unknown as Rpc, key, input),
   });
 }
 export async function authenticatedAgent(

@@ -8,7 +8,7 @@ import { createFileRoute } from "@tanstack/react-router";
  * de fora, qual a versão publicada. `release` é o identificador do ambiente,
  * quando existe.
  */
-const BUILD = "jornada-inbox-ux-20261012.1";
+const BUILD = "jornada-attendance-workspace-20261013.1";
 
 export const Route = createFileRoute("/api/version")({
   server: {
@@ -28,6 +28,10 @@ export const Route = createFileRoute("/api/version")({
               inboxManualMedia: 1,
               inboxWorkspace: 1,
               overviewAgenda: 1,
+              attendanceContext: 1,
+              attendanceDrafts: 1,
+              attendanceDraftRecovery: 1,
+              attendanceDay: 1,
             },
             release:
               typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release)

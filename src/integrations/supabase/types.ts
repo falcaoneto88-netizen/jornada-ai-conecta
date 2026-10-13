@@ -336,6 +336,53 @@ export type Database = {
           },
         ]
       }
+      attendance_drafts: {
+        Row: {
+          contact_id: string
+          conversation_id: string
+          expires_at: string | null
+          location_id: string
+          organization_id: string
+          payload: string | null
+          revision: string
+          text_hash: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_id: string
+          conversation_id: string
+          expires_at?: string | null
+          location_id: string
+          organization_id: string
+          payload?: string | null
+          revision?: string
+          text_hash?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_id?: string
+          conversation_id?: string
+          expires_at?: string | null
+          location_id?: string
+          organization_id?: string
+          payload?: string | null
+          revision?: string
+          text_hash?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_drafts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -876,6 +923,8 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          attendance_draft_revision: string | null
+          attendance_draft_text_hash: string | null
           channel: string
           contact_id: string
           conversation_id: string
@@ -900,6 +949,8 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          attendance_draft_revision?: string | null
+          attendance_draft_text_hash?: string | null
           channel: string
           contact_id: string
           conversation_id: string
@@ -924,6 +975,8 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          attendance_draft_revision?: string | null
+          attendance_draft_text_hash?: string | null
           channel?: string
           contact_id?: string
           conversation_id?: string
@@ -1042,6 +1095,8 @@ export type Database = {
       }
       contacts: {
         Row: {
+          attendance_owner_id: string | null
+          attendance_version: number
           created_at: string
           email: string | null
           full_name: string
@@ -1064,6 +1119,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attendance_owner_id?: string | null
+          attendance_version?: number
           created_at?: string
           email?: string | null
           full_name: string
@@ -1086,6 +1143,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attendance_owner_id?: string | null
+          attendance_version?: number
           created_at?: string
           email?: string | null
           full_name?: string
@@ -1108,6 +1167,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "contacts_attendance_owner_id_fkey"
+            columns: ["attendance_owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contacts_organization_id_fkey"
             columns: ["organization_id"]
@@ -2447,6 +2513,67 @@ export type Database = {
           location_id: string
           pipeline_id: string
         }[]
+      }
+      attendance_context_command: {
+        Args: {
+          _actor: string
+          _contact: string
+          _data?: Json
+          _op: string
+          _org: string
+        }
+        Returns: Json
+      }
+      attendance_draft_bind_dispatch: {
+        Args: {
+          _actor: string
+          _contact: string
+          _conversation: string
+          _location: string
+          _manual: string
+          _org: string
+          _request: string
+          _revision: string
+          _text_hash: string
+        }
+        Returns: Json
+      }
+      attendance_draft_command: {
+        Args: {
+          _actor: string
+          _contact: string
+          _conversation: string
+          _data?: Json
+          _location: string
+          _op: string
+          _org: string
+        }
+        Returns: Json
+      }
+      attendance_draft_load_reconciled: {
+        Args: {
+          _actor: string
+          _contact: string
+          _conversation: string
+          _data?: Json
+          _location: string
+          _op: string
+          _org: string
+        }
+        Returns: Json
+      }
+      attendance_draft_purge_expired: { Args: never; Returns: number }
+      attendance_workspace_read: {
+        Args: {
+          _actor: string
+          _at?: string
+          _org: string
+          _owner?: string
+          _page?: number
+          _size?: number
+          _view?: string
+        }
+        Returns: Json
       }
       claim_site_lead_remote: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_remote_v2: {
