@@ -1,36 +1,22 @@
-# Auditoria de workflows GHL — resultado da leitura
+# Revisão de interação — Jornada AI (skill emil-design-eng)
 
-## Fonte, período e cobertura
-- Fonte: chamada oficial `GET /workflows/` da API GHL (Version 2021-07-28), com o token privado do servidor. É a mesma chamada que o app já usa no catálogo. Location conferida: ok2UHC2QMZsd8UHsAgEa. HTTP 200.
-- Data: 14/10/2026, por volta das 23:15 UTC. A lista é o estado atual; não cobre um período.
-- Cobertura: 25 workflows, sendo 10 publicados e 15 em rascunho. A API só devolve estes campos: id, name, status, version, createdAt, updatedAt e locationId.
+Identidade visual preservada: mesmas cores, fontes, bordas e espaçamentos. Só muda como botões, menus e janelas reagem e se movem. Nenhuma alteração ou publicação até sua aprovação.
 
-## Publicados (10)
-| Workflow | Versão | Atualizado |
-|---|---|---|
-| 07 dias — Acompanhamento de Hidratação | 17 | 05/09/2026 |
-| Jornada AI | 5 | 06/10/2026 |
-| Jornada AI — Piloto supervisionado V02 | 3 | 08/10/2026 |
-| Pré-Procedimento Harmonização Glutea | 38 | 15/09/2026 |
-| Pós-Prcedimento Harmonização Glútea | 20 | 05/09/2026 |
-| Rabo Power Max SMS | 8 | 12/10/2026 |
-| Recrutamento Comercial Remoto — Confirmação de pré-cadastro | 5 | 02/10/2026 |
-| Recrutamento Comercial Remoto — Envio de pré-cadastro | 6 | 02/10/2026 |
-| n8n \| Encaminhar agendamento Harmonização \| RASCUNHO (o nome diz rascunho, mas o estado é publicado) | 8 | 05/10/2026 |
-| n8n \| Encaminhar resposta à confirmação | 5 | 08/10/2026 |
+| Antes | Depois | Porquê |
+| --- | --- | --- |
+| Botões sem resposta ao toque | Leve redução (escala 0,97) ao pressionar, 140 ms | Confirma que o clique foi recebido |
+| Menus suspensos e seletores abrem do centro | Abrem a partir do botão que os acionou | Movimento coerente com a origem |
+| Menus/popovers com curva padrão fraca | Curva de saída rápida própria (`cubic-bezier(0.23,1,0.32,1)`), 150–200 ms | Sensação mais ágil e premium |
+| Painel lateral (gaveta) abre em 500 ms, `ease-in-out` | 300 ms com curva tipo iOS; fecho mais rápido (200 ms) | 500 ms parece lento em uso diário |
+| Janelas (diálogos) com entrada e saída iguais | Entrada 200 ms, saída 150 ms; mantêm-se centradas | Sair deve ser mais rápido que entrar |
+| Fundo escuro das janelas a 80% preto fixo | Usar token do tema (mesma aparência), transição só de opacidade | Respeita tokens e modo escuro |
+| Dicas (tooltips) sempre com atraso e animação | Após a primeira, as seguintes abrem instantâneas | Barras de ícones ficam mais rápidas |
+| `transition-all` no menu principal, abas, barra de progresso e acordeão | Transição só das propriedades necessárias (cor, opacidade, transform) | Evita animar layout e travamentos |
+| Efeitos de passar o rato também disparam no telemóvel | Restringir a dispositivos com rato | Evita estados “presos” no toque |
+| Sem suporte a “reduzir movimento” | Com a preferência ativa, manter só esmaecimentos | Acessibilidade |
+| Ações frequentes (enviar, trocar conversa, atalhos de teclado) | Sem animação extra | Usadas dezenas de vezes por dia |
 
-## Rascunhos (15)
-7 Dias Cuidados Pós-Procedimento; Boas vindas Felps Concierge; Comunicaçao Interna; Confirmação Consulta Presencial; Confirmação de consulta de Harmonização Glutea (versão 108, atualizado em 05/10); Consulta Online - Confirmação…; Dieta - [CADÊNCIA]; Follow up pos cirurgico; Glúteos SMS Offer (atualizado em 14/10); 2 sem nome ("New Workflow : …"); Onboarding and Payment Confirmation; Pre consulta Emagrecimento; Pré-Black | Glúteos 400 mL; [Consulta AGENDADA Emagrecimento].
-
-## Limitação exata
-- A API pública do GHL não fornece gatilho, ações ou canais, nem execuções, última execução ou contatos ativos no fluxo. Não existe endpoint GET para isso. Esses dados só aparecem no editor e no "Execution logs" do GHL. Por isso, função e canais não foram verificados; os nomes acima sugerem a função, mas isso é só inferência.
-- n8n (as duas ligações mostram a mesma instância): há 3 fluxos, todos da ponte Jornada.
-  - Agenda e Confirmação V2: ativo.
-  - Diagnóstico: inativo; só faz um teste de ligação (POST health).
-  - Confirmação V1: inativo.
-  - Nenhum desses fluxos lista ou consulta workflows do GHL. Existe uma credencial HighLevel OAuth, mas nenhum fluxo a usa para leitura. Nada foi executado.
-- `list_automations` do plugin lê a tabela interna do app. Ela vir vazia não diz nada sobre os workflows do GHL.
-
-## Próximo passo opcional (precisa de aprovação)
-Um caminho parcial, só de leitura: cruzar as tags de contato e os campos de "workflow" dos contatos. Isso dá apenas uma estimativa de quem está nos fluxos e não é uma contagem confiável. A alternativa é exportar manualmente o "Execution logs" de cada workflow publicado no GHL e me enviar.
-Nada foi alterado, executado ou enviado.
+## Detalhes técnicos
+- Tokens novos em `src/styles.css`: `--ease-out`, `--ease-in-out`, `--ease-drawer`, regra `prefers-reduced-motion`.
+- Ajustes em `components/ui/` (button, dropdown-menu, select, popover, tooltip, dialog, sheet, tabs, progress, accordion) e `app-shell.tsx`.
+- Sem mudanças de lógica, dados, envio, banco ou integrações. Validação por capturas desktop/mobile e testes existentes de componentes.
