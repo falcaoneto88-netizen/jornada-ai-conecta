@@ -101,16 +101,7 @@ function MyDay({ scope, organizationId }: { scope: string; organizationId: strin
           </Button>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="surface-card p-5">
-          <MessageSquare className="size-4 text-muted-foreground" />
-          <h3 className="mt-3 text-sm font-medium">Aguardam minha resposta</h3>
-          <p className="mt-2 text-xl font-semibold">Indisponível</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            A cobertura das mensagens ainda não permite calcular esta fila. Não lida no GHL não
-            significa resposta pendente.
-          </p>
-        </article>
+      <div className="grid gap-3 sm:grid-cols-3">
         {(
           [
             {
@@ -153,17 +144,17 @@ function MyDay({ scope, organizationId }: { scope: string; organizationId: strin
           </button>
         ))}
       </div>
-      <section className="surface-card overflow-hidden" aria-label="Fila administrativa">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+      <section className="overflow-hidden rounded-xl border border-primary/50 bg-card" aria-label="Fila administrativa">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-primary/20 bg-primary/5 px-5 py-5">
           <div>
-            <h3 className="font-semibold">Próximas ações</h3>
+            <h3 className="text-xl font-semibold tracking-normal text-heading">Próximas ações</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               {ownership} · por prazo, do mais antigo ao mais recente
             </p>
           </div>
           <Button
             size="sm"
-            variant={view === "all" ? "secondary" : "outline"}
+            variant={view === "all" ? "default" : "outline"}
             onClick={() => pick("all")}
           >
             Ver todos os itens
@@ -286,6 +277,19 @@ function MyDay({ scope, organizationId }: { scope: string; organizationId: strin
           </>
         ) : null}
       </section>
+      <article className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+        <MessageSquare className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 className="text-sm font-medium tracking-normal text-muted-foreground">Aguardam minha resposta</h3>
+            <p className="text-xs text-muted-foreground">Indisponível</p>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            A cobertura das mensagens ainda não permite calcular esta fila. Não lida no GHL não
+            significa resposta pendente.
+          </p>
+        </div>
+      </article>
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Fontes e limites deste painel</summary>
         <p className="mt-2">
