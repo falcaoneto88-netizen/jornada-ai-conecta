@@ -160,7 +160,7 @@ export function AppShell({
       {/* Sidebar desktop */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200 motion-reduce:transition-none md:flex",
+          "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar transition-[width,transform] duration-200 ease-(--ease-in-out) motion-reduce:transition-none md:flex",
           collapsed ? "w-[76px]" : "w-[264px]",
         )}
       >
@@ -221,7 +221,7 @@ export function AppShell({
 
       <div
         className={cn(
-          "transition-all duration-200 motion-reduce:transition-none",
+          "transition-[padding,margin] duration-200 ease-(--ease-in-out) motion-reduce:transition-none",
           collapsed ? "md:pl-[76px]" : "md:pl-[264px]",
           workspace && "flex h-full min-h-0 flex-col",
         )}
