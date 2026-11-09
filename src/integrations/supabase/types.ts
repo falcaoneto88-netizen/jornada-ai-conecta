@@ -2060,6 +2060,55 @@ export type Database = {
           },
         ]
       }
+      site_lead_attributions: {
+        Row: {
+          attribution: Json
+          created_at: string
+          integration_id: string
+          organization_id: string
+          provenance: string
+          submission_id: string
+        }
+        Insert: {
+          attribution: Json
+          created_at?: string
+          integration_id: string
+          organization_id: string
+          provenance?: string
+          submission_id: string
+        }
+        Update: {
+          attribution?: Json
+          created_at?: string
+          integration_id?: string
+          organization_id?: string
+          provenance?: string
+          submission_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_lead_attributions_integration_id_fkey"
+            columns: ["integration_id"]
+            isOneToOne: false
+            referencedRelation: "site_integrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_attributions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_lead_attributions_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: true
+            referencedRelation: "site_lead_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_lead_execution_ledger: {
         Row: {
           channel: string
@@ -2781,6 +2830,23 @@ export type Database = {
       }
       ingest_site_lead_v2: {
         Args: {
+          _consent_at: string
+          _consent_version: string
+          _email: string
+          _full_name: string
+          _payload_hash: string
+          _phone: string
+          _phone_normalized: string
+          _quota_email: string
+          _quota_phone: string
+          _request_id: string
+          _source: string
+        }
+        Returns: Json
+      }
+      ingest_site_lead_v3: {
+        Args: {
+          _attribution?: Json
           _consent_at: string
           _consent_version: string
           _email: string
