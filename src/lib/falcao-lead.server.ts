@@ -59,19 +59,25 @@ export function baldeQuota(segredo: string, campo: "telefone" | "email", valor: 
 export function criarLeadStore(admin: ClienteRpc, segredo: string): LeadStore {
   return {
     async ingest(input): Promise<ResultadoIngresso> {
-      const { data, error } = await admin.rpc("ingest_site_lead_v2", {
-        _source: input.source,
-        _request_id: input.requestId,
-        _payload_hash: input.payloadHash,
-        _full_name: input.fullName,
-        _phone: input.phone,
-        _phone_normalized: input.phoneNormalized,
-        _email: input.email,
-        _consent_version: input.consentVersion,
-        _consent_at: input.consentAt,
-        _quota_phone: baldeQuota(segredo, "telefone", input.phoneNormalized),
-        _quota_email: input.email ? baldeQuota(segredo, "email", input.email) : null,
-      });
+      // O fluxo existente não depende da migração de atribuição. Nunca fazer
+      // fallback de v3 para v2 quando há atribuição: isso perderia sua identidade.
+      const { data, error } = await admin.rpc(
+        input.attribution ? "ingest_site_lead_v3" : "ingest_site_lead_v2",
+        {
+          _source: input.source,
+          _request_id: input.requestId,
+          _payload_hash: input.payloadHash,
+          _full_name: input.fullName,
+          _phone: input.phone,
+          _phone_normalized: input.phoneNormalized,
+          _email: input.email,
+          _consent_version: input.consentVersion,
+          _consent_at: input.consentAt,
+          _quota_phone: baldeQuota(segredo, "telefone", input.phoneNormalized),
+          _quota_email: input.email ? baldeQuota(segredo, "email", input.email) : null,
+          ...(input.attribution ? { _attribution: input.attribution } : {}),
+        },
+      );
       if (error) {
         if (error.code === "23505") return { outcome: "conflito" };
         if (error.code === "53400") return { outcome: "limite" };

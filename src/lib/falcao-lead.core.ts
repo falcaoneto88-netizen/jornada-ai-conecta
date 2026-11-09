@@ -11,6 +11,27 @@ export const FALCAO_SOURCE = "experiencia-falcao" as const;
 export const FALCAO_CONSENT_VERSION = "2026-09-17.contact.v1" as const;
 export const FALCAO_JANELA_MS = 5 * 60 * 1000;
 export const FALCAO_LIMITE_BYTES = 4096;
+export const FALCAO_ATTRIBUTION_VERSION = "2026-11-09.attribution.v1" as const;
+export const FALCAO_ANALYTICS_CONSENT_VERSION = "2026-11-09.analytics.v1" as const;
+
+/** Metadados declarados pelo site, apenas para atribuição interna. Não são
+ * validados pela Meta e não comprovam relação entre anúncio, campanha e conta. */
+export const attributionSchema = z
+  .object({
+    version: z.literal(FALCAO_ATTRIBUTION_VERSION),
+    source: z.enum(["fb", "ig", "an", "msg", "meta"]),
+    medium: z.literal("paid_social"),
+    campaign: z.string().regex(/^(pt|be)-s\d{2}-\d{3}$/),
+    campaignId: z.string().regex(/^\d{5,30}$/),
+    adsetId: z.string().regex(/^\d{5,30}$/),
+    adId: z.string().regex(/^\d{5,30}$/),
+    capturedAt: z.iso.datetime({ offset: true }),
+    consent: z
+      .object({ analytics: z.literal(true), version: z.literal(FALCAO_ANALYTICS_CONSENT_VERSION) })
+      .strict(),
+  })
+  .strict();
+export type FalcaoAttribution = z.infer<typeof attributionSchema>;
 
 export const leadSchema = z
   .object({
@@ -25,6 +46,7 @@ export const leadSchema = z
     consent: z
       .object({ contact: z.literal(true), version: z.literal(FALCAO_CONSENT_VERSION) })
       .strict(),
+    attribution: attributionSchema.optional(),
   })
   .strict();
 
@@ -91,6 +113,7 @@ export interface LeadStore {
     email: string | null;
     consentVersion: string;
     consentAt: string;
+    attribution?: FalcaoAttribution;
   }): Promise<ResultadoIngresso>;
 }
 
@@ -129,7 +152,7 @@ export function normalizarTelefone(phone: string): string {
  * do mesmo formulário continue a ser reconhecido como o mesmo pedido.
  */
 export function conteudoCanonico(lead: LeadFalcao): string {
-  return JSON.stringify([
+  const campos: unknown[] = [
     lead.source,
     lead.requestId,
     lead.adult,
@@ -137,7 +160,25 @@ export function conteudoCanonico(lead: LeadFalcao): string {
     lead.phone,
     lead.email?.trim().toLowerCase() ?? null,
     lead.consent.version,
-  ]);
+  ];
+  // Sem atribuição mantém exatamente o hash v1, incluindo pedidos em reenvio.
+  // Ordem explícita: ordem das propriedades no JSON não altera a identidade.
+  if (lead.attribution) {
+    const a = lead.attribution;
+    campos.push([
+      a.version,
+      a.source,
+      a.medium,
+      a.campaign,
+      a.campaignId,
+      a.adsetId,
+      a.adId,
+      a.capturedAt,
+      a.consent.analytics,
+      a.consent.version,
+    ]);
+  }
+  return JSON.stringify(campos);
 }
 
 export async function hashConteudo(texto: string): Promise<string> {
@@ -181,6 +222,8 @@ export async function processarLeadFalcao(
   if (!Number.isFinite(enviado) || Math.abs(agora - enviado) > FALCAO_JANELA_MS) {
     return responder(400, { ok: false, erro: "fora_da_janela" });
   }
+  // O TTL da atribuição é validado no RPC para pedidos novos. Reenvios exatos
+  // já persistidos conservam a identidade e podem recuperar o recibo após 24h.
 
   const payloadHash = await hashConteudo(conteudoCanonico(lead));
   let resultado: ResultadoIngresso;
@@ -195,6 +238,7 @@ export async function processarLeadFalcao(
       email: lead.email?.trim() ?? null,
       consentVersion: lead.consent.version,
       consentAt: new Date(enviado).toISOString(),
+      ...(lead.attribution ? { attribution: lead.attribution } : {}),
     });
   } catch {
     return responder(503, { ok: false, erro: "indisponivel", retentavel: true });
