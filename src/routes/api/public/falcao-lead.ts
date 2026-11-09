@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import {
+  FALCAO_ATTRIBUTION_VERSION,
   FALCAO_CONSENT_VERSION,
   FALCAO_LIMITE_BYTES,
   FALCAO_SOURCE,
@@ -83,9 +84,11 @@ export const Route = createFileRoute("/api/public/falcao-lead")({
               "phone",
               "email?",
               "consent",
+              "attribution?",
             ],
             source: FALCAO_SOURCE,
             consentVersion: FALCAO_CONSENT_VERSION,
+            attributionVersion: FALCAO_ATTRIBUTION_VERSION,
             limiteBytes: FALCAO_LIMITE_BYTES,
           },
           { status: 200, headers: semCache },
