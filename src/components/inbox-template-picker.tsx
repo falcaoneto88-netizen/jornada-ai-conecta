@@ -9,6 +9,19 @@ import { Input } from "./ui/input";
 
 export type TemplateInsertMode = "cursor" | "append" | "replace";
 
+// Operator-facing labels only. Unresolved tokens must never become a patient draft.
+const contextLabels: Record<string, string> = {
+  "contact.name": "nome do contato",
+  "contact.first_name": "nome do contato",
+  "appointment.start_time": "data e horário da consulta",
+  "appointment.only_start_date": "data da consulta",
+  "appointment.only_start_time": "horário da consulta",
+  "appointment.timezone": "fuso horário da consulta",
+  "appointment.title": "tipo de consulta",
+  "appointment.user.name": "profissional responsável",
+  "location.name": "nome da clínica",
+};
+
 /** Uses the same library/cache as /modelos; never creates, approves or sends a template. */
 export function InboxTemplatePicker({
   organizationId,
@@ -161,7 +174,9 @@ export function InboxTemplatePicker({
             className="whitespace-pre-wrap break-words rounded-md bg-secondary/50 p-3"
             aria-label="Prévia do texto-base"
           >
-            {preview.texto}
+            {preview.completo
+              ? preview.texto
+              : "Este modelo precisa de informações verificadas antes de preparar a mensagem. Use a Izabel para redigir uma resposta com o contexto disponível."}
           </p>
           {appointment && (
             <p className="text-xs text-muted-foreground">
@@ -171,9 +186,16 @@ export function InboxTemplatePicker({
           )}
           {!preview.completo && (
             <p role="status">
-              Dados pendentes:{" "}
-              {[...preview.ausentes, ...preview.invalidas].join(", ") || "variáveis incompletas"}. O
-              texto só poderá ser inserido após conferir esses dados.
+              Falta conferir:{" "}
+              {[
+                ...new Set(
+                  preview.ausentes.map((name) => contextLabels[name] ?? "dados do atendimento"),
+                ),
+              ].join(", ") || "a configuração deste modelo"}
+              .
+              {(preview.invalidas.length > 0 || preview.malformadas) &&
+                " O modelo precisa de revisão na biblioteca."}{" "}
+              Nenhum dado será presumido ou enviado.
             </p>
           )}
           {preview.texto.length > 1500 && (
