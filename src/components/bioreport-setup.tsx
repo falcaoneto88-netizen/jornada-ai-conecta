@@ -39,7 +39,7 @@ export function BioreportSetup({ allowed }: { allowed: boolean }) {
       {result && (
         <p
           role="status"
-          className={result.ok ? "text-sm text-primary" : "text-sm text-destructive"}
+          className={result.ok ? "text-sm text-success" : "text-sm text-destructive"}
         >
           {result.message}
         </p>

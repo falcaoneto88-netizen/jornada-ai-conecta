@@ -1,64 +1,12 @@
-/* Route-scoped visual direction. Existing workflows and permissions are unchanged. */
-.supervision-art-direction,
-body:has(.supervision-art-direction) :is([role="dialog"], [role="menu"], [role="listbox"]) {
-  --background: oklch(0.97219 0.00342 247.86);
-  --foreground: oklch(0.3132 0.04355 255.52);
-  --heading: oklch(0.28955 0.05507 254.62);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.3132 0.04355 255.52);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.3132 0.04355 255.52);
-  --primary: oklch(0.35603 0.07013 254.87);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95897 0.00588 239.82);
-  --secondary-foreground: oklch(0.3132 0.04355 255.52);
-  --muted: oklch(0.95897 0.00588 239.82);
-  --muted-foreground: oklch(0.49092 0.03913 255.34);
-  --accent: oklch(0.94659 0.01142 252.09);
-  --accent-foreground: oklch(0.35603 0.07013 254.87);
-  --border: oklch(0.88184 0.01513 251.17);
-  --input: oklch(0.62051 0.03432 252.82);
-  --ring: oklch(0.47317 0.08677 252.09);
-  --success: oklch(0.46478 0.08743 158.85);
-  --success-foreground: oklch(1 0 0);
-  --warning: oklch(0.50242 0.10409 68.45);
-  --warning-foreground: oklch(1 0 0);
-  --destructive: oklch(0.50373 0.17916 20.66);
-  --destructive-foreground: oklch(1 0 0);
-  --sidebar: oklch(0.27242 0.05034 253.08);
-  --sidebar-foreground: oklch(0.96193 0.01251 255.51);
-  --sidebar-primary: oklch(0.9127 0.03116 252.69);
-  --sidebar-primary-foreground: oklch(0.27242 0.05034 253.08);
-  --sidebar-accent: oklch(0.38092 0.05957 248.83);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.42577 0.04977 249.06);
-  --sidebar-ring: oklch(0.87888 0.0443 250.44);
-  color: var(--foreground);
-}
+/* Layout only: colors inherit the shared navy/ivory/amber application theme. */
 .supervision-art-direction {
   background: var(--background);
   caret-color: var(--primary);
-  scrollbar-color: oklch(0.67305 0.03549 252.57) transparent;
+  scrollbar-color: var(--scrollbar) transparent;
   scrollbar-width: thin;
 }
-.supervision-art-direction ::selection {
-  background: oklch(0.92281 0.02189 250.22);
-  color: oklch(0.28955 0.05507 254.62);
-}
-.supervision-art-direction .bg-sidebar {
-  --foreground: oklch(0.96193 0.01251 255.51);
-  --heading: oklch(1 0 0);
-  --primary: oklch(0.9127 0.03116 252.69);
-  --muted-foreground: oklch(0.85432 0.02474 248.12);
-  --ring: oklch(0.87888 0.0443 250.44);
-}
-.supervision-art-direction .bg-sidebar .bg-heading {
-  background: oklch(0.96193 0.01251 255.51);
-  color: oklch(0.27242 0.05034 253.08);
-  border-radius: 10px;
-}
-.supervision-art-direction header {
-  background: var(--background);
+.supervision-art-direction header:not([data-app-header]) {
+  background: var(--card);
   backdrop-filter: none;
 }
 .supervision-art-direction header h1 {
@@ -121,7 +69,14 @@ body:has(.supervision-art-direction) :is([role="dialog"], [role="menu"], [role="
   background: var(--secondary);
 }
 .supervision-art-direction [data-agent-message="outbound"] {
-  background: var(--accent);
+  --foreground: var(--message-on-outbound);
+  --muted-foreground: var(--message-meta);
+  --secondary: var(--message-muted);
+  --secondary-foreground: var(--message-on-outbound);
+  --destructive: var(--message-error);
+  --border: var(--message-border);
+  background: var(--message-outbound);
+  color: var(--message-on-outbound);
 }
 .supervision-art-direction [data-agent-proposal] {
   background: var(--card);

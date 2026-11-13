@@ -284,7 +284,7 @@ export function N8nPilotControl({ state, refreshing, refresh }: Props) {
       {result && (
         <p
           role={result.ok ? "status" : "alert"}
-          className={result.ok ? "text-sm text-primary" : "text-sm text-destructive"}
+          className={result.ok ? "text-sm text-success" : "text-sm text-destructive"}
         >
           {result.message}
         </p>

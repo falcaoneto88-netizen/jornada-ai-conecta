@@ -6,7 +6,7 @@
 
 /*
  * Jornada AI — Dr. João Falcão
- * Design system clínico premium: creme, preto, dourado.
+ * Paleta compartilhada: marfim, azul-marinho e âmbar. Estados mantêm cores semânticas.
  */
 
 @theme inline {
@@ -64,84 +64,103 @@
 }
 
 :root {
-  --overlay: oklch(0 0 0 / 0.8);
+  --overlay: rgb(18 25 44 / 80%);
   --radius: 1rem;
-  /* #faf9f5 */
-  --background: oklch(0.978 0.007 95);
-  /* #2b2b2b */
-  --foreground: oklch(0.302 0 0);
-  /* #111111 */
-  --heading: oklch(0.15 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.302 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.302 0 0);
-  /* #c5a880 */
-  --primary: oklch(0.746 0.058 74.5);
-  --primary-foreground: oklch(0.18 0.01 74);
-  --secondary: oklch(0.955 0.006 95);
-  --secondary-foreground: oklch(0.302 0 0);
-  --muted: oklch(0.955 0.006 95);
-  --muted-foreground: oklch(0.53 0.008 90);
-  --accent: oklch(0.94 0.02 80);
-  --accent-foreground: oklch(0.28 0.02 74);
-  --destructive: oklch(0.55 0.19 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.55 0.1 155);
-  --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.72 0.13 75);
-  --warning-foreground: oklch(0.2 0.02 75);
-  --border: oklch(0.9 0.008 90);
-  --input: oklch(0.9 0.008 90);
-  --ring: oklch(0.746 0.058 74.5);
-  --chart-1: oklch(0.746 0.058 74.5);
-  --chart-2: oklch(0.15 0 0);
-  --chart-3: oklch(0.62 0.04 74.5);
-  --chart-4: oklch(0.85 0.03 80);
-  --chart-5: oklch(0.53 0.008 90);
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.302 0 0);
-  --sidebar-primary: oklch(0.746 0.058 74.5);
-  --sidebar-primary-foreground: oklch(0.18 0.01 74);
-  --sidebar-accent: oklch(0.965 0.008 90);
-  --sidebar-accent-foreground: oklch(0.15 0 0);
-  --sidebar-border: oklch(0.92 0.008 90);
-  --sidebar-ring: oklch(0.746 0.058 74.5);
+  --background: #f5f3ee;
+  --foreground: #172033;
+  --heading: #12192c;
+  --card: #fff;
+  --card-foreground: #172033;
+  --popover: #fff;
+  --popover-foreground: #172033;
+  --primary: #12192c;
+  --primary-foreground: #fff;
+  --secondary: #eeebe4;
+  --secondary-foreground: #172033;
+  --muted: #f1efe9;
+  --muted-foreground: #626572;
+  --accent: #fff5e4;
+  --accent-foreground: #80531c;
+  --destructive: #b42336;
+  --destructive-foreground: #fff;
+  --success: #08774f;
+  --success-foreground: #fff;
+  --warning: #8b5a14;
+  --warning-foreground: #fff;
+  --border: #e5e0d5;
+  --input: #87847b;
+  --ring: #a16921;
+  --chart-1: #12192c;
+  --chart-2: #a16921;
+  --chart-3: #08774f;
+  --chart-4: #56667c;
+  --chart-5: #954842;
+  --sidebar: #12192c;
+  --sidebar-foreground: #eeeef3;
+  --sidebar-primary: #e2ae66;
+  --sidebar-primary-foreground: #12192c;
+  --sidebar-accent: #2c2d36;
+  --sidebar-accent-foreground: #f5c98c;
+  --sidebar-border: #363b4b;
+  --sidebar-ring: #e2ae66;
+  --brand-amber: #d4943a;
+  --brand-on-amber: #12192c;
+  --surface-subtle: #fafaf7;
+  --surface-hover: #faf8f3;
+  --selection-background: #f3dfbb;
+  --selection-foreground: #12192c;
+  --scrollbar: #b8b2a7;
+  --suggestion-background: #fffbf2;
+  --suggestion-border: #e7c895;
+  --suggestion-foreground: #80531c;
+  --message-outbound: #12192c;
+  --message-on-outbound: #fff;
+  --message-meta: #d0d4df;
+  --message-muted: #30384b;
+  --message-border: #606879;
+  --message-error: #ffb8bd;
 }
 
 .dark {
-  --background: oklch(0.19 0.004 90);
-  --foreground: oklch(0.93 0.004 90);
-  --heading: oklch(0.98 0 0);
-  --card: oklch(0.23 0.004 90);
-  --card-foreground: oklch(0.93 0.004 90);
-  --popover: oklch(0.23 0.004 90);
-  --popover-foreground: oklch(0.93 0.004 90);
-  --primary: oklch(0.746 0.058 74.5);
-  --primary-foreground: oklch(0.18 0.01 74);
-  --secondary: oklch(0.28 0.004 90);
-  --secondary-foreground: oklch(0.93 0.004 90);
-  --muted: oklch(0.28 0.004 90);
-  --muted-foreground: oklch(0.68 0.006 90);
-  --accent: oklch(0.32 0.02 74);
-  --accent-foreground: oklch(0.95 0.01 80);
-  --destructive: oklch(0.65 0.19 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.65 0.1 155);
-  --success-foreground: oklch(0.15 0 0);
-  --warning: oklch(0.78 0.13 75);
-  --warning-foreground: oklch(0.2 0.02 75);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.746 0.058 74.5);
-  --sidebar: oklch(0.23 0.004 90);
-  --sidebar-foreground: oklch(0.93 0.004 90);
-  --sidebar-primary: oklch(0.746 0.058 74.5);
-  --sidebar-primary-foreground: oklch(0.18 0.01 74);
-  --sidebar-accent: oklch(0.28 0.004 90);
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.746 0.058 74.5);
+  --background: #101623;
+  --foreground: #edeef2;
+  --heading: #f5f3ee;
+  --card: #1b2333;
+  --card-foreground: #edeef2;
+  --popover: #1b2333;
+  --popover-foreground: #edeef2;
+  --primary: #e2ae66;
+  --primary-foreground: #12192c;
+  --secondary: #2a3040;
+  --secondary-foreground: #edeef2;
+  --muted: #252c3b;
+  --muted-foreground: #b8bac4;
+  --accent: #3a2e20;
+  --accent-foreground: #f5c98c;
+  --destructive: #ff9fa9;
+  --destructive-foreground: #12192c;
+  --success: #75d3a7;
+  --success-foreground: #12192c;
+  --warning: #f0c17e;
+  --warning-foreground: #12192c;
+  --border: #414856;
+  --input: #747986;
+  --ring: #e2ae66;
+  --chart-1: #e2ae66;
+  --chart-2: #b9c5db;
+  --chart-3: #75d3a7;
+  --chart-4: #abbee0;
+  --chart-5: #efab9d;
+  --surface-subtle: #1b2333;
+  --surface-hover: #252c3b;
+  --selection-background: #614723;
+  --selection-foreground: #fff;
+  --scrollbar: #747986;
+  --suggestion-background: #30291f;
+  --suggestion-border: #9b783f;
+  --suggestion-foreground: #f5c98c;
+  --message-outbound: #26334f;
+  --message-border: #7e8da8;
 }
 
 @layer base {
@@ -154,6 +173,13 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    caret-color: var(--primary);
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+
+  ::selection {
+    background: var(--selection-background);
+    color: var(--selection-foreground);
   }
 
   h1,
@@ -189,4 +215,23 @@
     --tw-exit-translate-x: 0 !important;
     --tw-exit-translate-y: 0 !important;
   }
+}
+
+/* Shared navigation colors. Layout and page-specific type remain unchanged. */
+[data-app-sidebar] {
+  color: var(--sidebar-foreground);
+}
+[data-app-sidebar] .display-title {
+  color: var(--sidebar-foreground);
+}
+[data-app-brand] {
+  background: var(--brand-amber);
+  color: var(--brand-on-amber);
+}
+[data-app-nav] a[aria-current="page"] {
+  color: var(--sidebar-accent-foreground);
+  box-shadow: inset 3px 0 var(--brand-amber);
+}
+[data-app-header] {
+  background: var(--card);
 }
