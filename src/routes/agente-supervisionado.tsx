@@ -71,8 +71,9 @@ function AgentPage() {
             {!scope && (
               <div className="mt-6 border-t pt-5">
                 <p className="text-sm text-muted-foreground">
-                  Izabel: homologação local, ainda não disponível nesta versão. O atendimento
-                  continua com a base V02.
+                  A Izabel prepara respostas com a base V02 no Meu Chat. O pacote novo de protocolos
+                  e imagens continua em homologação; esta fila preserva a triagem e a auditoria das
+                  sugestões supervisionadas.
                 </p>
               </div>
             )}

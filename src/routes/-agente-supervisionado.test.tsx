@@ -84,18 +84,16 @@ describe("link específico de supervisão", () => {
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.queue).toHaveBeenCalledWith(expect.objectContaining({ view, focused: true }));
     expect(mocks.command).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Izabel: homologação local/)).toBeNull();
+    expect(screen.queryByText(/A Izabel prepara respostas/)).toBeNull();
   });
 
-  it("identifica homologação local sem oferecer uma bancada indisponível", async () => {
+  it("distingue a redação com V02 do pacote novo ainda em homologação", async () => {
     mocks.list.mockResolvedValue({
       ok: true,
       data: { enabled: true, sendEnabled: false, items: [], errors: [] },
     });
     render(<Page />);
-    expect(
-      screen.getByText(/Izabel: homologação local, ainda não disponível nesta versão/),
-    ).toBeTruthy();
+    expect(screen.getByText(/A Izabel prepara respostas com a base V02 no Meu Chat/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Executar ensaio" })).toBeNull();
     await screen.findByText("Fila de revisão");
     expect(mocks.read).not.toHaveBeenCalled();
