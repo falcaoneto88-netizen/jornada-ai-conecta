@@ -85,7 +85,12 @@ Não declarar integração ou pagamento validado apenas porque a interface compi
   o espelho `supabase/migrations/20261113130000_appointment_finance.sql` não foi executado.
 - SQL enviado idêntico ao arquivo, exceto a newline final, que a ferramenta remove. O arquivo do
   repositório foi restaurado aos bytes originais (SHA-256 `39343c52…1a60`). Journal idx 25,
-  `when` `1794586420181`; registro no banco id 26. Snapshot 0025 sem diferença; types regenerados.
+  `when` `1794586420181`; registro no banco id 26. Types regenerados.
+- Correção de registro (13/11/2026): o snapshot 0025 **não** é inteiramente igual ao do merge —
+  apenas o UUID `id` mudou (`ca4db39f…` → `d0543812…`); `prevId` e todo o conteúdo são iguais.
+- O diff `a6d3c74..d06fc76` inclui ainda uma atualização automática da dependência de build
+  `@lovable.dev/vite-tanstack-config` 2.26.5 → 2.27.1 (`package.json` e `bun.lock`), feita pelo
+  ambiente, não por este trabalho. Nenhum outro arquivo foi alterado além dos listados.
 - Catálogo: `appointment_finances` e `appointment_finance_requests` com RLS ativo; 1 policy de SELECT
   e 1 trigger em finances; requests sem policies e sem acesso de `authenticated`/`anon`.
   `authenticated` só SELECT em finances; `service_role` total. `appointment_finance_command` e
