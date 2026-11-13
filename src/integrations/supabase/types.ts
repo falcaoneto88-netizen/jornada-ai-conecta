@@ -2642,6 +2642,21 @@ export type Database = {
         Args: { _actor?: string; _data?: Json; _op: string; _org: string }
         Returns: Json
       }
+      commercial_agent_queue_read: {
+        Args: {
+          _actor: string
+          _as_of?: string
+          _category?: string
+          _kind?: string
+          _location: string
+          _org: string
+          _page?: number
+          _page_size?: number
+          _policy_hash?: string
+          _query?: string
+        }
+        Returns: Json
+      }
       configure_bioreport_integration: {
         Args: {
           _confirm: boolean
