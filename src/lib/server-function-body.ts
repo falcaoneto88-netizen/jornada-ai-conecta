@@ -47,5 +47,11 @@ export async function boundServerFunctionBody(
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new Request(request, { body });
+  // Copy fields explicitly: passing a foreign Request object as input breaks Node's undici in dev.
+  return new Request(request.url, {
+    method: request.method,
+    headers: new Headers(request.headers),
+    body,
+    signal: request.signal,
+  });
 }
