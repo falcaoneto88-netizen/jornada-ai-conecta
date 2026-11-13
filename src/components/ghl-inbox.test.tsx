@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { cleanup, render, screen, fireEvent, act, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AttendanceDraftSnapshot } from "@/lib/attendance-draft.core";
+import type { InboxBookingPanelProps } from "./inbox-booking-panel";
 import type { InboxAgentPanelProps } from "./inbox-agent-panel";
 const mocks = vi.hoisted(() => ({
   analisar: vi.fn(),
@@ -33,7 +34,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
-vi.mock("@/lib/ai.functions", () => ({ aiSupport: mocks.analisar }));
+vi.mock("@/lib/izabel-reply.functions", () => ({ prepareIzabelReply: mocks.analisar }));
 vi.mock("@/lib/correcao-texto.functions", () => ({ corrigirRascunho: mocks.corrigir }));
 vi.mock("@/lib/commercial-agent.functions", () => ({
   getInboxSendContext: mocks.contexto,
@@ -42,6 +43,31 @@ vi.mock("@/lib/commercial-agent.functions", () => ({
   reconcileManualAgentMessage: mocks.conferir,
 }));
 vi.mock("@/lib/jev-pedidos.functions", () => ({ classificarPedido: vi.fn() }));
+vi.mock("@/components/inbox-booking-panel", () => ({
+  InboxBookingPanel: ({
+    open,
+    contactId,
+    contactName,
+    onOpenChange,
+    onConfirmed,
+  }: InboxBookingPanelProps) =>
+    open ? (
+      <div role="dialog" aria-label="Agendamento sintético">
+        <p>
+          Agendar para {contactName} ({contactId})
+        </p>
+        <button
+          onClick={() => {
+            onConfirmed();
+            onOpenChange(false);
+          }}
+        >
+          Confirmar agendamento sintético
+        </button>
+        <button onClick={() => onOpenChange(false)}>Voltar sem agendar</button>
+      </div>
+    ) : null,
+}));
 vi.mock("@/components/inbox-agent-panel", () => ({
   InboxAgentPanel: ({
     contactId,
@@ -83,21 +109,6 @@ vi.mock("@/components/inbox-agent-panel", () => ({
         Tentar sugestão de outro contato
       </button>
     </div>
-  ),
-}));
-vi.mock("@/components/inbox-translator", () => ({
-  InboxTranslator: ({
-    currentDraft,
-    disabled,
-    onApply,
-  }: {
-    currentDraft: string;
-    disabled: boolean;
-    onApply: (text: string) => void;
-  }) => (
-    <button disabled={disabled} onClick={() => onApply(`Traduzido: ${currentDraft}`)}>
-      Aplicar tradução sintética
-    </button>
   ),
 }));
 vi.mock("@/components/inbox-template-picker", () => ({
@@ -203,9 +214,9 @@ vi.mock("@/lib/attendance-workspace.functions", () => ({
   readAttendanceWorkspace: vi.fn(),
 }));
 function analysisButton() {
-  if (!screen.queryByRole("button", { name: "Analisar conversa" }))
-    flushSync(() => fireEvent.click(screen.getByRole("button", { name: "Abrir assistente IA" })));
-  return screen.getByRole("button", { name: "Analisar conversa" });
+  if (!screen.queryByRole("button", { name: "Preparar resposta" }))
+    flushSync(() => fireEvent.click(screen.getByRole("button", { name: "Abrir Izabel" })));
+  return screen.getByRole("button", { name: "Preparar resposta" });
 }
 import { GhlInbox, lerIntencao, pendentesEnvio } from "./ghl-inbox";
 const REV = {
@@ -527,7 +538,7 @@ it("resultado tardio da IA não contamina o novo atendimento", async () => {
   await act(async () =>
     resolver({
       ok: true,
-      analise: { resumo: "Resumo privado de Ana", sugestoes: [], revisao_humana: false },
+      data: { ...analysis, summary: "Resumo privado de Ana" },
     }),
   );
   expect(screen.queryByText("Resumo privado de Ana")).toBeNull();
@@ -676,23 +687,16 @@ it("bloqueio do servidor (DND/canal/escopo) desativa Enviar com motivo", async (
   expect(screen.getByText(/DND ativo/)).toBeTruthy();
 });
 
-it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo sucesso", async () => {
-  mocks.analisar.mockResolvedValue({
-    ok: true,
-    analise: {
-      resumo: "r",
-      revisao_humana: false,
-      sugestoes: [{ tom: "objetiva", texto: "Sugestão" }],
-    },
-  });
+it("resposta preparada durante envio pendente não substitui o texto nem pode ser reaplicada depois", async () => {
+  mocks.analisar.mockResolvedValue({ ok: true, data: analysis });
   let r!: (v: unknown) => void;
   mocks.enviar.mockImplementation(() => new Promise((x) => (r = x)));
   render(<GhlInbox />);
   await flush();
-  await act(async () => fireEvent.click(analysisButton()));
   escrever("Texto enviado");
+  await act(async () => fireEvent.click(analysisButton()));
   fireEvent.click(screen.getByRole("button", { name: /Enviar para Ana/ }));
-  const usar = screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement;
+  const usar = screen.getByRole("button", { name: "Substituir meu rascunho" }) as HTMLButtonElement;
   expect(usar.disabled).toBe(true);
   fireEvent.click(usar);
   fireEvent.change(campo(), { target: { value: "edição forçada" } });
@@ -702,8 +706,10 @@ it("Usar rascunho durante envio pendente é ignorado e não é apagado pelo suce
     r({ ok: true, data: { state: "sent", messageId: "m1", code: null, manualId: "x" } }),
   );
   expect(campo().value).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "Usar rascunho" }));
-  expect(campo().value).toBe("Sugestão");
+  const oldReply = screen.getByRole("button", { name: "Usar no rascunho" }) as HTMLButtonElement;
+  expect(oldReply.disabled).toBe(true);
+  fireEvent.click(oldReply);
+  expect(campo().value).toBe("");
 });
 it("timeout do navegador: edição posterior não liberta novo POST; só leitura recupera", async () => {
   mocks.enviar.mockRejectedValue(new Error("timeout"));
@@ -1026,22 +1032,26 @@ it("voltar à lista mantém texto, descarta anexo e oferece retorno quando sele�
 });
 
 const analysis = {
-  resumo: "Resumo da conversa",
-  intencao: "agendamento",
-  revisao_humana: false,
-  sugestoes: [{ tom: "objetiva", texto: "Sugestão revista" }],
+  text: "Sugestão revista",
+  language: "PT-PT" as const,
+  summary: "Resumo da conversa",
+  checkedAt: "2026-11-13T12:00:00Z",
+  warnings: [],
+  sources: [{ label: "Conversa GHL" }],
+  handover: false,
 };
-it.each(["texto", "histórico anterior", "nova mensagem", "rota"])(
-  "sugestão IA fica bloqueada após mudança de %s e não apaga texto autorado",
+it.each(["texto", "histórico anterior", "nova mensagem", "rota", "rascunho"])(
+  "resposta Izabel fica bloqueada após mudança de %s e não apaga texto autorado",
   async (change) => {
-    mocks.analisar.mockResolvedValue({ ok: true, analise: analysis });
+    mocks.analisar.mockResolvedValue({ ok: true, data: analysis });
     const { rerender } = render(<GhlInbox />);
     await flush();
-    await act(async () => fireEvent.click(analysisButton()));
     escrever("Meu texto autorado");
+    await act(async () => fireEvent.click(analysisButton()));
     if (change === "texto") mocks.messageText = "Pergunta editada no mesmo ID";
     if (change === "histórico anterior") mocks.olderMessage = true;
     if (change === "nova mensagem") mocks.extraMessage = true;
+    if (change === "rascunho") escrever("Meu texto autorado atualizado");
     if (change === "rota") {
       mocks.contexto.mockResolvedValue({
         ok: true,
@@ -1051,20 +1061,27 @@ it.each(["texto", "histórico anterior", "nova mensagem", "rota"])(
     }
     rerender(<GhlInbox />);
     await flush();
-    const use = screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement;
+    const use = screen.getByRole("button", {
+      name: "Substituir meu rascunho",
+    }) as HTMLButtonElement;
     expect(use.disabled).toBe(true);
     fireEvent.click(use);
-    expect(campo().value).toBe("Meu texto autorado");
-    expect(screen.getByText(/Analise novamente para usar uma sugestão/)).toBeTruthy();
+    expect(campo().value).toBe(
+      change === "rascunho" ? "Meu texto autorado atualizado" : "Meu texto autorado",
+    );
+    expect(screen.getByText(/Prepare novamente; seu texto foi preservado/)).toBeTruthy();
     await act(async () => fireEvent.click(analysisButton()));
     expect(
-      (screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "Substituir meu rascunho" }) as HTMLButtonElement)
+        .disabled,
     ).toBe(false);
-    expect(campo().value).toBe("Meu texto autorado");
+    expect(campo().value).toBe(
+      change === "rascunho" ? "Meu texto autorado atualizado" : "Meu texto autorado",
+    );
   },
 );
 
-it("mensagem durante análise mantém resposta antiga marcada desatualizada sem aplicar rascunho", async () => {
+it("mensagem durante preparação mantém resposta antiga desatualizada sem aplicar rascunho", async () => {
   let resolve!: (value: unknown) => void;
   mocks.analisar.mockImplementation(
     () =>
@@ -1079,11 +1096,66 @@ it("mensagem durante análise mantém resposta antiga marcada desatualizada sem 
   mocks.extraMessage = true;
   rerender(<GhlInbox />);
   await flush();
-  await act(async () => resolve({ ok: true, analise: analysis }));
+  await act(async () => resolve({ ok: true, data: analysis }));
   expect(
-    (screen.getByRole("button", { name: "Usar rascunho" }) as HTMLButtonElement).disabled,
+    (screen.getByRole("button", { name: "Substituir meu rascunho" }) as HTMLButtonElement).disabled,
   ).toBe(true);
   expect(campo().value).toBe("Não substituir");
+});
+
+it("Izabel preenche editor vazio com idioma da conversa; humano edita e envia uma única vez", async () => {
+  mocks.analisar.mockResolvedValue({
+    ok: true,
+    data: { ...analysis, language: "FR", text: "Bonjour Ana, quel jour vous convient ?" },
+  });
+  mocks.enviar.mockResolvedValue({ ok: true, data: { messageId: "one-send" } });
+  render(<GhlInbox />);
+  await flush();
+  expect(mocks.analisar).not.toHaveBeenCalled();
+  await act(async () => fireEvent.click(analysisButton()));
+  expect(mocks.analisar).toHaveBeenCalledWith({
+    data: { organizationId: "orgA", contactId: "Ana", conversationId: "Ana", language: "auto" },
+  });
+  expect(campo().value).toBe("Bonjour Ana, quel jour vous convient ?");
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  escrever("Bonjour Ana, préférez-vous le matin ?");
+  fireEvent.click(screen.getByRole("button", { name: "Enviar para Ana" }));
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+  expect(mocks.enviar.mock.calls[0]?.[0].data.text).toBe("Bonjour Ana, préférez-vous le matin ?");
+});
+
+it("substituição pela Izabel é explícita e pode ser desfeita", async () => {
+  mocks.analisar.mockResolvedValue({ ok: true, data: analysis });
+  render(<GhlInbox />);
+  await flush();
+  escrever("Meu rascunho");
+  await act(async () => fireEvent.click(analysisButton()));
+  expect(campo().value).toBe("Meu rascunho");
+  fireEvent.click(screen.getByRole("button", { name: "Substituir meu rascunho" }));
+  expect(campo().value).toBe(analysis.text);
+  fireEvent.click(screen.getByRole("button", { name: "Desfazer alteração do texto" }));
+  expect(campo().value).toBe("Meu rascunho");
+  expect(mocks.enviar).not.toHaveBeenCalled();
+});
+
+it("resposta contextual mantém a proveniência e a aprovação de uma sugestão auditada já em edição", async () => {
+  mocks.analisar.mockResolvedValue({ ok: true, data: analysis });
+  mocks.enviar.mockResolvedValue({ ok: true, data: { messageId: "audited-send" } });
+  render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  await act(async () => fireEvent.click(analysisButton()));
+  expect(campo().value).toBe("Sugestão supervisionada para Ana.");
+  fireEvent.click(screen.getByRole("button", { name: "Substituir meu rascunho" }));
+  expect(campo().value).toBe(analysis.text);
+  expect(screen.queryByRole("button", { name: "Enviar para Ana" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Aprovar e enviar" }));
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+  expect(mocks.enviar.mock.calls[0]?.[0].data).toMatchObject({
+    text: analysis.text,
+    sourceAgentDraft: mocks.sourceAgentDraft,
+  });
 });
 
 it("sucesso tardio após trocar de conversa limpa só o texto enviado e não reapresenta envio incerto", async () => {
@@ -1523,28 +1595,24 @@ it("falha ao persistir limpeza conserva a intenção confirmada e avisa para man
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
 });
 
-it("modelos e tradução alteram só o rascunho; envio final usa texto visível exato", async () => {
+it("biblioteca fica como apoio opcional dentro da Izabel e só altera o rascunho", async () => {
   mocks.enviar.mockResolvedValue({ ok: true, data: { messageId: "one-send" } });
   render(<GhlInbox />);
   await flush();
-  fireEvent.change(screen.getByRole("textbox", { name: "Rascunho para Ana" }), {
-    target: { value: "Minha resposta" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Abrir modelos de mensagem" }));
+  escrever("Minha resposta");
+  fireEvent.click(screen.getByRole("button", { name: "Abrir Izabel" }));
+  fireEvent.click(screen.getByText("Modelos de apoio"));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Inserir modelo sintético" })).toBeTruthy(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Inserir modelo sintético" }));
-  expect(
-    (screen.getByRole("textbox", { name: "Rascunho para Ana" }) as HTMLTextAreaElement).value,
-  ).toBe("Minha resposta\n\nTexto de teste");
-  fireEvent.click(screen.getByRole("button", { name: "Abrir tradutor" }));
-  fireEvent.click(screen.getByRole("button", { name: "Aplicar tradução sintética" }));
-  const finalText = "Traduzido: Minha resposta\n\nTexto de teste";
-  expect(
-    (screen.getByRole("textbox", { name: "Rascunho para Ana" }) as HTMLTextAreaElement).value,
-  ).toBe(finalText);
+  expect(campo().value).toBe("Minha resposta\n\nTexto de teste");
+  expect(screen.queryByRole("button", { name: "Abrir tradutor" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Texto-base" })).toBeNull();
   expect(mocks.enviar).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Enviar para Ana" }));
   await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
-  expect(mocks.enviar.mock.calls[0]?.[0].data.text).toBe(finalText);
+  expect(mocks.enviar.mock.calls[0]?.[0].data.text).toBe("Minha resposta\n\nTexto de teste");
 });
 
 it("sugestão supervisionada fica na conversa e só preenche o editor, sem envio ou análise nova", async () => {
@@ -1841,4 +1909,28 @@ it("review_retry_required informa encerramento antes do envio e preserva texto e
   expect(second).toMatchObject({ text, sourceAgentDraft: mocks.sourceAgentDraft });
   expect(second.requestId).not.toBe(first.requestId);
   expect(campo().value).toBe(text);
+});
+
+it("Agendar agora mantém rascunho e origem auditada e não envia mensagem", async () => {
+  render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  escrever("Texto em revisão antes de agendar");
+  fireEvent.click(screen.getByRole("button", { name: "Agendar agora" }));
+  expect(screen.getByText("Agendar para Ana (Ana)")).toBeTruthy();
+  expect(campo().value).toBe("Texto em revisão antes de agendar");
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar agendamento sintético" }));
+  expect(campo().value).toBe("Texto em revisão antes de agendar");
+  expect(screen.getByRole("button", { name: "Revisar e aprovar" })).toBeTruthy();
+  expect(mocks.enviar).not.toHaveBeenCalled();
+});
+
+it("Agendar agora fixa o contato da conversa atual", async () => {
+  render(<GhlInbox />);
+  await flush();
+  bruno();
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Agendar agora" }));
+  expect(screen.getByText("Agendar para Bruno (Bruno)")).toBeTruthy();
+  expect(screen.queryByText("Agendar para Ana (Ana)")).toBeNull();
 });

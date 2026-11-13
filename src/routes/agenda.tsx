@@ -511,8 +511,9 @@ export function Agenda() {
           </>
         )}
         <p className="text-xs text-muted-foreground">
-          A agenda vem do GHL. Criar, remarcar ou cancelar continua no GHL. “Agendada” é o estado
-          administrativo e não comprova uma resposta SIM.
+          A agenda vem do GHL. Para criar uma consulta, abra o contato no Meu Chat e use “Agendar
+          agora”. Remarcações e cancelamentos continuam no GHL. “Agendada” é o estado administrativo
+          e não comprova uma resposta SIM.
         </p>
       </div>
       <Sheet

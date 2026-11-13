@@ -12,14 +12,13 @@ import {
   Sparkles,
   SpellCheck,
   Square,
-  UserRound,
   Undo2,
   X,
-  BookOpen,
-  Languages,
   PanelRightClose,
+  CalendarDays,
 } from "lucide-react";
-import { InboxTranslator } from "@/components/inbox-translator";
+import { InboxBookingPanel } from "@/components/inbox-booking-panel";
+import { InboxIzabelPanel, type IzabelDraftExpectation } from "@/components/inbox-izabel-panel";
 import { InboxTemplatePicker, type TemplateInsertMode } from "@/components/inbox-template-picker";
 import {
   InboxAgentPanel,
@@ -55,7 +54,6 @@ import { canalMensagem, respostaLiteral, type ConversaGhl } from "@/lib/ghl-obse
 import { useOrganizacao } from "@/lib/organization";
 import { useModoDados } from "@/lib/repo";
 import { formatarDataHora } from "@/lib/clinic-time";
-import { aiSupport, type AnaliseIA } from "@/lib/ai.functions";
 import { corrigirRascunho } from "@/lib/correcao-texto.functions";
 import {
   getInboxSendContext,
@@ -634,11 +632,8 @@ function ConversaReal({
   nextName?: string;
   focusOnOpen: boolean;
 }) {
-  type PanelTab = "context" | "assistant" | "templates" | "translator";
-  const [panelTab, setPanelTab] = useState<PanelTab>("context");
-  const [visitedPanels, setVisitedPanels] = useState<Partial<Record<PanelTab, boolean>>>({
-    context: true,
-  });
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -651,9 +646,7 @@ function ConversaReal({
   const { escopo } = useModoDados();
   const clinicName = useOrganizacao().data?.organizacao.name ?? "";
   const wide = useSyncExternalStore(subscribeWideInbox, wideInboxSnapshot, () => false);
-  function openPanel(tab: PanelTab) {
-    setPanelTab(tab);
-    setVisitedPanels((old) => ({ ...old, [tab]: true }));
+  function openPanel() {
     setPanelCollapsed(false);
     setPanelOpen(true);
   }
@@ -732,11 +725,6 @@ function ConversaReal({
   };
   const [suggestionApproval, setSuggestionApproval] = useState<SuggestionApproval | null>(null);
   const historyScroll = useInboxHistoryScroll(mensagens);
-  const [analise, setAnalise] = useState<AnaliseIA | null>(null);
-  const [erroIA, setErroIA] = useState<string | null>(null);
-  const [pendente, setPendente] = useState(false);
-  const [analiseContexto, setAnaliseContexto] = useState<string | null>(null);
-  const [mostrarAnalise, setMostrarAnalise] = useState(false);
   const [corrigindo, setCorrigindo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [envio, setEnvio] = useState<EstadoEnvio>({ estado: "livre" });
@@ -777,7 +765,6 @@ function ConversaReal({
       if (limpezasNaoPersistidas.current.size === 0) gravarIntencao(chavePendente, null);
     }
   }
-  const analisar = useServerFn(aiSupport);
   const corrigirFn = useServerFn(corrigirRascunho);
   const enviarFn = useServerFn(sendInboxMessage);
   const contextoFn = useServerFn(getInboxSendContext);
@@ -905,51 +892,33 @@ function ConversaReal({
   const revisaoMudou = Boolean(
     referencia && destino && !mesmaRevisao(referencia, destino.revision),
   );
-  const contextoAnalise = inboxAnalysisFingerprint(mensagens, destino?.revision ?? null);
+  const contextoAnalise = inboxAnalysisFingerprint(mensagens, {
+    revision: destino?.revision ?? null,
+    refresh: tick,
+  });
   const contextoAnaliseRef = useRef(contextoAnalise);
   contextoAnaliseRef.current = contextoAnalise;
-  const analiseDesatualizada = Boolean(
-    analise && (result.isError || erroDestino || analiseContexto !== contextoAnalise),
-  );
-  // Remontado por conversationId/contactId: uma promessa antiga não altera o novo atendimento.
-  async function gerarAnalise() {
-    if (pendente || result.isError || mensagens.length === 0) return;
-    setPendente(true);
-    setErroIA(null);
-    const contextoCapturado = contextoAnalise;
-    try {
-      const texto = mensagens
-        .map((m) => `${m.direcao}: ${m.texto}`)
-        .join("\n")
-        .slice(-12000);
-      const resposta = await analisar({ data: { conversa: texto, contexto: conversa.nome } });
-      if (!vivo.current) return;
-      if (resposta.ok) {
-        setAnalise(resposta.analise);
-        setAnaliseContexto(contextoCapturado);
-        setMostrarAnalise(true);
-      } else setErroIA(resposta.message);
-    } catch {
-      if (vivo.current) setErroIA("Não foi possível consultar a IA.");
-    } finally {
-      if (vivo.current) setPendente(false);
-    }
-  }
-  function usarSugestao(text: string) {
+  function aplicarRespostaIzabel(text: string, expected: IzabelDraftExpectation) {
+    const before = drafts.get(draftKey);
     if (
-      pendente ||
       result.isError ||
       erroDestino ||
-      analiseContexto !== contextoAnaliseRef.current ||
-      envioRef.current.estado === "a_enviar"
+      expected.fingerprint !== contextoAnaliseRef.current ||
+      expected.draftVersion !== before.version ||
+      envioRef.current.estado === "a_enviar" ||
+      envioRef.current.estado === "incerto" ||
+      !text.trim() ||
+      text.length > LIMITE
     )
-      return;
-    setUndoDraft({
-      source: drafts.get(draftKey).sourceAgentDraft,
-      previous: rascunho,
-      applied: text,
-    });
+      return null;
+    setUndoDraft({ source: before.sourceAgentDraft, previous: before.text, applied: text });
+    // Editing preserves the audited source and its mandatory approval, when present.
     editar(text);
+    setSuggestionApproval(null);
+    setAviso("Resposta da Izabel no rascunho. Revise antes de enviar.");
+    setPanelOpen(false);
+    requestAnimationFrame(() => composer.current?.focus());
+    return drafts.get(draftKey).version;
   }
   function useAgentSuggestion(selection: InboxAgentSuggestionSelection) {
     if (
@@ -1331,145 +1300,52 @@ function ConversaReal({
   const url = `https://app.gohighlevel.com/v2/location/${conversa.locationId}/contacts/detail/${conversa.contactId}`;
   const panel = (
     <>
-      <div
-        className="sticky top-0 z-10 grid grid-cols-2 gap-1 border-b border-border bg-card p-2"
-        role="group"
-        aria-label="Painel do atendimento"
-      >
-        <Button
-          aria-pressed={panelTab === "context"}
-          variant={panelTab === "context" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => openPanel("context")}
-        >
-          Contexto
-        </Button>
-        <Button
-          aria-pressed={panelTab === "assistant"}
-          variant={panelTab === "assistant" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => openPanel("assistant")}
-        >
-          Izabel
-        </Button>
-        <Button
-          aria-pressed={panelTab === "templates"}
-          variant={panelTab === "templates" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => openPanel("templates")}
-        >
-          Texto-base
-        </Button>
-        <Button
-          aria-pressed={panelTab === "translator"}
-          variant={panelTab === "translator" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => openPanel("translator")}
-        >
-          Tradução
-        </Button>
-      </div>
-      <div hidden={panelTab !== "context"}>
+      <InboxIzabelPanel
+        organizationId={organizationId}
+        contactId={conversa.contactId}
+        conversationId={conversa.id}
+        workspaceKey={draftKey}
+        fingerprint={contextoAnalise}
+        currentDraft={rascunho}
+        draftVersion={draft.version}
+        timeZone={fuso}
+        disabled={
+          enviando ||
+          envio.estado === "incerto" ||
+          result.isError ||
+          Boolean(erroDestino) ||
+          mensagens.length === 0
+        }
+        disabledReason={
+          result.isError
+            ? "Atualize as mensagens antes de preparar uma resposta."
+            : ((erroDestino ? "Confira o bloqueio de envio indicado na conversa." : null) ??
+              (mensagens.length === 0
+                ? "Aguarde o histórico desta conversa."
+                : "Conclua a verificação do envio antes de preparar outra resposta."))
+        }
+        onApply={aplicarRespostaIzabel}
+      />
+      <details className="border-t border-border">
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+          Contexto e próximo passo
+        </summary>
         <AttendanceContextPanel
           organizationId={organizationId}
           ghlContactId={conversa.contactId}
           conversationId={conversa.id}
           fuso={fuso}
         />
-      </div>
-      <div hidden={panelTab !== "assistant"}>
-        <p className="px-4 pt-3 text-xs text-muted-foreground">
-          A sugestão supervisionada está junto ao rascunho da conversa. Este apoio adicional não
-          envia mensagens.
-        </p>
-        <section className="space-y-3 p-4" aria-label="Assistência IA">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
-              type="button"
-              className="flex items-center gap-2 text-sm font-medium"
-              onClick={() => setMostrarAnalise((value) => !value)}
-              aria-expanded={mostrarAnalise}
-            >
-              <Sparkles className="size-4" />
-              Apoio à escrita
-              {analiseDesatualizada && <Badge variant="outline">Desatualizada</Badge>}
-            </button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={pendente || result.isError || mensagens.length === 0}
-              onClick={() => void gerarAnalise()}
-            >
-              {pendente ? "A analisar…" : "Analisar conversa"}
-            </Button>
-          </div>
-          {erroIA && (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              {erroIA}
-            </p>
-          )}
-          {mostrarAnalise && (
-            <div className="mt-3 space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Sugestões sobre as mensagens carregadas. Reveja antes de usar; a IA não confirma
-                consultas nem envia respostas.
-              </p>
-              {analise && (
-                <>
-                  {analiseDesatualizada && (
-                    <p role="status" className="text-sm text-destructive">
-                      A conversa ou o contexto mudou. Analise novamente para usar uma sugestão. Seu
-                      rascunho foi preservado.
-                    </p>
-                  )}
-                  <p className="text-sm">
-                    <span className="font-medium">Resumo: </span>
-                    {analise.resumo}
-                  </p>
-                  {analise.intencao && (
-                    <p className="text-sm">
-                      <span className="font-medium">Intenção sugerida: </span>
-                      {
-                        {
-                          informacao: "Informação",
-                          preco: "Preço",
-                          agendamento: "Agendamento",
-                          objecao: "Objeção",
-                          pos_procedimento: "Pós-procedimento",
-                          urgencia: "Urgência",
-                        }[analise.intencao]
-                      }
-                    </p>
-                  )}
-                  {analise.revisao_humana && (
-                    <p className="text-sm">
-                      Próxima ação: encaminhar para revisão por um profissional de saúde.
-                    </p>
-                  )}
-                  <div className="grid gap-2">
-                    {analise.sugestoes.map((suggestion) => (
-                      <article key={suggestion.tom} className="rounded-lg border border-border p-3">
-                        <Badge variant="outline">{suggestion.tom}</Badge>
-                        <p className="my-2 whitespace-pre-wrap text-sm">{suggestion.texto}</p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={enviando || pendente || analiseDesatualizada}
-                          onClick={() => usarSugestao(suggestion.texto)}
-                        >
-                          Usar rascunho
-                        </Button>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </section>
-      </div>
-      <div hidden={panelTab !== "templates"}>
-        {visitedPanels.templates && (
+      </details>
+      <details
+        className="border-t border-border"
+        open={libraryOpen}
+        onToggle={(event) => setLibraryOpen(event.currentTarget.open)}
+      >
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+          Modelos de apoio
+        </summary>
+        {libraryOpen && (
           <InboxTemplatePicker
             organizationId={organizationId}
             contactId={conversa.contactId}
@@ -1481,30 +1357,7 @@ function ConversaReal({
             onInsert={inserirModelo}
           />
         )}
-      </div>
-      <div hidden={panelTab !== "translator"}>
-        {visitedPanels.translator && (
-          <InboxTranslator
-            workspaceKey={draftKey}
-            currentDraft={rascunho}
-            draftVersion={draft.version}
-            messages={mensagens
-              .filter((m) => m.direcao === "inbound" && m.texto)
-              .map((m) => ({ id: m.id, text: m.texto }))}
-            disabled={enviando || envio.estado === "incerto"}
-            onApply={(text) => {
-              if (envioRef.current.estado === "a_enviar" || envioRef.current.estado === "incerto")
-                return;
-              setUndoDraft({
-                source: drafts.get(draftKey).sourceAgentDraft,
-                previous: drafts.get(draftKey).text,
-                applied: text,
-              });
-              editar(text);
-            }}
-          />
-        )}
-      </div>
+      </details>
     </>
   );
   return (
@@ -1558,11 +1411,11 @@ function ConversaReal({
                 size="sm"
                 variant="outline"
                 className={panelCollapsed ? "" : "xl:hidden"}
-                onClick={() => openPanel("context")}
-                aria-label="Ver contexto do atendimento"
+                onClick={openPanel}
+                aria-label="Abrir Izabel e contexto"
               >
-                <UserRound className="size-4" />
-                <span className="hidden sm:inline">Contexto</span>
+                <Sparkles className="size-4" />
+                <span className="hidden sm:inline">Izabel</span>
               </Button>
               {wide && !panelCollapsed && (
                 <Button
@@ -2141,33 +1994,21 @@ function ConversaReal({
           </div>
           <div className="shrink-0 border-t border-border px-3 py-2 sm:px-4">
             <div className="inbox-tools flex flex-wrap gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openPanel("assistant")}
-                aria-label="Abrir assistente IA"
-              >
+              <Button variant="ghost" size="sm" onClick={openPanel} aria-label="Abrir Izabel">
                 <Sparkles className="size-4" />
-                <span>Apoio IA</span>
+                <span>Izabel</span>
               </Button>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                onClick={() => openPanel("templates")}
-                aria-label="Abrir modelos de mensagem"
+                disabled={enviando || envio.estado === "incerto"}
+                onClick={() => {
+                  setPanelOpen(false);
+                  setBookingOpen(true);
+                }}
               >
-                <BookOpen className="size-4" />
-                <span>Modelos</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openPanel("translator")}
-                aria-label="Abrir tradutor"
-                className={wide && !panelCollapsed ? "hidden" : ""}
-              >
-                <Languages className="size-4" />
-                <span>Tradução</span>
+                <CalendarDays className="size-4" aria-hidden="true" />
+                Agendar agora
               </Button>
               <Button
                 variant="outline"
@@ -2287,12 +2128,23 @@ function ConversaReal({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <InboxBookingPanel
+        organizationId={organizationId}
+        contactId={conversa.contactId}
+        contactName={conversa.nome}
+        scope={escopo}
+        timeZone={fuso}
+        open={bookingOpen}
+        disabled={enviando || envio.estado === "incerto"}
+        onOpenChange={setBookingOpen}
+        onConfirmed={() => setTick((value) => value + 1)}
+      />
       <InboxContextDock
         wide={wide}
         collapsed={panelCollapsed}
         open={panelOpen}
         onOpenChange={setPanelOpen}
-        title={`Atendimento de ${conversa.nome}`}
+        title={`Izabel · ${conversa.nome}`}
       >
         {panel}
       </InboxContextDock>

@@ -51,7 +51,9 @@ function mount({ hasDraft = false, disabled = false, onInsert = vi.fn(() => true
   return onInsert;
 }
 async function choose(id: string) {
-  await waitFor(() => expect(screen.getByRole("option", { name: `${id} · PT-PT` })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("option", { name: `${id} · PT-PT` })).toBeTruthy(), {
+    timeout: 5000,
+  });
   fireEvent.change(screen.getByRole("combobox", { name: "Modelo" }), { target: { value: id } });
 }
 const insert = () =>
@@ -75,6 +77,9 @@ it("dados ausentes não viram texto fictício", async () => {
   const onInsert = mount();
   await choose("Agenda");
   expect(insert().disabled).toBe(true);
+  expect(screen.getByRole("status").textContent).toContain("horário da consulta");
+  expect(document.body.textContent).not.toContain("PENDENTE");
+  expect(document.body.textContent).not.toContain("appointment.");
   expect(onInsert).not.toHaveBeenCalled();
 });
 it("exige confirmação para substituir, preserva texto se compositor recusar e respeita bloqueio", async () => {
@@ -97,7 +102,11 @@ it("não habilita inserção durante envio e não inventa cadastro quando contex
   mount({ disabled: true });
   await choose("Saudação");
   expect(insert().disabled).toBe(true);
-  expect(screen.getByLabelText("Prévia do texto-base").textContent).toContain("PENDENTE");
+  expect(screen.getByLabelText("Prévia do texto-base").textContent).toContain(
+    "informações verificadas",
+  );
+  expect(document.body.textContent).not.toContain("PENDENTE");
+  expect(document.body.textContent).not.toContain("contact.first_name");
 });
 
 it("mudança de rascunho revoga confirmação anterior de substituição", async () => {

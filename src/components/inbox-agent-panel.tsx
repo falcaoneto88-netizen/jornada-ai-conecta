@@ -383,7 +383,7 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">Treinamento V02</Badge>
             <Badge variant="outline">
-              {izabelMetadata.name} · {izabelMetadata.versionLabel}
+              Pacote {izabelMetadata.name} · {izabelMetadata.versionLabel}
             </Badge>
           </div>
           {view && (
@@ -417,9 +417,10 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
             </>
           )}
           <p>
-            O agente existente usa a política V02. A base da {izabelMetadata.name} foi preparada
-            para homologação local e ainda não está ativada no atendimento. A fila geral mantém a
-            triagem e a auditoria; rejeitar, pausar e retomar continuam disponíveis na supervisão.
+            A redação contextual da {izabelMetadata.name} e o agente supervisionado usam a base V02.
+            O pacote novo de protocolos e imagens continua em homologação e não foi ativado. A fila
+            geral mantém a triagem e a auditoria; rejeitar, pausar e retomar continuam disponíveis
+            na supervisão.
           </p>
         </div>
       </details>
