@@ -176,13 +176,6 @@
       "when": 1794538132950,
       "tag": "0024_inbox_reviewed_suggestions",
       "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1794574800000,
-      "tag": "0025_appointment_finance",
-      "breakpoints": true
     }
   ]
 }
