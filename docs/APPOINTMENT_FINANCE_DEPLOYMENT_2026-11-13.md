@@ -76,3 +76,23 @@ Antes de declarar funcionamento publicado: confirmar migração aplicada no proj
 ler um compromisso autorizado, salvar/reler uma anotação administrativa de teste, verificar
 revisão e auditoria e conferir que agenda GHL e mensagens permanecem sem alterações.
 Não declarar integração ou pagamento validado apenas porque a interface compilou.
+
+## Aplicação no projeto original — 13/11/2026
+
+- Revisão base: `a6d3c74` (merge PR #3); HEAD antes da aplicação `bafff3e`.
+- Antes: tabelas e RPC ausentes; último registro aplicado era 0024 (id 25). 0025 era a única pendente.
+- Aplicada **uma vez** pela ferramenta oficial de migração (transação externa), usando o SQL Drizzle;
+  o espelho `supabase/migrations/20261113130000_appointment_finance.sql` não foi executado.
+- SQL enviado idêntico ao arquivo, exceto a newline final, que a ferramenta remove. O arquivo do
+  repositório foi restaurado aos bytes originais (SHA-256 `39343c52…1a60`). Journal idx 25,
+  `when` `1794586420181`; registro no banco id 26. Snapshot 0025 sem diferença; types regenerados.
+- Catálogo: `appointment_finances` e `appointment_finance_requests` com RLS ativo; 1 policy de SELECT
+  e 1 trigger em finances; requests sem policies e sem acesso de `authenticated`/`anon`.
+  `authenticated` só SELECT em finances; `service_role` total. `appointment_finance_command` e
+  `appointment_finance_validate_parent` SECURITY DEFINER com EXECUTE apenas `postgres`/`service_role`.
+  `sandbox_exec=ar` vem de default ACL preexistente. Nenhuma permissão existente alterada.
+- Leitura autenticada na prévia (`/agenda`, semana de 19/10/2026 com 1 consulta real): função
+  de leitura respondeu `available:true`, `entries:[]`; a interface mostrou "Ainda não há valores
+  registados" e não o aviso de atualização pendente. Nenhum valor gravado; sem POST de salvar.
+- Não houve publicação, envio, alteração GHL, contatos, compromissos, oportunidades ou workflows.
+  Testes locais (89 + 15 PGlite) não foram repetidos e não constituem evidência de produção.

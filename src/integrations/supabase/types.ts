@@ -163,6 +163,113 @@ export type Database = {
         }
         Relationships: []
       }
+      appointment_finance_requests: {
+        Row: {
+          actor_id: string
+          appointment_id: string
+          created_at: string
+          input: Json
+          organization_id: string
+          request_id: string
+          result: Json
+        }
+        Insert: {
+          actor_id: string
+          appointment_id: string
+          created_at?: string
+          input: Json
+          organization_id: string
+          request_id: string
+          result: Json
+        }
+        Update: {
+          actor_id?: string
+          appointment_id?: string
+          created_at?: string
+          input?: Json
+          organization_id?: string
+          request_id?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_finance_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_finance_requests_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_finance_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      appointment_finances: {
+        Row: {
+          appointment_id: string
+          currency: string
+          deposit_cents: number
+          organization_id: string
+          revision: number
+          total_cents: number
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          appointment_id: string
+          currency?: string
+          deposit_cents: number
+          organization_id: string
+          revision: number
+          total_cents: number
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          appointment_id?: string
+          currency?: string
+          deposit_cents?: number
+          organization_id?: string
+          revision?: number
+          total_cents?: number
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_finances_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_finances_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_finances_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointment_followup_events: {
         Row: {
           actor_id: string
@@ -2571,6 +2678,10 @@ export type Database = {
           location_id: string
           pipeline_id: string
         }[]
+      }
+      appointment_finance_command: {
+        Args: { _actor: string; _data?: Json; _op: string; _org: string }
+        Returns: Json
       }
       attendance_context_command: {
         Args: {
