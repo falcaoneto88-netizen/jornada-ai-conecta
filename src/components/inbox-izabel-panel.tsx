@@ -173,9 +173,7 @@ export function InboxIzabelPanel(props: InboxIzabelPanelProps) {
             {formatarDataHora(reply.data.checkedAt, props.timeZone)} ({props.timeZone})
           </p>
           <p className="text-sm">{reply.data.summary}</p>
-          {reply.data.handover && (
-            <p className="text-sm font-medium">Revisão humana necessária.</p>
-          )}
+          {reply.data.handover && <p className="text-sm font-medium">Revisão humana necessária.</p>}
           {reply.data.warnings.length > 0 && (
             <ul
               className="space-y-1 text-xs text-muted-foreground"
