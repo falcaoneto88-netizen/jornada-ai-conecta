@@ -47,13 +47,13 @@ export const Route = createFileRoute("/caixa-de-entrada")({
   },
   head: () => ({
     meta: [
-      { title: "Caixa de Entrada IA — Jornada AI | Dr. João Falcão" },
+      { title: "Meu Chat — Jornada AI | Dr. João Falcão" },
       {
         name: "description",
         content:
           "Centralize conversas de WhatsApp, Instagram, Facebook e e-mail com resumo, intenção e respostas sugeridas por IA.",
       },
-      { property: "og:title", content: "Caixa de Entrada IA — Jornada AI" },
+      { property: "og:title", content: "Meu Chat — Jornada AI" },
       {
         property: "og:description",
         content: "Conversas centralizadas com resumo automático, intenção e respostas sugeridas.",
@@ -71,7 +71,7 @@ function CaixaEntrada() {
   ) : (
     <div className="supervision-art-direction inbox-art-direction">
       <AppShell
-        title="Atendimento"
+        title="Meu Chat"
         description="Conversas e respostas consultadas no GoHighLevel"
         workspace
       >
@@ -181,7 +181,7 @@ function CaixaDemo() {
   }
 
   return (
-    <AppShell title="Caixa de Entrada IA" description="Conversas de todos os canais num só lugar">
+    <AppShell title="Meu Chat" description="Conversas de todos os canais num só lugar">
       <div className="space-y-6">
         <DemoNotice
           texto={
@@ -300,7 +300,7 @@ function CaixaDemo() {
                 </div>
                 {erroIa && <p className="mt-3 text-sm text-destructive">{erroIa}</p>}
                 {analise?.revisao_humana && (
-                  <p className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm">
+                  <p className="mt-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
                     Tema sensível: esta conversa precisa de revisão por um profissional de saúde
                     antes de responder.
                   </p>
@@ -346,7 +346,7 @@ function CaixaDemo() {
                   />
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
+                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
                       Assuntos clínicos sensíveis devem ser revistos por um profissional. A IA não
                       faz diagnósticos.
                     </p>
