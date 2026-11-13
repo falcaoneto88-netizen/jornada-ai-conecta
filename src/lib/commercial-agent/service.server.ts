@@ -6,6 +6,8 @@ import {
   eventSchema,
   manualPrepareSchema,
   manualSendSchema,
+  sourceAgentDraftSchema,
+  type SourceAgentDraft,
   type DraftPayload,
   type DraftRow,
   type Event,
@@ -24,6 +26,7 @@ import { resolveInboxRoute, sameRoute, type InboxRoute, type SmsChannels } from 
 import { POLICY_HASH, replyHash, seal, sha, unseal } from "./providers.server";
 import type { InboxAttachment } from "./inbox-media";
 import type { AttendanceDraftDispatch } from "../attendance-draft.server";
+import type { InboxReviewRows, InboxReviewScope } from "./inbox-review.server";
 import {
   INBOX_MEDIA_TTL_MS,
   mediaManifest,
@@ -66,7 +69,12 @@ export type Provider = {
     messageId: string | null;
   }>;
 };
-export type ManualPayload = { snapshot: Snapshot; text: string; media?: InboxMedia };
+export type ManualPayload = {
+  snapshot: Snapshot;
+  text: string;
+  media?: InboxMedia;
+  sourceAgentDraft?: SourceAgentDraft;
+};
 type ManualRow = {
   id: string;
   request_id: string;
@@ -84,6 +92,9 @@ type ManualRow = {
   result_message_id: string | null;
   error_code: string | null;
   created_at?: string;
+  source_agent_draft_id?: string | null;
+  source_agent_version?: number | null;
+  source_agent_reply_hash?: string | null;
 };
 /** Tempo máximo do pedido do navegador no servidor antes de qualquer escrita/POST. */
 /**
@@ -104,6 +115,7 @@ export const manualHash = (payload: ManualPayload) =>
       event: payload.snapshot.event,
       historyHash: payload.snapshot.historyHash,
       text: payload.text,
+      ...(payload.sourceAgentDraft ? { sourceAgentDraft: payload.sourceAgentDraft } : {}),
       ...(payload.media
         ? {
             media: {
@@ -125,6 +137,7 @@ export type Dependencies = {
   sendEnabled: boolean;
   now?: () => number;
   bindAttendanceDraft?(input: AttendanceDraftDispatch): Promise<void>;
+  readInboxReview?(scope: InboxReviewScope): Promise<InboxReviewRows>;
 };
 export class CommercialAgent {
   private now: () => number;
@@ -256,6 +269,66 @@ export class CommercialAgent {
           ? unseal<DraftPayload>(row.payload, this.d.encryptionKey, `${org}:${row.event_id}`)
           : null,
       })),
+    };
+  }
+  /** Scoped, read-only projection of existing drafts. Does not create a session or call providers. */
+  async inboxReview(
+    org: string,
+    actor: string,
+    input: Pick<InboxReviewScope, "contactId" | "conversationId" | "draftId">,
+  ) {
+    if (!this.d.readInboxReview) throw new AgentError("not_configured");
+    const settings = await this.d.store.command<Settings>("settings", org, {}, actor);
+    if (settings.organization_id !== org || !settings.location_id)
+      throw new AgentError("scope_mismatch");
+    const result = await this.d.readInboxReview({
+      ...input,
+      organizationId: org,
+      locationId: settings.location_id,
+    });
+    if (result.session && result.session.contact_id !== input.contactId)
+      throw new AgentError("scope_mismatch");
+    const items = result.items.map((row) => {
+      if (
+        row.organization_id !== org ||
+        row.location_id !== settings.location_id ||
+        row.contact_id !== input.contactId ||
+        row.conversation_id !== input.conversationId ||
+        (input.draftId && row.id !== input.draftId)
+      )
+        throw new AgentError("scope_mismatch");
+      const { payload, ...safeRow } = row;
+      const content = payload
+        ? unseal<DraftPayload>(payload, this.d.encryptionKey, `${org}:${row.event_id}`)
+        : null;
+      if (
+        content &&
+        (content.snapshot.event.locationId !== row.location_id ||
+          content.snapshot.event.contactId !== row.contact_id ||
+          content.snapshot.event.conversationId !== row.conversation_id ||
+          content.snapshot.event.messageId !== row.message_id)
+      )
+        throw new AgentError("scope_mismatch");
+      return {
+        ...safeRow,
+        paused: result.session?.paused ?? true,
+        opt_out: result.session?.opt_out ?? true,
+        session_version: result.session?.version ?? 0,
+        content,
+        policyCurrent: content?.policyHash === POLICY_HASH,
+      };
+    });
+    return {
+      enabled: this.d.enabled,
+      sendEnabled: this.d.sendEnabled,
+      settings: {
+        ...settings,
+        allowed_contacts: settings.allowed_contacts.filter((id) => id === input.contactId),
+      },
+      session: result.session,
+      items,
+      errors: [],
+      truncated: result.truncated,
     };
   }
   async approve(
@@ -495,6 +568,105 @@ export class CommercialAgent {
       throw new AgentError("draft_stale");
     return payload;
   }
+  /** Reviewed AI text retains its immutable source and every AI gate, even after human editing. */
+  private async validateInboxSource(
+    org: string,
+    actor: string,
+    source: SourceAgentDraft,
+    scope: { contactId: string; conversationId: string },
+    text: string,
+    snapshot: Snapshot,
+    writeEnabled: boolean,
+    prepared?: ManualRow,
+  ) {
+    const ref = sourceAgentDraftSchema.parse(source);
+    const row = await this.d.store.command<DraftRow>("detail", org, ref, actor);
+    const config = await this.d.store.command<Settings>("settings", org);
+    if (
+      row.organization_id !== org ||
+      row.location_id !== config.location_id ||
+      row.contact_id !== scope.contactId ||
+      row.conversation_id !== scope.conversationId ||
+      snapshot.event.locationId !== row.location_id ||
+      snapshot.event.contactId !== row.contact_id ||
+      snapshot.event.conversationId !== row.conversation_id
+    )
+      throw new AgentError("scope_mismatch");
+    // A failed pre-POST review may be explicitly retried while the same human still owns the
+    // same session. It never reactivates the AI or silently refreshes the reviewed history.
+    const retry =
+      !prepared && row.state === "invalidated"
+        ? await this.d.store.command<ManualRow | null>(
+            "manual_source_retry",
+            org,
+            { sourceAgentDraft: ref },
+            actor,
+          )
+        : null;
+    if (retry) {
+      const previous = this.manualPayload(org, retry);
+      if (JSON.stringify(previous.sourceAgentDraft ?? null) !== JSON.stringify(ref))
+        throw new AgentError("draft_stale");
+    }
+    const claimedSource = !!prepared || !!retry;
+    if (
+      row.reply_hash !== ref.replyHash ||
+      row.version !== ref.version + (claimedSource ? 1 : 0) ||
+      row.state !== (claimedSource ? "invalidated" : "pending")
+    )
+      throw new AgentError("version_conflict");
+    const payload = unseal<DraftPayload>(
+      row.payload,
+      this.d.encryptionKey,
+      `${org}:${row.event_id}`,
+    );
+    if (
+      payload.policyHash !== POLICY_HASH ||
+      replyHash(payload) !== ref.replyHash ||
+      payload.snapshot.event.locationId !== row.location_id ||
+      payload.snapshot.event.contactId !== row.contact_id ||
+      payload.snapshot.event.conversationId !== row.conversation_id ||
+      payload.snapshot.event.messageId !== row.message_id
+    )
+      throw new AgentError("draft_stale");
+    const inbound = payload.snapshot.messages.find(
+      (m) => m.id === row.message_id && m.direction === "inbound",
+    );
+    if (!inbound) throw new AgentError("history_invalid");
+    if (
+      prepared &&
+      (prepared.source_agent_draft_id !== ref.draftId ||
+        prepared.source_agent_version !== ref.version ||
+        prepared.source_agent_reply_hash !== ref.replyHash ||
+        prepared.session_version !== row.session_version ||
+        !row.paused)
+    )
+      throw new AgentError("draft_stale");
+    const reason = checkSend({
+      enabled: this.d.enabled && config.mode === "supervised",
+      sendEnabled: this.d.sendEnabled,
+      writeEnabled,
+      allowed:
+        config.allowed_contacts.includes(row.contact_id) &&
+        config.allowed_channels.includes(inbound.channel),
+      paused: claimedSource ? false : (row.paused ?? true),
+      optOut: !!row.opt_out || payload.decision.optOut,
+      dnd: payload.snapshot.dnd || snapshot.dnd,
+      expired: Date.parse(row.expires_at) <= this.now(),
+      historyChanged:
+        payload.snapshot.historyHash !== snapshot.historyHash ||
+        (!claimedSource && row.contact_version !== row.session_version),
+      channel: inbound.channel,
+      inboundAgeMs: this.now() - Date.parse(inbound.at),
+      flags: [
+        ...payload.decision.flags,
+        ...checkReply(payload.decision.reply),
+        ...checkReply(text),
+        ...(payload.decision.handoff ? ["human_requested"] : []),
+      ],
+    });
+    if (reason) throw new AgentError(reason);
+  }
   private preparedManual(org: string, row: ManualRow): ManualPrepared {
     if (row.state !== "prepared") throw new AgentError("manual_request_used");
     const p = this.manualPayload(org, row);
@@ -518,12 +690,15 @@ export class CommercialAgent {
       text: string;
       requestId: string;
       attachments?: InboxAttachment[] | undefined;
+      sourceAgentDraft?: SourceAgentDraft | undefined;
     },
     writeEnabled: boolean,
     route?: InboxRoute,
     notAfter?: string,
   ): Promise<ManualPrepared> {
-    const { attachments: attachmentInput, ...prepareInput } = input;
+    const { attachments: attachmentInput, sourceAgentDraft, ...prepareInput } = input;
+    if (sourceAgentDraft && (!route || attachmentInput?.length))
+      throw new AgentError("invalid_manual");
     const attachments = validateInboxAttachments(attachmentInput);
     if (attachments.length && (!route || route.channel !== "SMS" || !route.providerId))
       throw new AgentError("media_channel_unsupported");
@@ -557,6 +732,10 @@ export class CommercialAgent {
         existing.contact_id !== data.contactId ||
         existing.conversation_id !== data.conversationId ||
         old.text !== data.text ||
+        JSON.stringify(old.sourceAgentDraft ?? null) !==
+          JSON.stringify(
+            sourceAgentDraft ? sourceAgentDraftSchema.parse(sourceAgentDraft) : null,
+          ) ||
         JSON.stringify(mediaManifest(old.media?.attachments)) !==
           JSON.stringify(mediaManifest(attachments))
       )
@@ -567,6 +746,16 @@ export class CommercialAgent {
     if (context.blockedReason) throw new AgentError(context.blockedReason);
     if (context.sessionVersion !== data.expectedVersion) throw new AgentError("version_conflict");
     if (context.snapshot.historyHash !== data.historyHash) throw new AgentError("draft_stale");
+    if (sourceAgentDraft)
+      await this.validateInboxSource(
+        org,
+        actor,
+        sourceAgentDraft,
+        data,
+        data.text,
+        context.snapshot,
+        writeEnabled,
+      );
     const inbound = context.snapshot.messages.find(
       (m) => m.id === context.snapshot.event.messageId && m.direction === "inbound",
     )!;
@@ -574,6 +763,9 @@ export class CommercialAgent {
     const payload = {
       snapshot: route ? { ...context.snapshot, route } : context.snapshot,
       text: data.text,
+      ...(sourceAgentDraft
+        ? { sourceAgentDraft: sourceAgentDraftSchema.parse(sourceAgentDraft) }
+        : {}),
       ...(attachments.length
         ? {
             media: {
@@ -586,10 +778,15 @@ export class CommercialAgent {
     };
     if (route && route.channel !== inbound.channel) throw new AgentError("route_changed");
     const row = await this.d.store.command<ManualRow>(
-      route ? "manual_inbox_prepare" : "manual_prepare",
+      sourceAgentDraft
+        ? "manual_inbox_review_prepare"
+        : route
+          ? "manual_inbox_prepare"
+          : "manual_prepare",
       org,
       {
         ...(route ? { notAfter } : {}),
+        ...(sourceAgentDraft ? { sourceAgentDraft } : {}),
         contactId: data.contactId,
         conversationId: data.conversationId,
         locationId: context.snapshot.event.locationId,
@@ -644,6 +841,17 @@ export class CommercialAgent {
       context.snapshot.historyHash !== payload.snapshot.historyHash
     )
       throw new AgentError("draft_stale");
+    if (payload.sourceAgentDraft)
+      await this.validateInboxSource(
+        org,
+        actor,
+        payload.sourceAgentDraft,
+        { contactId: row.contact_id, conversationId: row.conversation_id },
+        payload.text,
+        context.snapshot,
+        writeEnabled,
+        row,
+      );
     if (!this.d.provider.sendManual) throw new AgentError("manual_not_configured");
     const claimed = await this.d.store.command<ManualRow>(
       "manual_start_send",
@@ -793,6 +1001,7 @@ export class CommercialAgent {
       requestId: string;
       attachments?: InboxAttachment[] | undefined;
       draftRevision?: string | null | undefined;
+      sourceAgentDraft?: SourceAgentDraft | undefined;
       revision: {
         historyHash: string;
         sessionVersion: number;
@@ -811,6 +1020,10 @@ export class CommercialAgent {
       (!input.text.trim() && !attachments.length)
     )
       throw new AgentError("invalid_manual");
+    if (input.sourceAgentDraft) {
+      sourceAgentDraftSchema.parse(input.sourceAgentDraft);
+      if (attachments.length) throw new AgentError("invalid_manual");
+    }
     const { revision, draftRevision, ...scope } = input;
     // Prazo operacional (também no SQL, com clock_timestamp após os locks). Não prova não-envio.
     const notAfter = new Date(this.now() + INBOX_DEADLINE_MS).toISOString();
@@ -823,6 +1036,10 @@ export class CommercialAgent {
         r.contact_id !== input.contactId ||
         r.conversation_id !== input.conversationId ||
         old.text !== input.text ||
+        JSON.stringify(old.sourceAgentDraft ?? null) !==
+          JSON.stringify(
+            input.sourceAgentDraft ? sourceAgentDraftSchema.parse(input.sourceAgentDraft) : null,
+          ) ||
         JSON.stringify(mediaManifest(old.media?.attachments)) !==
           JSON.stringify(mediaManifest(attachments))
       )
@@ -885,35 +1102,55 @@ export class CommercialAgent {
         messageId: row.result_message_id,
         manualId: row.id,
       };
-    // Rota fixada na revisão: revalidar antes de reclamar o envio.
-    const pinned = this.manualPayload(org, row).snapshot;
-    if (!pinned.route) throw new AgentError("route_unverified");
-    const pinnedRoute: InboxRoute = { channel: "SMS", ...pinned.route };
-    const now = await this.inboxRoute(pinned, configuredProviderId);
-    if (!now.ok || !sameRoute(now.route, pinnedRoute)) throw new AgentError("route_changed");
-    if (draftRevision != null) {
-      if (!this.d.bindAttendanceDraft) throw new AgentError("draft_binding_unavailable");
-      await this.d.bindAttendanceDraft({
-        organizationId: org,
-        userId: actor,
-        locationId: row.location_id,
-        contactId: row.contact_id,
-        conversationId: row.conversation_id,
-        manualId: row.id,
-        requestId: input.requestId,
-        revision: draftRevision,
-        text: input.text,
-      });
+    try {
+      // Rota fixada na revisão: revalidar antes de reclamar o envio.
+      const pinned = this.manualPayload(org, row).snapshot;
+      if (!pinned.route) throw new AgentError("route_unverified");
+      const pinnedRoute: InboxRoute = { channel: "SMS", ...pinned.route };
+      const now = await this.inboxRoute(pinned, configuredProviderId);
+      if (!now.ok || !sameRoute(now.route, pinnedRoute)) throw new AgentError("route_changed");
+      if (draftRevision != null) {
+        if (!this.d.bindAttendanceDraft) throw new AgentError("draft_binding_unavailable");
+        await this.d.bindAttendanceDraft({
+          organizationId: org,
+          userId: actor,
+          locationId: row.location_id,
+          contactId: row.contact_id,
+          conversationId: row.conversation_id,
+          manualId: row.id,
+          requestId: input.requestId,
+          revision: draftRevision,
+          text: input.text,
+          ...(input.sourceAgentDraft ? { sourceAgentDraft: input.sourceAgentDraft } : {}),
+        });
+      }
+      if (late()) throw new AgentError("request_expired");
+      const result = await this.manualSend(
+        org,
+        actor,
+        { manualId: row.id, replyHash: row.reply_hash },
+        writeEnabled,
+        notAfter,
+      );
+      return { ...result, manualId: row.id };
+    } catch (error) {
+      if (input.sourceAgentDraft) {
+        // Only SQL can prove this request has not claimed a POST. An uncertain/concurrent
+        // dispatch must retain its requestId; a status string from an exception is not proof.
+        try {
+          const released = await this.d.store.command<{ status: string }>(
+            "manual_cancel_prepared",
+            org,
+            { manualId: row.id },
+            actor,
+          );
+          if (released.status !== "invalidated") throw new AgentError("send_unknown");
+        } catch {
+          throw new AgentError("send_unknown");
+        }
+      }
+      throw error;
     }
-    if (late()) throw new AgentError("request_expired");
-    const result = await this.manualSend(
-      org,
-      actor,
-      { manualId: row.id, replyHash: row.reply_hash },
-      writeEnabled,
-      notAfter,
-    );
-    return { ...result, manualId: row.id };
   }
   async manualReconcile(
     org: string,

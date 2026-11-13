@@ -228,3 +228,41 @@ describe("canonical GHL scope proof is read-only", () => {
     });
   });
 });
+
+it("source is encrypted and hashed with draft, clear and dispatch binding; no silent detach", async () => {
+  const sourceAgentDraft = {
+    draftId: "77777777-7777-4777-8777-777777777777",
+    version: 2,
+    replyHash: "a".repeat(64),
+  };
+  const saved = await make().save(scope, {
+    text: "Editado",
+    expectedRevision: null,
+    sourceAgentDraft,
+  });
+  if (!saved.ok || !saved.data.revision) throw new Error("fixture");
+  expect(saved.data.draft?.sourceAgentDraft).toEqual(sourceAgentDraft);
+  expect(await make().load(scope)).toEqual(saved);
+  expect(JSON.stringify(rpc.mock.calls[0]![1])).not.toContain(sourceAgentDraft.draftId);
+  const hash = row!["text_hash"];
+  await make().clear(scope, { expectedText: "Editado", expectedRevision: saved.data.revision });
+  expect(rpc.mock.calls.at(-1)![1]._data.expectedTextHash).not.toBe(hash);
+  await make().clear(scope, {
+    expectedText: "Editado",
+    expectedRevision: saved.data.revision,
+    expectedSourceAgentDraft: sourceAgentDraft,
+  });
+  expect(rpc.mock.calls.at(-1)![1]._data.expectedTextHash).toBe(hash);
+  rpc.mockResolvedValue({ data: { bound: true }, error: null });
+  const binding = {
+    ...scope,
+    manualId: "33333333-3333-4333-8333-333333333333",
+    requestId: "44444444-4444-4444-8444-444444444444",
+    revision: saved.data.revision,
+    text: "Editado",
+  };
+  await bindAttendanceDraftDispatch({ rpc }, key, { ...binding, sourceAgentDraft });
+  expect(rpc.mock.calls.at(-1)![1]._text_hash).toBe(hash);
+  await bindAttendanceDraftDispatch({ rpc }, key, binding);
+  expect(rpc.mock.calls.at(-1)![1]._text_hash).not.toBe(hash);
+});

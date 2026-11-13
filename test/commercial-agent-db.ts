@@ -99,6 +99,9 @@ export async function startCommercialDb() {
           "utf8",
         ),
       );
+      await migration.unsafe(
+        readFileSync("supabase/migrations/20261113120000_inbox_reviewed_suggestions.sql", "utf8"),
+      );
     } finally {
       migration.release();
     }

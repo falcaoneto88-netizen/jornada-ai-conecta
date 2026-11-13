@@ -169,6 +169,13 @@
       "when": 1794538016220,
       "tag": "0023_commercial_agent_queue_read",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794538132950,
+      "tag": "0024_inbox_reviewed_suggestions",
+      "breakpoints": true
     }
   ]
 }

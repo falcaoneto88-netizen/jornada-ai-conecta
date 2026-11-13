@@ -56,6 +56,8 @@ function app(contact = "contactA", organizationId = org) {
   );
 }
 async function loaded() {
+  const disclosure = await screen.findByText("Editar responsável e retorno");
+  if (!disclosure.closest("details")?.open) fireEvent.click(disclosure);
   await screen.findByRole("button", { name: "Salvar acompanhamento" });
 }
 function change(label: string | RegExp, value: string) {
@@ -147,7 +149,7 @@ it("visualizador vê responsável e retorno mas não pode editar ou concluir", a
   );
   render(app());
   await screen.findByText("Verificar horários");
-  expect(screen.getByText(/Responsável no Jornada: Operadora/)).toBeTruthy();
+  expect(screen.getByText("Operadora sintética")).toBeTruthy();
   expect(screen.getByText(/apenas consultar/)).toBeTruthy();
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Concluir retorno" })).toBeNull();
@@ -429,6 +431,7 @@ it("uma instância sem edição acompanha save confirmado da outra, mantendo IDs
     </QueryClientProvider>,
   );
   const owners = await screen.findAllByLabelText("Responsável no Jornada");
+  screen.getAllByText("Editar responsável e retorno").forEach((item) => fireEvent.click(item));
   fireEvent.change(owners[0]!, { target: { value: owner } });
   fireEvent.click(screen.getAllByRole("button", { name: "Salvar acompanhamento" })[0]!);
   await waitFor(() => expect((owners[1] as HTMLSelectElement).value).toBe(owner));
@@ -474,5 +477,107 @@ it("save tardio não rebaixa revisão mais nova já presente no cache compartilh
     ),
   );
   expect(client.getQueryData(["attendance-context", "userA", org, "contactA"])).toEqual(newer);
+  expect(m.save).toHaveBeenCalledTimes(1);
+});
+
+it("abre com responsável, próximo passo e consulta legíveis, deixando edição recolhida", async () => {
+  m.read.mockResolvedValue(
+    response({
+      ...context,
+      attendance: {
+        version: 2,
+        ownerId: owner,
+        nextAction: "Conferir disponibilidade com a recepção",
+        nextActionAt: "2026-10-15T08:00:00Z",
+      },
+    }),
+  );
+  render(app());
+  await screen.findByText("Conferir disponibilidade com a recepção", { selector: "dd" });
+  expect(screen.getByText("Operadora sintética", { selector: "dd" })).toBeTruthy();
+  expect(screen.getByText("Retorno combinado").parentElement?.textContent).toContain("09:00");
+  expect(screen.getByText("Retorno combinado").parentElement?.textContent).toContain(
+    "Europe/Lisbon",
+  );
+  expect(screen.getByText("Consulta de exemplo")).toBeTruthy();
+  expect(screen.getByText("Novo contato")).toBeTruthy();
+  expect(screen.getByText("Lembrete interno. Não é uma mensagem programada.")).toBeTruthy();
+  expect(screen.getByText("Editar responsável e retorno").closest("details")?.open).toBe(false);
+  expect(screen.getByRole("button", { name: "Concluir retorno" })).toBeTruthy();
+  expect(screen.getByText(/não são uma consulta ao GHL em tempo real/)).toBeTruthy();
+  expect(m.save).not.toHaveBeenCalled();
+});
+
+it("recolher e reabrir a edição preserva campos sem apresentar rascunho como retorno salvo", async () => {
+  m.read.mockResolvedValue(
+    response({
+      ...context,
+      attendance: {
+        version: 2,
+        ownerId: owner,
+        nextAction: "Retorno já salvo",
+        nextActionAt: "2026-10-15T08:00:00Z",
+      },
+    }),
+  );
+  render(app());
+  await loaded();
+  const field = screen.getByLabelText("Próxima ação interna") as HTMLTextAreaElement;
+  change("Próxima ação interna", "Rascunho ainda em revisão");
+  change("Prazo (Europe/Lisbon)", "2026-10-16T10:00");
+  fireEvent.click(screen.getByText("Editar responsável e retorno"));
+  expect(field.closest("details")?.open).toBe(false);
+  expect(screen.getByText("Edição não salva")).toBeTruthy();
+  expect(screen.getByText("Retorno já salvo")).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Concluir retorno" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByText("Editar responsável e retorno"));
+  expect(screen.getByLabelText("Próxima ação interna")).toBe(field);
+  expect(field.value).toBe("Rascunho ainda em revisão");
+  expect((screen.getByLabelText("Prazo (Europe/Lisbon)") as HTMLInputElement).value).toBe(
+    "2026-10-16T10:00",
+  );
+  expect(m.save).not.toHaveBeenCalled();
+});
+
+it("recolher uma gravação pendente preserva bloqueio e revela resultado confirmado no resumo", async () => {
+  const d = deferred<ReturnType<typeof response>>();
+  m.save.mockReturnValue(d.promise);
+  render(app());
+  await loaded();
+  change("Responsável no Jornada", owner);
+  change("Próxima ação interna", "Conferir opções de horário");
+  change("Prazo (Europe/Lisbon)", "2026-10-16T10:00");
+  fireEvent.click(saveButton());
+  fireEvent.click(screen.getByText("Editar responsável e retorno"));
+  expect(screen.getByRole("status").textContent).toContain("A guardar");
+  expect((screen.getByLabelText("Próxima ação interna") as HTMLTextAreaElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByText("Editar responsável e retorno"));
+  fireEvent.click(screen.getByRole("button", { name: "A salvar…" }));
+  expect(m.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText("Editar responsável e retorno"));
+  await act(async () =>
+    d.resolve(
+      response({
+        ...context,
+        attendance: {
+          version: 1,
+          ownerId: owner,
+          nextAction: "Conferir opções de horário",
+          nextActionAt: "2026-10-16T09:00:00Z",
+        },
+      }),
+    ),
+  );
+  expect(screen.getByRole("status").textContent).toContain("salvo");
+  expect(screen.getByText("Próximo passo").parentElement?.textContent).toContain(
+    "Conferir opções de horário",
+  );
+  expect(screen.getByText("Retorno combinado").parentElement?.textContent).toContain("10:00");
+  expect(screen.queryByText("Edição não salva")).toBeNull();
+  expect(screen.getByText("Editar responsável e retorno").closest("details")?.open).toBe(false);
   expect(m.save).toHaveBeenCalledTimes(1);
 });

@@ -352,3 +352,17 @@ it("stale saves racing recovery cannot resurrect the sent revision", async () =>
   }
   expect(sendManual).toHaveBeenCalledTimes(1);
 });
+
+it("a source-bearing saved draft cannot silently dispatch as plain manual text", async () => {
+  const sourceAgentDraft = {
+    draftId: "77777777-7777-4777-8777-777777777777",
+    version: 1,
+    replyHash: "a".repeat(64),
+  };
+  const saved = value(
+    await service().save(scope(), { text, expectedRevision: null, sourceAgentDraft }),
+  );
+  await expect(send(saved.revision)).rejects.toThrow("draft_binding_conflict");
+  expect(sendManual).not.toHaveBeenCalled();
+  expect(value(await service().load(scope()))).toEqual(saved);
+});

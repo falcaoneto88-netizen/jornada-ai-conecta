@@ -10,6 +10,7 @@ import {
   manualScopeSchema,
   manualPrepareSchema,
   manualSendSchema,
+  sourceAgentDraftSchema,
   id,
 } from "./commercial-agent/core";
 
@@ -21,6 +22,26 @@ export const listAgentDrafts = createServerFn({ method: "GET" })
     return safe(async () => {
       const { agent, actor } = await authenticatedAgent(context, data.organizationId);
       return agent.list(data.organizationId, actor);
+    });
+  });
+/** Existing supervision for exactly one inbox conversation; no generation or delivery. */
+export const getInboxAgentContext = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    manualScopeSchema.extend({
+      organizationId: listSchema.shape.organizationId,
+      draftId: z.string().uuid().optional(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { safe, authenticatedAgent } = await import("./commercial-agent/runtime.server");
+    return safe(async () => {
+      const { agent, actor } = await authenticatedAgent(context, data.organizationId);
+      return agent.inboxReview(data.organizationId, actor, {
+        contactId: data.contactId,
+        conversationId: data.conversationId,
+        ...(data.draftId ? { draftId: data.draftId } : {}),
+      });
     });
   });
 export const approveAgentDraft = createServerFn({ method: "POST" })
@@ -171,6 +192,7 @@ export const sendInboxMessage = createServerFn({ method: "POST" })
         text: z.string().max(1500),
         attachments: inboxAttachmentsSchema.optional(),
         draftRevision: z.string().uuid().nullable().optional(),
+        sourceAgentDraft: sourceAgentDraftSchema.optional(),
         revision: revisionSchema,
       })
       .refine((v) => v.text.trim().length > 0 || (v.attachments?.length ?? 0) > 0, "empty"),

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "./ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "./ui/sheet";
 
 /** Keeps one editor alive while its visible host changes; no form data is copied or persisted. */
 export function InboxContextDock({
@@ -8,12 +17,14 @@ export function InboxContextDock({
   open,
   onOpenChange,
   title,
+  collapsed = false,
   children,
 }: {
   wide: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
+  collapsed?: boolean;
   children: ReactNode;
 }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -44,7 +55,7 @@ export function InboxContextDock({
       {wide ? (
         <aside
           ref={dock}
-          className="surface-card min-h-0 overflow-y-auto overscroll-contain"
+          className={`surface-card min-h-0 overflow-y-auto overscroll-contain ${collapsed ? "hidden" : ""}`}
           aria-label="Painel lateral do atendimento"
         />
       ) : (
@@ -67,6 +78,12 @@ export function InboxContextDock({
             className="w-full overflow-y-auto p-0 pt-6 sm:max-w-md motion-reduce:animate-none motion-reduce:transition-none"
           >
             <SheetHeader className="px-4 pb-3 pr-10">
+              <SheetClose asChild>
+                <Button type="button" variant="ghost" className="min-h-11 self-start px-0">
+                  <ArrowLeft aria-hidden="true" className="size-4" />
+                  Voltar à conversa
+                </Button>
+              </SheetClose>
               <SheetTitle>{title}</SheetTitle>
               <SheetDescription>Próximo passo, contexto e sugestões para revisão.</SheetDescription>
             </SheetHeader>

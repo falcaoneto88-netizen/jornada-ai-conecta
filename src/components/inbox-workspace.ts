@@ -1,10 +1,20 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import type { SourceAgentDraft } from "@/lib/commercial-agent/core";
 import { canalMensagem, type ConversaGhl, type MensagemGhl } from "@/lib/ghl-observation.core";
 
-const EMPTY_DRAFT = { text: "", version: 0 };
-type Draft = { text: string; version: number };
+export type InboxDraftContent = { text: string; sourceAgentDraft?: SourceAgentDraft };
+type Draft = InboxDraftContent & { version: number };
+const EMPTY_DRAFT: Draft = { text: "", version: 0 };
+export function sameInboxDraftContent(a: InboxDraftContent, b: InboxDraftContent) {
+  return (
+    a.text === b.text &&
+    a.sourceAgentDraft?.draftId === b.sourceAgentDraft?.draftId &&
+    a.sourceAgentDraft?.version === b.sourceAgentDraft?.version &&
+    a.sourceAgentDraft?.replyHash === b.sourceAgentDraft?.replyHash
+  );
+}
 
-/** Owned by the mounted inbox, never module-global or browser-persistent. Contains text only. */
+/** Owned by the mounted inbox, never module-global or browser-persistent. Contains the editor text and its optional audited suggestion reference. */
 export function createInboxDraftStore() {
   const drafts = new Map<string, Draft>();
   const submissions = new Map<string, { key: string; draft: Draft }>();
@@ -23,8 +33,18 @@ export function createInboxDraftStore() {
         listeners.delete(listener);
       };
     },
-    set(key: string, text: string) {
-      drafts.set(key, { text, version: (drafts.get(key)?.version ?? 0) + 1 });
+    set(key: string, text: string, source?: SourceAgentDraft | null) {
+      const previous = drafts.get(key);
+      const sourceAgentDraft = text
+        ? source === undefined
+          ? previous?.sourceAgentDraft
+          : source
+        : null;
+      drafts.set(key, {
+        text,
+        version: (previous?.version ?? 0) + 1,
+        ...(sourceAgentDraft ? { sourceAgentDraft: { ...sourceAgentDraft } } : {}),
+      });
       notify();
     },
     submitted(requestId: string, key: string) {
@@ -35,7 +55,10 @@ export function createInboxDraftStore() {
       const submission = submissions.get(requestId);
       if (!submission) return;
       const current = drafts.get(submission.key) ?? EMPTY_DRAFT;
-      if (current.version === submission.draft.version && current.text === submission.draft.text) {
+      if (
+        current.version === submission.draft.version &&
+        sameInboxDraftContent(current, submission.draft)
+      ) {
         drafts.set(submission.key, { text: "", version: current.version + 1 });
         notify();
       }

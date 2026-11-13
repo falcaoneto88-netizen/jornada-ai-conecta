@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { id } from "@/lib/commercial-agent/core";
 import { AppShell } from "@/components/app-shell";
+import "@/components/supervision-art-direction.css";
+import { useModoDados } from "@/lib/repo";
 import {
   CommercialAgentQueue,
   friendlyError,
@@ -10,7 +14,7 @@ import {
 } from "@/components/commercial-agent-queue";
 import { useOrganizacao } from "@/lib/organization";
 import {
-  listAgentDrafts,
+  getInboxAgentContext,
   approveAgentDraft,
   rejectAgentDraft,
   pauseAgentContact,
@@ -20,27 +24,70 @@ import {
   sendManualAgentMessage,
   reconcileManualAgentMessage,
 } from "@/lib/commercial-agent.functions";
+import {
+  listAgentQueuePage,
+  searchManualAgentConversations,
+} from "@/lib/commercial-agent-queue.functions";
+import type { AgentQueueRequest } from "@/lib/commercial-agent/queue-read";
+const reviewSearchSchema = z
+  .object({
+    contactId: id.optional(),
+    conversationId: id.optional(),
+    draftId: z.string().uuid().optional(),
+  })
+  .refine(
+    (value) =>
+      Boolean(value.contactId) === Boolean(value.conversationId) &&
+      (!value.draftId || Boolean(value.contactId)),
+  );
+type ReviewScope = { contactId: string; conversationId: string; draftId?: string };
 export const Route = createFileRoute("/agente-supervisionado")({
+  validateSearch: (search) => reviewSearchSchema.parse(search),
   component: AgentPage,
   head: () => ({ meta: [{ title: "Agente supervisionado — Jornada AI" }] }),
 });
 function AgentPage() {
   const org = useOrganizacao();
+  const { escopo } = useModoDados();
+  const search = Route.useSearch();
+  const scope: ReviewScope | undefined =
+    search.contactId && search.conversationId
+      ? {
+          contactId: search.contactId,
+          conversationId: search.conversationId,
+          ...(search.draftId ? { draftId: search.draftId } : {}),
+        }
+      : undefined;
   return (
-    <AppShell
-      title="Agente supervisionado"
-      description="Atendimento comercial com aprovação da equipe"
-    >
-      {org.data ? (
-        <ConnectedQueue key={org.data.organizacao.id} org={org.data.organizacao.id} />
-      ) : (
-        <p>Entre na sua conta para consultar a fila da clínica.</p>
-      )}
-    </AppShell>
+    <div className="supervision-art-direction">
+      <AppShell title="Agente supervisionado">
+        {org.data ? (
+          <>
+            <ConnectedQueue
+              key={JSON.stringify([escopo, org.data.organizacao.id, scope])}
+              org={org.data.organizacao.id}
+              {...(scope ? { scope } : {})}
+            />
+            {!scope && (
+              <div className="mt-6 border-t pt-5">
+                <p className="text-sm text-muted-foreground">
+                  Izabel: homologação local, ainda não disponível nesta versão. O atendimento
+                  continua com a base V02.
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <p>Entre na sua conta para consultar a fila da clínica.</p>
+        )}
+      </AppShell>
+    </div>
   );
 }
-function ConnectedQueue({ org }: { org: string }) {
-  const list = useServerFn(listAgentDrafts),
+function ConnectedQueue({ org, scope }: { org: string; scope?: ReviewScope }) {
+  const list = useServerFn(listAgentQueuePage),
+    manualSearch = useServerFn(searchManualAgentConversations),
+    scopedList = useServerFn(getInboxAgentContext),
     approve = useServerFn(approveAgentDraft),
     reject = useServerFn(rejectAgentDraft),
     pause = useServerFn(pauseAgentContact),
@@ -50,37 +97,66 @@ function ConnectedQueue({ org }: { org: string }) {
     manualSend = useServerFn(sendManualAgentMessage),
     manualReconcile = useServerFn(reconcileManualAgentMessage);
   const [view, setView] = useState<QueueView | null>(null),
-    [error, setError] = useState("");
-  async function refresh() {
-    const r = await list({ data: { organizationId: org } });
-    if (!r.ok) throw new Error(r.code);
-    setView(r.data);
-    setError("");
-  }
-  useEffect(() => {
-    let live = true;
-    const run = async () => {
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true);
+  type PageRequest = Omit<AgentQueueRequest, "organizationId">;
+  const pageRequest = useRef<PageRequest>({ category: "review", query: "", page: 1, pageSize: 20 });
+  const requestGeneration = useRef(0);
+  // Primitive dependencies avoid restarting the read on unrelated parent renders.
+  const contactId = scope?.contactId,
+    conversationId = scope?.conversationId,
+    draftId = scope?.draftId;
+  const load = useCallback(
+    async (request: PageRequest) => {
+      const generation = ++requestGeneration.current;
+      pageRequest.current = request;
+      setLoading(true);
       try {
-        const r = await list({ data: { organizationId: org } });
-        if (live) {
-          if (r.ok) {
-            setView(r.data);
-            setError("");
-          } else setError(r.code);
+        const r =
+          contactId && conversationId
+            ? await scopedList({
+                data: {
+                  organizationId: org,
+                  contactId,
+                  conversationId,
+                  ...(draftId ? { draftId } : {}),
+                },
+              })
+            : await list({ data: { ...request, organizationId: org } });
+        if (generation !== requestGeneration.current) return;
+        if (!r.ok) throw new Error(r.code);
+        const next = r.data as QueueView;
+        setView(next);
+        setError("");
+        if (next.pagination) {
+          const { category, query, page, pageSize, asOf } = next.pagination;
+          pageRequest.current = { category, query, page, pageSize, asOf };
         }
-      } catch {
-        if (live) setError("unavailable");
+      } catch (cause) {
+        if (generation !== requestGeneration.current) return;
+        setError(cause instanceof Error ? cause.message : "unavailable");
+        throw cause;
+      } finally {
+        if (generation === requestGeneration.current) setLoading(false);
       }
-    };
-    void run();
+    },
+    [org, list, scopedList, contactId, conversationId, draftId],
+  );
+  const refresh = () => {
+    const { category, query, pageSize } = pageRequest.current;
+    return load({ category, query, page: 1, pageSize });
+  };
+  useEffect(() => {
+    const run = () => void load(pageRequest.current).catch(() => undefined);
+    run();
     const t = setInterval(() => {
-      if (document.visibilityState === "visible") void run();
+      if (document.visibilityState === "visible") run();
     }, 15000);
     return () => {
-      live = false;
+      requestGeneration.current += 1;
       clearInterval(t);
     };
-  }, [org, list]);
+  }, [load]);
   const input = (row: QueueItem) => ({
     organizationId: org,
     draftId: row.id,
@@ -89,18 +165,43 @@ function ConnectedQueue({ org }: { org: string }) {
   });
   return (
     <>
-      {error && (
-        <p role="alert" className="mb-4 rounded-xl border p-4 text-sm">
-          {friendlyError[error] ?? "Fila indisponível. Atualize a página."}
+      {scope && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          Revisão aberta a partir do Atendimento, limitada ao contato e à conversa selecionados.
         </p>
+      )}
+      {error && (
+        <div role="alert" className="mb-4 rounded-xl border p-4 text-sm">
+          <p>
+            {friendlyError[error] ??
+              "Não foi possível atualizar a fila. As ações ficam bloqueadas até conferir os dados novamente."}
+          </p>
+          <button
+            type="button"
+            disabled={loading}
+            className="mt-2 min-h-10 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+            onClick={() => void refresh().catch(() => undefined)}
+          >
+            Tentar novamente
+          </button>
+        </div>
       )}
       {view ? (
         <CommercialAgentQueue
           view={view}
+          focused={Boolean(scope)}
+          loading={loading}
+          unavailable={Boolean(error)}
           actions={{
             refresh,
+            navigate: load,
             manual: {
               refresh,
+              search: async (request) => {
+                const r = await manualSearch({ data: { ...request, organizationId: org } });
+                if (!r.ok) throw new Error(r.code);
+                return r.data;
+              },
               context: async (conversation) => {
                 const r = await manualContext({
                   data: {

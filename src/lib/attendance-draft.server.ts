@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./commercial-agent/providers.server";
-import { AgentError } from "./commercial-agent/core";
+import { sourceAgentDraftSchema, type SourceAgentDraft, AgentError } from "./commercial-agent/core";
 import { confirmarConversa } from "./ghl-observation.core";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, type GhlConfig, type GhlResult } from "./ghl.server";
 import {
@@ -56,7 +56,12 @@ const aad = (s: VerifiedDraftScope, revision: string) =>
     s.conversationId,
     revision,
   ]);
-const contentHash = (s: VerifiedDraftScope, text: string, key: string) =>
+const contentHash = (
+  s: VerifiedDraftScope,
+  text: string,
+  key: string,
+  sourceAgentDraft?: SourceAgentDraft,
+) =>
   createHmac("sha256", Buffer.from(key, "base64"))
     .update(
       JSON.stringify([
@@ -67,6 +72,7 @@ const contentHash = (s: VerifiedDraftScope, text: string, key: string) =>
         s.contactId,
         s.conversationId,
         text,
+        ...(sourceAgentDraft ? [sourceAgentDraftSchema.parse(sourceAgentDraft)] : []),
       ]),
     )
     .digest("hex");
@@ -76,6 +82,7 @@ export type AttendanceDraftDispatch = VerifiedDraftScope & {
   requestId: string;
   revision: string;
   text: string;
+  sourceAgentDraft?: SourceAgentDraft;
 };
 
 /** Trusted pre-send binding only: never accepts a client-provided receipt, author or hash. */
@@ -94,7 +101,9 @@ export async function bindAttendanceDraftDispatch(
     ) ||
     typeof input.text !== "string" ||
     !input.text.length ||
-    input.text.length > 1500
+    input.text.length > 1500 ||
+    (input.sourceAgentDraft !== undefined &&
+      !sourceAgentDraftSchema.safeParse(input.sourceAgentDraft).success)
   )
     throw new AgentError("draft_binding_invalid");
   const key = Buffer.from(encryptionKey, "base64");
@@ -110,7 +119,7 @@ export async function bindAttendanceDraftDispatch(
       _manual: input.manualId,
       _request: input.requestId,
       _revision: input.revision,
-      _text_hash: contentHash(input, input.text, encryptionKey),
+      _text_hash: contentHash(input, input.text, encryptionKey, input.sourceAgentDraft),
     });
     if (result.error) throw new AgentError("draft_binding_unavailable");
     const resultSchema = z.object({
@@ -135,12 +144,19 @@ export class AttendanceDraftService {
   load(scope: VerifiedDraftScope) {
     return this.run("load", scope, {});
   }
-  save(scope: VerifiedDraftScope, data: { text: string; expectedRevision: string | null }) {
+  save(
+    scope: VerifiedDraftScope,
+    data: { text: string; expectedRevision: string | null; sourceAgentDraft?: SourceAgentDraft },
+  ) {
     return this.run("save", scope, data);
   }
   clear(
     scope: VerifiedDraftScope,
-    data: { expectedText: string; expectedRevision: string | null },
+    data: {
+      expectedText: string;
+      expectedRevision: string | null;
+      expectedSourceAgentDraft?: SourceAgentDraft;
+    },
   ) {
     return this.run("clear", scope, data);
   }
@@ -168,14 +184,25 @@ export class AttendanceDraftService {
     )
       throw new DraftFailure("draft_unavailable");
     const decoded = z
-      .object({ text: z.string().min(1).max(1500) })
+      .object({
+        text: z.string().min(1).max(1500),
+        sourceAgentDraft: sourceAgentDraftSchema.optional(),
+      })
       .strict()
       .parse(unseal(row.payload, this.deps.encryptionKey, aad(scope, row.revision)));
-    if (row.text_hash !== contentHash(scope, decoded.text, this.deps.encryptionKey))
+    if (
+      row.text_hash !==
+      contentHash(scope, decoded.text, this.deps.encryptionKey, decoded.sourceAgentDraft)
+    )
       throw new DraftFailure("draft_unavailable");
     return {
       revision: row.revision,
-      draft: { text: decoded.text, updatedAt: row.updated_at, expiresAt: row.expires_at },
+      draft: {
+        text: decoded.text,
+        updatedAt: row.updated_at,
+        expiresAt: row.expires_at,
+        ...(decoded.sourceAgentDraft ? { sourceAgentDraft: decoded.sourceAgentDraft } : {}),
+      },
     };
   }
 
@@ -211,14 +238,21 @@ export class AttendanceDraftService {
       if (op === "save") {
         const text = data["text"] as string,
           revision = randomUUID();
+        const sourceAgentDraft = data["sourceAgentDraft"] as SourceAgentDraft | undefined;
+        const content = {
+          text,
+          ...(sourceAgentDraft
+            ? { sourceAgentDraft: sourceAgentDraftSchema.parse(sourceAgentDraft) }
+            : {}),
+        };
         payload = {
           expectedRevision: data["expectedRevision"],
           revision,
           empty: text.length === 0,
           ...(text.length
             ? {
-                payload: seal({ text }, this.deps.encryptionKey, aad(scope, revision)),
-                textHash: contentHash(scope, text, this.deps.encryptionKey),
+                payload: seal(content, this.deps.encryptionKey, aad(scope, revision)),
+                textHash: contentHash(scope, text, this.deps.encryptionKey, sourceAgentDraft),
               }
             : {}),
         };
@@ -229,6 +263,7 @@ export class AttendanceDraftService {
             scope,
             data["expectedText"] as string,
             this.deps.encryptionKey,
+            data["expectedSourceAgentDraft"] as SourceAgentDraft | undefined,
           ),
         };
       const result = await this.deps.rpc.rpc(

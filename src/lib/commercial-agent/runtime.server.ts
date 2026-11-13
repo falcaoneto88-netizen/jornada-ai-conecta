@@ -5,6 +5,9 @@ import { AgentError } from "./core";
 import { configuredGenerator, HighLevel } from "./providers.server";
 import { CommercialAgent, type Store } from "./service.server";
 import { bindAttendanceDraftDispatch } from "../attendance-draft.server";
+import { readInboxReviewRows } from "./inbox-review.server";
+import { readAgentQueuePage, readManualQueuePage, type QueueReadClient } from "./queue-read.server";
+import type { ManualQueueRequest, QueuePageRequest } from "./queue-read";
 
 type Rpc = {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>;
@@ -52,18 +55,54 @@ export function runtime(locationId: string) {
     sendEnabled: process.env["COMMERCIAL_AGENT_SEND_ENABLED"] === "true",
     bindAttendanceDraft: (input) =>
       bindAttendanceDraftDispatch(supabaseAdmin as unknown as Rpc, key, input),
+    readInboxReview: (scope) => {
+      if (scope.locationId !== locationId) throw new AgentError("scope_mismatch");
+      return readInboxReviewRows(supabaseAdmin, scope);
+    },
   });
+}
+async function authenticatedScope(ctx: { supabase: SupabaseClient; userId: string }, org: string) {
+  const r = await resolverAcesso(ctx, ["administrador", "gestor", "comercial"]);
+  if (!r.ok || r.acesso.orgId !== org) throw new AgentError("forbidden");
+  return r.acesso;
 }
 export async function authenticatedAgent(
   ctx: { supabase: SupabaseClient; userId: string },
   org: string,
 ) {
-  const r = await resolverAcesso(ctx, ["administrador", "gestor", "comercial"]);
-  if (!r.ok || r.acesso.orgId !== org) throw new AgentError("forbidden");
+  const scope = await authenticatedScope(ctx, org);
   return {
-    agent: runtime(r.acesso.locationId),
+    agent: runtime(scope.locationId),
     actor: ctx.userId,
-    writeEnabled: r.acesso.conn?.["write_enabled"] === true,
+    writeEnabled: scope.conn?.["write_enabled"] === true,
+  };
+}
+/** Shares authorization with action routes, without constructing providers or executing mutating RPCs. */
+export async function authenticatedQueueReader(
+  ctx: { supabase: SupabaseClient; userId: string },
+  org: string,
+) {
+  const access = await authenticatedScope(ctx, org);
+  const scope = {
+    organizationId: access.orgId,
+    locationId: access.locationId,
+    actorId: ctx.userId,
+  };
+  const client = supabaseAdmin as unknown as QueueReadClient;
+  return {
+    drafts(input: QueuePageRequest) {
+      const encryptionKey = process.env["COMMERCIAL_AGENT_ENCRYPTION_KEY"] ?? "";
+      if (Buffer.from(encryptionKey, "base64").length !== 32)
+        throw new AgentError("encryption_not_configured");
+      return readAgentQueuePage(client, scope, input, {
+        encryptionKey,
+        enabled: process.env["COMMERCIAL_AGENT_ENABLED"] === "true",
+        sendEnabled: process.env["COMMERCIAL_AGENT_SEND_ENABLED"] === "true",
+      });
+    },
+    manual(input: ManualQueueRequest) {
+      return readManualQueuePage(client, scope, input);
+    },
   };
 }
 export async function safe<T>(fn: () => Promise<T>) {

@@ -20,11 +20,15 @@ export const saveAttendanceDraft = createServerFn({ method: "POST" })
   .inputValidator(attendanceDraftSaveSchema)
   .handler(async ({ data, context }) => {
     const { authenticatedAttendanceDraft } = await import("./attendance-draft.server");
-    const { text, expectedRevision, ...scope } = data;
+    const { text, expectedRevision, sourceAgentDraft, ...scope } = data;
     const auth = await authenticatedAttendanceDraft(context, scope);
     return "failure" in auth
       ? auth.failure
-      : auth.service.save(auth.scope, { text, expectedRevision });
+      : auth.service.save(auth.scope, {
+          text,
+          expectedRevision,
+          ...(sourceAgentDraft ? { sourceAgentDraft } : {}),
+        });
   });
 
 export const clearAttendanceDraft = createServerFn({ method: "POST" })
@@ -32,9 +36,13 @@ export const clearAttendanceDraft = createServerFn({ method: "POST" })
   .inputValidator(attendanceDraftClearSchema)
   .handler(async ({ data, context }) => {
     const { authenticatedAttendanceDraft } = await import("./attendance-draft.server");
-    const { expectedText, expectedRevision, ...scope } = data;
+    const { expectedText, expectedRevision, expectedSourceAgentDraft, ...scope } = data;
     const auth = await authenticatedAttendanceDraft(context, scope);
     return "failure" in auth
       ? auth.failure
-      : auth.service.clear(auth.scope, { expectedText, expectedRevision });
+      : auth.service.clear(auth.scope, {
+          expectedText,
+          expectedRevision,
+          ...(expectedSourceAgentDraft ? { expectedSourceAgentDraft } : {}),
+        });
   });

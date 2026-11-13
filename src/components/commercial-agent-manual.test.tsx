@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommercialAgentManual, type ManualActions } from "./commercial-agent-manual";
 import type {
@@ -7,6 +7,7 @@ import type {
   ManualConversation,
   ManualPrepared,
 } from "@/lib/commercial-agent/core";
+import type { ManualQueuePage } from "@/lib/commercial-agent/queue-read";
 
 function fixture(paused = true) {
   const conversation: ManualConversation = {
@@ -92,7 +93,14 @@ function fixture(paused = true) {
   };
 }
 async function selectContact(value = "c-test:v-test") {
-  fireEvent.change(screen.getByLabelText("Conversa para atendimento"), { target: { value } });
+  const change = screen.queryByRole("button", { name: "Trocar conversa" });
+  if (change) fireEvent.click(change);
+  const conversationId = value.split(":")[1]!;
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: new RegExp(`Abrir conversa de .* · ${conversationId.slice(-8)}$`),
+    }),
+  );
   await screen.findByLabelText(/Sua mensagem para/);
   await waitFor(() =>
     expect(
@@ -117,6 +125,214 @@ async function compose(text = "Mensagem escrita pela equipe.") {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+function searchPage(
+  f: ReturnType<typeof fixture>,
+  overrides: Partial<ManualQueuePage> = {},
+): ManualQueuePage {
+  return {
+    items: [{ ...f.conversation, contactName: "Ana Canônica", channel: "SMS" }],
+    page: 1,
+    pageSize: 25,
+    total: 1,
+    totalPages: 1,
+    hasMore: false,
+    asOf: "2026-11-12T12:00:00.000Z",
+    query: "",
+    ...overrides,
+  };
+}
+describe("busca paginada de conversas", () => {
+  it("usa o nome canônico e busca apenas a primeira página sem abrir histórico nem executar comandos", async () => {
+    const f = fixture();
+    f.actions.search = vi.fn(async () => searchPage(f));
+    render(<CommercialAgentManual {...f.props} names={{ "c-test": "Nome de rascunho antigo" }} />);
+    await act(async () => {});
+    await screen.findByText("Ana Canônica");
+    expect(f.actions.search).toHaveBeenCalledWith({ query: "", page: 1, pageSize: 25 });
+    expect(screen.queryByText("Nome de rascunho antigo")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    for (const action of [
+      f.actions.context,
+      f.actions.pause,
+      f.actions.prepare,
+      f.actions.send,
+      f.actions.reconcile,
+    ])
+      expect(action).not.toHaveBeenCalled();
+    await selectContact();
+    expect(screen.queryByRole("list", { name: "Conversas encontradas" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Ana Canônica" }));
+    fireEvent.click(screen.getByRole("button", { name: "Trocar conversa" }));
+    expect(document.activeElement).toBe(screen.getByLabelText("Nome ou ID do contato"));
+    expect(f.actions.context).toHaveBeenCalledTimes(1);
+    expect(f.actions.pause).not.toHaveBeenCalled();
+  });
+  it("página seguinte preserva o snapshot e uma nova busca reinicia a paginação", async () => {
+    const f = fixture();
+    f.actions.search = vi.fn(async (request) =>
+      searchPage(f, {
+        page: request.page,
+        query: request.query,
+        hasMore: request.page === 1,
+        total: 30,
+        totalPages: 2,
+      }),
+    );
+    render(<CommercialAgentManual {...f.props} />);
+    await act(async () => {});
+    fireEvent.click(await screen.findByRole("button", { name: "Próximas conversas" }));
+    await waitFor(() =>
+      expect(f.actions.search).toHaveBeenLastCalledWith({
+        query: "",
+        page: 2,
+        pageSize: 25,
+        asOf: "2026-11-12T12:00:00.000Z",
+      }),
+    );
+    await screen.findByText("Página 2");
+    fireEvent.change(screen.getByLabelText("Nome ou ID do contato"), {
+      target: { value: " Ana " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Buscar conversa" }));
+    await waitFor(() =>
+      expect(f.actions.search).toHaveBeenLastCalledWith({ query: "Ana", page: 1, pageSize: 25 }),
+    );
+    expect(f.actions.context).not.toHaveBeenCalled();
+  });
+  it("descarta a resposta atrasada de uma busca anterior", async () => {
+    const f = fixture();
+    let finishOld!: (value: ManualQueuePage) => void;
+    f.actions.search = vi.fn((request) =>
+      request.query
+        ? Promise.resolve(searchPage(f, { query: request.query }))
+        : new Promise<ManualQueuePage>((resolve) => {
+            finishOld = resolve;
+          }),
+    );
+    render(<CommercialAgentManual {...f.props} />);
+    await act(async () => {});
+    await waitFor(() => expect(f.actions.search).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("Nome ou ID do contato"), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: "Buscar conversa" }));
+    await screen.findByText("Ana Canônica");
+    await act(async () =>
+      finishOld(
+        searchPage(f, {
+          items: [{ ...f.conversation, contactName: "Resposta antiga", channel: null }],
+        }),
+      ),
+    );
+    expect(screen.queryByText("Resposta antiga")).toBeNull();
+    expect(screen.getByText("Resultados para “Ana”")).toBeTruthy();
+  });
+  it("retira resultados antigos na falha e só repete a leitura mediante ação explícita", async () => {
+    const f = fixture();
+    f.actions.search = vi
+      .fn()
+      .mockResolvedValueOnce(searchPage(f))
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce(searchPage(f, { items: [], total: 0, totalPages: 0, query: "Bruno" }));
+    render(<CommercialAgentManual {...f.props} />);
+    await act(async () => {});
+    await screen.findByText("Ana Canônica");
+    fireEvent.change(screen.getByLabelText("Nome ou ID do contato"), {
+      target: { value: "Bruno" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Buscar conversa" }));
+    await screen.findByText("A busca não foi concluída. Tente novamente.");
+    expect(screen.queryByText("Ana Canônica")).toBeNull();
+    expect(f.actions.search).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Tentar busca novamente" }));
+    await screen.findByText(/Nenhuma conversa encontrada/);
+    expect(f.actions.context).not.toHaveBeenCalled();
+  });
+  it("expõe ID e canal desconhecido sem inventar nome ou canal", async () => {
+    const f = fixture();
+    f.actions.search = vi.fn(async () =>
+      searchPage(f, { items: [{ ...f.conversation, contactName: null, channel: null }] }),
+    );
+    render(<CommercialAgentManual {...f.props} names={{ "c-test": "Nome de outro histórico" }} />);
+    await act(async () => {});
+    await screen.findByText("Contato sem nome · c-test");
+    expect(screen.getByText(/Canal a conferir/)).toBeTruthy();
+    expect(screen.queryByText("Nome de outro histórico")).toBeNull();
+  });
+  it("preserva o contato selecionado e o rascunho quando a pesquisa muda de página", async () => {
+    const f = fixture();
+    f.props.conversations = [];
+    f.actions.search = vi.fn(async (request) =>
+      searchPage(f, {
+        query: request.query,
+        items: request.query
+          ? []
+          : [{ ...f.conversation, contactName: "Ana Canônica", channel: "SMS" }],
+      }),
+    );
+    render(<CommercialAgentManual {...f.props} />);
+    await act(async () => {});
+    await selectContact();
+    fireEvent.change(screen.getByLabelText(/Sua mensagem para/), {
+      target: { value: "Rascunho exclusivo da Ana" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Trocar conversa" }));
+    fireEvent.change(screen.getByLabelText("Nome ou ID do contato"), {
+      target: { value: "Ausente" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Buscar conversa" }));
+    await screen.findByText(/Nenhuma conversa encontrada/);
+    expect((screen.getByLabelText(/Sua mensagem para/) as HTMLTextAreaElement).value).toBe(
+      "Rascunho exclusivo da Ana",
+    );
+    expect(f.actions.context).toHaveBeenCalledTimes(1);
+    expect(f.actions.prepare).not.toHaveBeenCalled();
+    expect(f.actions.send).not.toHaveBeenCalled();
+  });
+  it("bloqueia uma revisão já aberta quando a fila perde disponibilidade", async () => {
+    const f = fixture();
+    const view = render(<CommercialAgentManual {...f.props} />);
+    await act(async () => {});
+    await selectContact();
+    await compose("Revisão preservada, envio bloqueado.");
+    view.rerender(<CommercialAgentManual {...f.props} disabled />);
+    const send = screen.getByRole("button", {
+      name: "Confirmar e enviar mensagem manual",
+    }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.click(send);
+    expect(f.actions.send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Voltar à edição" }));
+    expect((screen.getByLabelText(/Sua mensagem para/) as HTMLTextAreaElement).value).toBe(
+      "Revisão preservada, envio bloqueado.",
+    );
+    expect(
+      (screen.getByRole("button", { name: "Devolver ao agente" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+  it("atualiza a versão do selecionado após assumir quando a lista completa não está carregada", async () => {
+    const f = fixture(false);
+    f.props.conversations = [];
+    f.actions.search = vi.fn(async () => searchPage(f));
+    render(<CommercialAgentManual {...f.props} />);
+    await act(async () => {});
+    await selectContact();
+    fireEvent.click(screen.getByRole("button", { name: "Assumir conversa para escrever" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText(/Sua mensagem para/) as HTMLTextAreaElement).disabled).toBe(
+        false,
+      ),
+    );
+    await compose("Mensagem depois de assumir.");
+    expect(f.actions.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedVersion: 2,
+        contactId: "c-test",
+        conversationId: "v-test",
+      }),
+    );
+    expect(f.actions.send).not.toHaveBeenCalled();
+  });
 });
 describe("barra de atendimento manual", () => {
   it("exige escolher contato e assumir, sem enviar ao abrir ou escrever", async () => {

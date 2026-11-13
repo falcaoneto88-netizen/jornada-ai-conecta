@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { flushSync } from "react-dom";
-import { cleanup, render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, act, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AttendanceDraftSnapshot } from "@/lib/attendance-draft.core";
+import type { InboxAgentPanelProps } from "./inbox-agent-panel";
 const mocks = vi.hoisted(() => ({
   analisar: vi.fn(),
   corrigir: vi.fn(),
@@ -24,6 +25,12 @@ const mocks = vi.hoisted(() => ({
   messageText: "SIM",
   extraMessage: false,
   olderMessage: false,
+  suggestionResult: vi.fn(),
+  sourceAgentDraft: {
+    draftId: "77777777-7777-4777-8777-777777777777",
+    version: 4,
+    replyHash: "c".repeat(64),
+  },
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
 vi.mock("@/lib/ai.functions", () => ({ aiSupport: mocks.analisar }));
@@ -35,6 +42,77 @@ vi.mock("@/lib/commercial-agent.functions", () => ({
   reconcileManualAgentMessage: mocks.conferir,
 }));
 vi.mock("@/lib/jev-pedidos.functions", () => ({ classificarPedido: vi.fn() }));
+vi.mock("@/components/inbox-agent-panel", () => ({
+  InboxAgentPanel: ({
+    contactId,
+    conversationId,
+    onUseSuggestion,
+    disabled,
+  }: InboxAgentPanelProps) => (
+    <div>
+      <p>
+        Supervisão {contactId} {conversationId}
+      </p>
+      <button
+        disabled={disabled}
+        onClick={() =>
+          mocks.suggestionResult(
+            onUseSuggestion?.({
+              text: `Sugestão supervisionada para ${contactId}.`,
+              contactId,
+              conversationId,
+              source: mocks.sourceAgentDraft,
+            }),
+          )
+        }
+      >
+        Ajustar sugestão supervisionada sintética
+      </button>
+      <button
+        onClick={() =>
+          mocks.suggestionResult(
+            onUseSuggestion?.({
+              text: "Texto de outro contato.",
+              contactId: "unrelated-contact",
+              conversationId: "unrelated-conversation",
+              source: mocks.sourceAgentDraft,
+            }),
+          )
+        }
+      >
+        Tentar sugestão de outro contato
+      </button>
+    </div>
+  ),
+}));
+vi.mock("@/components/inbox-translator", () => ({
+  InboxTranslator: ({
+    currentDraft,
+    disabled,
+    onApply,
+  }: {
+    currentDraft: string;
+    disabled: boolean;
+    onApply: (text: string) => void;
+  }) => (
+    <button disabled={disabled} onClick={() => onApply(`Traduzido: ${currentDraft}`)}>
+      Aplicar tradução sintética
+    </button>
+  ),
+}));
+vi.mock("@/components/inbox-template-picker", () => ({
+  InboxTemplatePicker: ({
+    disabled,
+    onInsert,
+  }: {
+    disabled: boolean;
+    onInsert: (text: string, mode: string) => boolean;
+  }) => (
+    <button disabled={disabled} onClick={() => onInsert("Texto de teste", "append")}>
+      Inserir modelo sintético
+    </button>
+  ),
+}));
 vi.mock("@/components/attendance-context-panel", () => ({
   AttendanceContextPanel: () => <p>Contexto do contato</p>,
 }));
@@ -181,16 +259,36 @@ beforeEach(() => {
   mocks.extraMessage = false;
   mocks.olderMessage = false;
   mocks.nextPage.mockReset();
+  mocks.suggestionResult.mockReset();
   mocks.error = false;
   pendentesEnvio.clear();
   localStorage.clear();
 });
 
 async function attach(file = new File(["local image bytes"], "imagem.png", { type: "image/png" })) {
+  openMedia();
   fireEvent.change(screen.getByLabelText("Selecionar imagem ou áudio"), {
     target: { files: [file] },
   });
   await waitFor(() => expect(screen.getByLabelText("Prévia do anexo")).toBeTruthy());
+}
+
+function openMedia() {
+  const details = screen.getByLabelText("Anexo da resposta") as HTMLDetailsElement;
+  if (!details.open) fireEvent.click(details.querySelector("summary")!);
+}
+
+function openSuggestion() {
+  const summary = screen.getByText("Sugestão supervisionada").closest("summary")!;
+  if (!(summary.parentElement as HTMLDetailsElement).open) fireEvent.click(summary);
+}
+
+async function useSupervisedSuggestion() {
+  openSuggestion();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Ajustar sugestão supervisionada sintética" }),
+  );
+  await flush();
 }
 
 it("imagem fica local na prévia; clique final envia arquivo e texto exatos uma única vez", async () => {
@@ -336,6 +434,7 @@ it.each(["IG", "FB", "WhatsApp"])(
     });
     render(<GhlInbox />);
     await flush();
+    openMedia();
     expect(
       (screen.getByRole("button", { name: /Anexar imagem ou áudio/ }) as HTMLButtonElement)
         .disabled,
@@ -355,6 +454,7 @@ it("capacidade mediaAllowed=false vinda do servidor mantém só envio de texto",
   render(<GhlInbox />);
   await flush();
   escrever("Resposta de texto");
+  openMedia();
   expect(
     (screen.getByRole("button", { name: /Anexar imagem ou áudio/ }) as HTMLButtonElement).disabled,
   ).toBe(true);
@@ -858,14 +958,16 @@ it("Instagram elegível: informa que a conexão é validada no envio; recusa 403
   expect(screen.getByText(/GHL recusou este envio/)).toBeTruthy();
   expect(campo().value).toBe("Olá pelo Instagram");
 });
-it("canal fora da janela mostra motivo verdadeiro (24h)", async () => {
+it("canal fora da janela mostra o bloqueio sem presumir prazo igual para envio manual e sugestão", async () => {
   mocks.contexto.mockResolvedValue({
     ok: true,
     data: ctx({ channel: "IG", sendAllowed: false, blockedReason: "channel_window" }),
   });
   render(<GhlInbox />);
   await flush();
-  expect(screen.getByText(/mais de 24 horas/)).toBeTruthy();
+  expect(screen.getByText(/janela permitida para responder a esta mensagem encerrou/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Enviar para Ana" })).toHaveProperty("disabled", true);
+  expect(mocks.enviar).not.toHaveBeenCalled();
 });
 
 it("filtros só usam conversas carregadas e carregar mais continua disponível sem correspondências", async () => {
@@ -1419,4 +1521,324 @@ it("falha ao persistir limpeza conserva a intenção confirmada e avisa para man
   );
   expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
+});
+
+it("modelos e tradução alteram só o rascunho; envio final usa texto visível exato", async () => {
+  mocks.enviar.mockResolvedValue({ ok: true, data: { messageId: "one-send" } });
+  render(<GhlInbox />);
+  await flush();
+  fireEvent.change(screen.getByRole("textbox", { name: "Rascunho para Ana" }), {
+    target: { value: "Minha resposta" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Abrir modelos de mensagem" }));
+  fireEvent.click(screen.getByRole("button", { name: "Inserir modelo sintético" }));
+  expect(
+    (screen.getByRole("textbox", { name: "Rascunho para Ana" }) as HTMLTextAreaElement).value,
+  ).toBe("Minha resposta\n\nTexto de teste");
+  fireEvent.click(screen.getByRole("button", { name: "Abrir tradutor" }));
+  fireEvent.click(screen.getByRole("button", { name: "Aplicar tradução sintética" }));
+  const finalText = "Traduzido: Minha resposta\n\nTexto de teste";
+  expect(
+    (screen.getByRole("textbox", { name: "Rascunho para Ana" }) as HTMLTextAreaElement).value,
+  ).toBe(finalText);
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Enviar para Ana" }));
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+  expect(mocks.enviar.mock.calls[0]?.[0].data.text).toBe(finalText);
+});
+
+it("sugestão supervisionada fica na conversa e só preenche o editor, sem envio ou análise nova", async () => {
+  render(<GhlInbox />);
+  await flush();
+  openSuggestion();
+  expect(screen.getByText("Supervisão Ana Ana")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Analisar conversa" })).toBeNull();
+  expect(campo().value).toBe("");
+  await useSupervisedSuggestion();
+  expect(mocks.suggestionResult).toHaveBeenLastCalledWith(true);
+  expect(campo().value).toBe("Sugestão supervisionada para Ana.");
+  expect(screen.getByRole("button", { name: "Revisar e aprovar" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Enviar para Ana" })).toBeNull();
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  expect(mocks.analisar).not.toHaveBeenCalled();
+  expect(mocks.corrigir).not.toHaveBeenCalled();
+});
+
+it("aprovação explícita envia uma vez o texto editado visível e a referência exata da sugestão", async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.enviar.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  const text = "  Olá Ana!\nQual dia funciona melhor?  ";
+  escrever(text);
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  const dialog = await screen.findByRole("dialog", { name: "Aprovar resposta para Ana" });
+  expect(
+    within(dialog).getByText(
+      (_content, node) => node?.tagName === "P" && node.textContent === text,
+    ),
+  ).toBeTruthy();
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  const approve = within(dialog).getByRole("button", { name: "Aprovar e enviar" });
+  act(() => {
+    approve.click();
+    approve.click();
+  });
+  await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
+  expect(mocks.enviar.mock.calls[0]?.[0].data).toMatchObject({
+    organizationId: "orgA",
+    contactId: "Ana",
+    conversationId: "Ana",
+    text,
+    sourceAgentDraft: mocks.sourceAgentDraft,
+    revision: REV,
+  });
+  expect(mocks.enviar.mock.calls[0]?.[0].data).not.toHaveProperty("attachments");
+  await act(async () =>
+    resolve({
+      ok: true,
+      data: {
+        state: "sent",
+        messageId: "supervised-accepted",
+        manualId: "manual-review",
+        code: null,
+      },
+    }),
+  );
+  expect(campo().value).toBe("");
+  expect(screen.getByRole("button", { name: "Enviar para Ana" })).toBeTruthy();
+});
+
+it("voltar ao texto preserva sugestão e origem sem tratar fechamento como aprovação", async () => {
+  mocks.enviar.mockResolvedValue({ ok: false, code: "send_disabled" });
+  render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Voltar ao texto" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(campo().value).toBe("Sugestão supervisionada para Ana.");
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  escrever("Texto revisto novamente");
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  await act(async () =>
+    fireEvent.click(await screen.findByRole("button", { name: "Aprovar e enviar" })),
+  );
+  expect(mocks.enviar.mock.calls[0]?.[0].data).toMatchObject({
+    text: "Texto revisto novamente",
+    sourceAgentDraft: mocks.sourceAgentDraft,
+  });
+});
+
+it("nova mensagem durante a aprovação invalida o diálogo sem enviar nem apagar o texto", async () => {
+  const ui = render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  escrever("Texto conferido pela equipe");
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  await screen.findByRole("dialog", { name: "Aprovar resposta para Ana" });
+  mocks.extraMessage = true;
+  ui.rerender(<GhlInbox />);
+  await flush();
+  expect(screen.getByRole("alert").textContent).toContain("A conversa ou o rascunho mudou");
+  const approve = screen.getByRole("button", { name: "Aprovar e enviar" });
+  expect(approve).toHaveProperty("disabled", true);
+  fireEvent.click(approve);
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Voltar ao texto" }));
+  expect(campo().value).toBe("Texto conferido pela equipe");
+});
+
+it.each(["próximo atendimento", "seleção na lista"])(
+  "%s preserva texto editado e origem da sugestão no contato correto",
+  async (navigation) => {
+    mocks.enviar.mockResolvedValue({ ok: false, code: "send_disabled" });
+    render(<GhlInbox />);
+    await flush();
+    await useSupervisedSuggestion();
+    escrever("Revisão privada de Ana");
+    if (navigation === "próximo atendimento")
+      fireEvent.click(screen.getByRole("button", { name: "Próximo atendimento" }));
+    else bruno();
+    await flush();
+    expect(campo("Bruno").value).toBe("");
+    expect(screen.getByRole("button", { name: "Enviar para Bruno" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Revisar e aprovar" })).toBeNull();
+    escrever("Rascunho privado de Bruno", "Bruno");
+    fireEvent.click(screen.getByRole("button", { name: /Ana Olá/ }));
+    await flush();
+    expect(campo().value).toBe("Revisão privada de Ana");
+    fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+    await act(async () =>
+      fireEvent.click(await screen.findByRole("button", { name: "Aprovar e enviar" })),
+    );
+    expect(mocks.enviar.mock.calls[0]?.[0].data).toMatchObject({
+      text: "Revisão privada de Ana",
+      contactId: "Ana",
+      conversationId: "Ana",
+      sourceAgentDraft: mocks.sourceAgentDraft,
+    });
+    expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("recusa callback de sugestão de outro contato sem trocar o rascunho atual", async () => {
+  render(<GhlInbox />);
+  await flush();
+  escrever("Texto autorado para Ana");
+  openSuggestion();
+  fireEvent.click(screen.getByRole("button", { name: "Tentar sugestão de outro contato" }));
+  expect(mocks.suggestionResult).toHaveBeenLastCalledWith(false);
+  expect(campo().value).toBe("Texto autorado para Ana");
+  expect(screen.getByRole("button", { name: "Enviar para Ana" })).toBeTruthy();
+  expect(mocks.enviar).not.toHaveBeenCalled();
+});
+
+it("rascunho salvo com origem mantém aprovação obrigatória depois de recarregar", async () => {
+  let remote: AttendanceDraftSnapshot = { revision: null, draft: null };
+  mocks.loadDraft.mockImplementation(async () => ({ ok: true, data: remote }));
+  mocks.saveDraft.mockImplementation(
+    async ({
+      data,
+    }: {
+      data: { text: string; sourceAgentDraft?: typeof mocks.sourceAgentDraft };
+    }) => {
+      remote = {
+        revision: "88888888-8888-4888-8888-888888888888",
+        draft: {
+          text: data.text,
+          updatedAt: "2026-11-13T00:00:00Z",
+          expiresAt: "2026-11-20T00:00:00Z",
+          ...(data.sourceAgentDraft ? { sourceAgentDraft: data.sourceAgentDraft } : {}),
+        },
+      };
+      return { ok: true, data: remote };
+    },
+  );
+  mocks.enviar.mockResolvedValue({ ok: false, code: "send_disabled" });
+  const ui = render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  escrever("Revisão editada e salva");
+  await waitFor(
+    () =>
+      expect(mocks.saveDraft).toHaveBeenCalledWith({
+        data: {
+          organizationId: "orgA",
+          contactId: "Ana",
+          conversationId: "Ana",
+          text: "Revisão editada e salva",
+          expectedRevision: null,
+          sourceAgentDraft: mocks.sourceAgentDraft,
+        },
+      }),
+    { timeout: 3000 },
+  );
+  expect(mocks.enviar).not.toHaveBeenCalled();
+  ui.unmount();
+  render(<GhlInbox />);
+  await flush();
+  expect(campo().value).toBe("Revisão editada e salva");
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  await act(async () =>
+    fireEvent.click(await screen.findByRole("button", { name: "Aprovar e enviar" })),
+  );
+  expect(mocks.enviar.mock.calls[0]?.[0].data).toMatchObject({
+    text: "Revisão editada e salva",
+    sourceAgentDraft: mocks.sourceAgentDraft,
+    draftRevision: "88888888-8888-4888-8888-888888888888",
+  });
+});
+
+it("sugestão revisada rejeitada preserva texto e orienta nova revisão humana, sem incentivar repetição", async () => {
+  mocks.enviar.mockResolvedValue({
+    ok: true,
+    data: {
+      state: "rejected",
+      messageId: null,
+      manualId: "rejected-review",
+      code: "forbidden_provider",
+    },
+  });
+  render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  const text = "Texto revisado pela equipe e recusado pelo canal";
+  escrever(text);
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  await act(async () =>
+    fireEvent.click(await screen.findByRole("button", { name: "Aprovar e enviar" })),
+  );
+  expect(
+    await screen.findByText(
+      /esta sugestão já foi tratada e precisa de uma nova revisão pelo atendimento humano/,
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Pode tentar de novo com um novo clique/)).toBeNull();
+  expect(screen.queryByText(/Resultado do envio não confirmado/)).toBeNull();
+  expect(campo().value).toBe(text);
+  expect(screen.getByRole("button", { name: "Revisar e aprovar" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Enviar para Ana" })).toBeNull();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Atualizar$/ })));
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  expect(mocks.enviar.mock.calls[0]?.[0].data).toMatchObject({
+    text,
+    sourceAgentDraft: mocks.sourceAgentDraft,
+  });
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
+});
+
+it("review_retry_required informa encerramento antes do envio e preserva texto e origem para nova aprovação explícita", async () => {
+  mocks.enviar
+    .mockResolvedValueOnce({
+      ok: true,
+      data: {
+        state: "invalidated",
+        messageId: null,
+        manualId: "cancelled-review",
+        code: "review_retry_required",
+      },
+    })
+    .mockResolvedValue({ ok: false, code: "send_disabled" });
+  render(<GhlInbox />);
+  await flush();
+  await useSupervisedSuggestion();
+  const text = "Texto aprovado cuja preparação foi interrompida";
+  escrever(text);
+  const readsBefore = mocks.contexto.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  await act(async () =>
+    fireEvent.click(await screen.findByRole("button", { name: "Aprovar e enviar" })),
+  );
+  expect(
+    await screen.findByText(
+      "A tentativa foi encerrada antes do envio. Atualize o contexto e revise a resposta novamente.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/A conversa mudou. Atualize as mensagens/)).toBeNull();
+  expect(screen.queryByText(/Resultado do envio não confirmado/)).toBeNull();
+  expect(campo().value).toBe(text);
+  expect(mocks.contexto.mock.calls.length).toBeGreaterThan(readsBefore);
+  expect(mocks.refetch).toHaveBeenCalled();
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  expect(lerIntencao("orgA:Ana:Ana")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Revisar e aprovar" }));
+  const dialog = await screen.findByRole("dialog", { name: "Aprovar resposta para Ana" });
+  expect(within(dialog).getByText(text)).toBeTruthy();
+  expect(mocks.enviar).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    fireEvent.click(within(dialog).getByRole("button", { name: "Aprovar e enviar" })),
+  );
+  expect(mocks.enviar).toHaveBeenCalledTimes(2);
+  const first = mocks.enviar.mock.calls[0]?.[0].data;
+  const second = mocks.enviar.mock.calls[1]?.[0].data;
+  expect(second).toMatchObject({ text, sourceAgentDraft: mocks.sourceAgentDraft });
+  expect(second.requestId).not.toBe(first.requestId);
+  expect(campo().value).toBe(text);
 });

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { GhlInbox } from "@/components/ghl-inbox";
+import "@/components/supervision-art-direction.css";
+import "@/components/inbox-art-direction.css";
 import { AppShell } from "@/components/app-shell";
 import { DemoNotice } from "@/components/demo-notice";
 import { Badge } from "@/components/ui/badge";
@@ -67,13 +69,15 @@ function CaixaEntrada() {
   return demo ? (
     <CaixaDemo />
   ) : (
-    <AppShell
-      title="Atendimento"
-      description="Conversas e respostas consultadas no GoHighLevel"
-      workspace
-    >
-      <GhlInbox targetContactId={search.contact} targetConversationId={search.conversation} />
-    </AppShell>
+    <div className="supervision-art-direction inbox-art-direction">
+      <AppShell
+        title="Atendimento"
+        description="Conversas e respostas consultadas no GoHighLevel"
+        workspace
+      >
+        <GhlInbox targetContactId={search.contact} targetConversationId={search.conversation} />
+      </AppShell>
+    </div>
   );
 }
 

@@ -135,6 +135,14 @@ export const manualPrepareSchema = manualScopeSchema.extend({
   text: z.string().trim().min(1).max(1500),
   requestId: z.string().uuid(),
 });
+export const sourceAgentDraftSchema = z
+  .object({
+    draftId: z.string().uuid(),
+    version: z.number().int().positive(),
+    replyHash: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type SourceAgentDraft = z.infer<typeof sourceAgentDraftSchema>;
 export const manualSendSchema = z
   .object({
     manualId: z.string().uuid(),

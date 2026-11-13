@@ -20,6 +20,12 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Never distribute local credentials, private homologation material or evidence bundles.
+.env
+.env.*
+private/
+outputs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

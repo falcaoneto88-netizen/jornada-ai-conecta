@@ -1,13 +1,23 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createInboxDraftStore } from "./inbox-workspace";
+import type { SourceAgentDraft } from "@/lib/commercial-agent/core";
+import { sameInboxDraftContent, createInboxDraftStore } from "./inbox-workspace";
 import { createAttendanceDraftSync } from "./attendance-draft-sync";
 import type { AttendanceDraftResult, AttendanceDraftSnapshot } from "@/lib/attendance-draft.core";
 
 afterEach(() => vi.useRealTimers());
-const snapshot = (text: string, revision = "r1"): AttendanceDraftSnapshot => ({
+const snapshot = (
+  text: string,
+  revision = "r1",
+  sourceAgentDraft?: SourceAgentDraft,
+): AttendanceDraftSnapshot => ({
   revision,
   draft: text
-    ? { text, updatedAt: "2026-10-13T12:00:00Z", expiresAt: "2026-10-20T12:00:00Z" }
+    ? {
+        text,
+        ...(sourceAgentDraft ? { sourceAgentDraft } : {}),
+        updatedAt: "2026-10-13T12:00:00Z",
+        expiresAt: "2026-10-20T12:00:00Z",
+      }
     : null,
 });
 function server(initial: AttendanceDraftSnapshot = { revision: null, draft: null }) {
@@ -21,16 +31,35 @@ function server(initial: AttendanceDraftSnapshot = { revision: null, draft: null
   });
   return {
     load: vi.fn(async (): Promise<AttendanceDraftResult> => result()),
-    save: vi.fn(async (text: string, revision: string | null): Promise<AttendanceDraftResult> => {
-      if (remote.revision !== revision) return conflict();
-      remote = snapshot(text, `r${++version}`);
-      return result();
-    }),
-    clear: vi.fn(async (text: string, revision: string | null): Promise<AttendanceDraftResult> => {
-      if (remote.revision !== revision || (remote.draft?.text ?? "") !== text) return conflict();
-      remote = snapshot("", `r${++version}`);
-      return result();
-    }),
+    save: vi.fn(
+      async (
+        text: string,
+        revision: string | null,
+        sourceAgentDraft?: SourceAgentDraft,
+      ): Promise<AttendanceDraftResult> => {
+        if (remote.revision !== revision) return conflict();
+        remote = snapshot(text, `r${++version}`, sourceAgentDraft);
+        return result();
+      },
+    ),
+    clear: vi.fn(
+      async (
+        text: string,
+        revision: string | null,
+        sourceAgentDraft?: SourceAgentDraft,
+      ): Promise<AttendanceDraftResult> => {
+        if (
+          remote.revision !== revision ||
+          !sameInboxDraftContent(remote.draft ?? { text: "" }, {
+            text,
+            ...(sourceAgentDraft ? { sourceAgentDraft } : {}),
+          })
+        )
+          return conflict();
+        remote = snapshot("", `r${++version}`);
+        return result();
+      },
+    ),
     current: () => remote,
     externalEdit: (text: string) => {
       remote = snapshot(text, `r${++version}`);
@@ -215,7 +244,7 @@ it("após reload a confirmação limpa a revisão enviada sem depender de submis
   const sync = createAttendanceDraftSync(store, "k", api);
   sync.start();
   await sync.afterRecoveredSend("r1");
-  expect(api.clear).toHaveBeenCalledWith("Texto já enviado", "r1");
+  expect(api.clear).toHaveBeenCalledWith("Texto já enviado", "r1", undefined);
   expect(store.get("k").text).toBe("");
   expect(api.current().draft).toBeNull();
   expect(sync.hasUnsavedChanges()).toBe(false);
@@ -236,7 +265,7 @@ it("a recuperação preserva edição nova ainda não salva e a persiste após l
   await sync.beforeSend();
   store.set("k", "Nova resposta depois do reload");
   await sync.afterRecoveredSend("r1");
-  expect(api.clear).toHaveBeenCalledWith("Mensagem enviada", "r1");
+  expect(api.clear).toHaveBeenCalledWith("Mensagem enviada", "r1", undefined);
   expect(store.get("k").text).toBe("Nova resposta depois do reload");
   expect(api.current().draft).toBeNull();
   expect(sync.hasUnsavedChanges()).toBe(true);
@@ -348,7 +377,7 @@ it("hidratação lenta seguida de confirmação não descarta uma edição inici
   store.set("k", "Nova resposta antes da hidratação");
   read.resolve({ ok: true, data: api.current() });
   await recovering;
-  expect(api.clear).toHaveBeenCalledWith("Texto enviado", "r1");
+  expect(api.clear).toHaveBeenCalledWith("Texto enviado", "r1", undefined);
   expect(store.get("k").text).toBe("Nova resposta antes da hidratação");
   await sync.beforeSend();
   expect(api.current().draft?.text).toBe("Nova resposta antes da hidratação");
@@ -441,4 +470,59 @@ it("edição após hidratação permanece mesmo quando volta ao texto enviado an
   await sync.beforeSend();
   expect(api.current().draft?.text).toBe("Texto enviado");
   expect(api.current().revision).not.toBe("r1");
+});
+
+const SOURCE = { draftId: "source-a", version: 2, replyHash: "a".repeat(64) };
+it("origem da sugestão acompanha edição, reload e limpeza do snapshot enviado", async () => {
+  const store = createInboxDraftStore(),
+    api = server();
+  const sync = createAttendanceDraftSync(store, "a", api);
+  const stop = sync.start();
+  await sync.beforeSend();
+  store.set("a", "Sugestão original", SOURCE);
+  store.set("a", "Sugestão ajustada pelo atendente");
+  const sent = await sync.beforeSend();
+  expect(sent).toEqual({
+    text: "Sugestão ajustada pelo atendente",
+    revision: "r2",
+    sourceAgentDraft: SOURCE,
+  });
+  stop();
+  const reloaded = createInboxDraftStore();
+  const recover = createAttendanceDraftSync(reloaded, "a", api);
+  const stopRecover = recover.start();
+  await recover.beforeSend();
+  expect(reloaded.get("a").sourceAgentDraft).toEqual(SOURCE);
+  await recover.afterRecoveredSend("r2");
+  expect(api.clear).toHaveBeenCalledWith("Sugestão ajustada pelo atendente", "r2", SOURCE);
+  expect(api.current().draft).toBeNull();
+  expect(reloaded.get("a").sourceAgentDraft).toBeUndefined();
+  stopRecover();
+});
+it("texto idêntico com origem diferente é conflito e exige decisão explícita", async () => {
+  const store = createInboxDraftStore();
+  const api = server(snapshot("Mesmo texto", "r1", SOURCE));
+  store.set("a", "Mesmo texto", { ...SOURCE, draftId: "source-b" });
+  const sync = createAttendanceDraftSync(store, "a", api);
+  const stop = sync.start();
+  expect(await sync.beforeSend()).toBeNull();
+  expect(sync.getSnapshot().status).toBe("conflict");
+  expect(store.get("a").sourceAgentDraft?.draftId).toBe("source-b");
+  sync.useRemote();
+  expect(store.get("a").sourceAgentDraft).toEqual(SOURCE);
+  stop();
+});
+it("alterar apenas a origem é persistido e a limpeza antiga não apaga a nova sugestão", async () => {
+  const store = createInboxDraftStore(),
+    api = server(snapshot("Texto", "r1", SOURCE));
+  const sync = createAttendanceDraftSync(store, "a", api);
+  const stop = sync.start();
+  const before = await sync.beforeSend();
+  store.set("a", "Texto", { ...SOURCE, draftId: "source-b" });
+  expect(sync.hasUnsavedChanges()).toBe(true);
+  await sync.beforeSend();
+  expect(api.current().draft?.sourceAgentDraft?.draftId).toBe("source-b");
+  expect(await sync.afterConfirmedSend(before)).toBe("superseded");
+  expect(store.get("a").sourceAgentDraft?.draftId).toBe("source-b");
+  stop();
 });

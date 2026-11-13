@@ -1,0 +1,71 @@
+/* Extends the approved local visual direction for the daily attendance workspace. */
+.inbox-art-direction .surface-card {
+  border-radius: 12px;
+  box-shadow: none;
+}
+.inbox-art-direction header h1 {
+  font-size: 28px;
+}
+.inbox-art-direction [aria-label="Lista de conversas"] button {
+  padding: 12px 14px;
+  border-radius: 0;
+}
+.inbox-art-direction [aria-label="Lista de conversas"] button[aria-pressed="true"] {
+  background: var(--accent);
+}
+.inbox-art-direction [aria-label="Mensagens do GHL"] > li {
+  padding: 12px 14px;
+}
+.inbox-art-direction [data-inbox-suggestion] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.inbox-art-direction [data-inbox-suggestion] > section {
+  padding: 12px 0;
+}
+.inbox-art-direction [data-inbox-composer] textarea {
+  background: var(--card);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.inbox-art-direction [data-inbox-composer] > :last-child {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+@media (max-width: 1023px) {
+  .inbox-art-direction [data-inbox-composer] textarea {
+    font-size: 16px;
+  }
+  .inbox-art-direction [data-inbox-conversation][data-suggestion-open="true"] .inbox-history {
+    display: none;
+  }
+  .inbox-art-direction
+    [data-inbox-conversation][data-suggestion-open="true"]
+    [data-inbox-composer] {
+    flex: 1;
+    max-height: none;
+  }
+  .inbox-art-direction [data-inbox-composer] button,
+  .inbox-art-direction [data-inbox-conversation] > header button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+@media (max-width: 639px) {
+  .inbox-art-direction header h1 {
+    font-size: 24px;
+  }
+  .inbox-art-direction .inbox-tools {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .inbox-art-direction .inbox-tools > button:not(:last-child) {
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px;
+    font-size: 11px;
+  }
+  .inbox-art-direction .inbox-tools > button:last-child {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+}

@@ -115,3 +115,25 @@ it("renderização no servidor e hidratação mantêm a mesma estrutura antes de
     errors.mockRestore();
   }
 });
+
+it("Voltar à conversa fecha o painel, devolve foco e preserva o trabalho para reabertura", async () => {
+  const mounted = vi.fn();
+  render(<Fixture mounted={mounted} />);
+  const opener = screen.getByRole("button", { name: "Abrir contexto" });
+  opener.focus();
+  fireEvent.click(opener);
+  fireEvent.change(screen.getByRole("textbox", { name: "Próximo passo" }), {
+    target: { value: "Retorno em preparação" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Voltar à conversa" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(opener);
+  expect(screen.queryByRole("textbox")).toBeNull();
+  fireEvent.click(opener);
+  expect((screen.getByRole("textbox", { name: "Próximo passo" }) as HTMLInputElement).value).toBe(
+    "Retorno em preparação",
+  );
+  expect((screen.getByRole("button", { name: "Salvar" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(mounted).toHaveBeenCalledTimes(1);
+});

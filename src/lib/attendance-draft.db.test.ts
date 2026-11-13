@@ -234,3 +234,47 @@ it("anonymous and authenticated clients cannot read table or execute its service
     connection.release();
   }
 });
+
+it("edited suggestion source survives encrypted reload and clear compares source as well as exact text", async () => {
+  const sourceAgentDraft = {
+    draftId: "77777777-7777-4777-8777-777777777777",
+    version: 2,
+    replyHash: "a".repeat(64),
+  };
+  const saved = value(
+    await service().save(scope(), {
+      text: "Texto revisado",
+      expectedRevision: null,
+      sourceAgentDraft,
+    }),
+  );
+  expect(value(await service().load(scope())).draft?.sourceAgentDraft).toEqual(sourceAgentDraft);
+  const [stored] = await rows();
+  expect(stored!["payload"]).not.toContain(sourceAgentDraft.draftId);
+  for (const source of [undefined, { ...sourceAgentDraft, version: 3 }]) {
+    expect(
+      await service().clear(scope(), {
+        expectedText: "Texto revisado",
+        expectedRevision: saved.revision,
+        ...(source ? { expectedSourceAgentDraft: source } : {}),
+      }),
+    ).toMatchObject({ ok: false, code: "draft_conflict", current: saved });
+  }
+  const next = value(
+    await service().save(scope(), {
+      text: "Texto revisado novamente",
+      expectedRevision: saved.revision,
+      sourceAgentDraft,
+    }),
+  );
+  expect(value(await service().load(scope())).draft?.sourceAgentDraft).toEqual(sourceAgentDraft);
+  expect(
+    value(
+      await service().clear(scope(), {
+        expectedText: "Texto revisado novamente",
+        expectedRevision: next.revision,
+        expectedSourceAgentDraft: sourceAgentDraft,
+      }),
+    ).draft,
+  ).toBeNull();
+});

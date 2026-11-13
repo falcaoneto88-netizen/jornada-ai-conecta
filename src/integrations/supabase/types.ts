@@ -944,6 +944,9 @@ export type Database = {
           request_id: string
           result_message_id: string | null
           session_version: number
+          source_agent_draft_id: string | null
+          source_agent_reply_hash: string | null
+          source_agent_version: number | null
           state: string
         }
         Insert: {
@@ -970,6 +973,9 @@ export type Database = {
           request_id: string
           result_message_id?: string | null
           session_version: number
+          source_agent_draft_id?: string | null
+          source_agent_reply_hash?: string | null
+          source_agent_version?: number | null
           state?: string
         }
         Update: {
@@ -996,6 +1002,9 @@ export type Database = {
           request_id?: string
           result_message_id?: string | null
           session_version?: number
+          source_agent_draft_id?: string | null
+          source_agent_reply_hash?: string | null
+          source_agent_version?: number | null
           state?: string
         }
         Relationships: [

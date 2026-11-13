@@ -70,7 +70,7 @@ function ContextPanel({
     <section className="min-w-0 space-y-4 p-4 text-sm" aria-label="Contexto do atendimento">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="font-semibold text-heading">Contexto do atendimento</h2>
+          <h2 className="font-semibold text-heading">Contexto comercial</h2>
           <p className="mt-1 break-words text-xs text-muted-foreground">
             Horários: {data?.timezone ?? fuso}
           </p>
@@ -117,34 +117,18 @@ function ContextPanel({
       ) : data ? (
         <>
           <AttendanceEditor key={data.contact.id} data={data} queryKey={queryKey} />
-          <details className="rounded-lg border p-3">
-            <summary className="cursor-pointer font-medium">Cadastro e etapa</summary>
-            <div className="mt-3 space-y-3">
-              <div>
-                <h3 className="font-medium">Contato</h3>
-                <p className="break-words">{data.contact.name}</p>
-                {data.contact.phone && (
-                  <p className="break-all text-xs text-muted-foreground">{data.contact.phone}</p>
-                )}
-                {data.contact.email && (
-                  <p className="break-all text-xs text-muted-foreground">{data.contact.email}</p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Etapa no cadastro do app</p>
-                <p>{data.stage?.name ?? "Etapa não disponível"}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Cadastro atualizado: {formatarDataHora(data.contact.updatedAt, data.timezone)}
-              </p>
-            </div>
-          </details>
-          <div className="space-y-2 rounded-lg border p-3">
+          <div className="space-y-1 border-t pt-3">
+            <h3 className="text-xs font-medium text-muted-foreground">Etapa no cadastro do app</h3>
+            <p className="break-words">{data.stage?.name ?? "Etapa não disponível"}</p>
+          </div>
+          <div className="space-y-2 border-t pt-3" aria-label="Próxima consulta no app">
             <h3 className="font-medium">Próxima consulta no app</h3>
             {data.nextAppointment ? (
               <>
+                <p className="font-medium text-heading">
+                  {formatarDataHora(data.nextAppointment.startAt, data.timezone)}
+                </p>
                 <p className="break-words">{data.nextAppointment.title || "Consulta"}</p>
-                <p>{formatarDataHora(data.nextAppointment.startAt, data.timezone)}</p>
                 <Badge variant="outline" className="max-w-full whitespace-normal">
                   Estado na agenda: {data.nextAppointment.status}
                 </Badge>
@@ -158,6 +142,24 @@ function ContextPanel({
               </p>
             )}
           </div>
+          <details className="border-t pt-3">
+            <summary className="cursor-pointer font-medium">Dados do contato</summary>
+            <div className="mt-3 space-y-3">
+              <div>
+                <h3 className="font-medium">Contato</h3>
+                <p className="break-words">{data.contact.name}</p>
+                {data.contact.phone && (
+                  <p className="break-all text-xs text-muted-foreground">{data.contact.phone}</p>
+                )}
+                {data.contact.email && (
+                  <p className="break-all text-xs text-muted-foreground">{data.contact.email}</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cadastro atualizado: {formatarDataHora(data.contact.updatedAt, data.timezone)}
+              </p>
+            </div>
+          </details>
           <p className="text-xs text-muted-foreground">
             Fonte: cadastro e agenda do Jornada AI. Consultado em{" "}
             {formatarDataHora(data.checkedAt, data.timezone)}. Estes dados não são uma consulta ao
@@ -296,163 +298,192 @@ function AttendanceEditor({ data, queryKey }: { data: AttendanceContext; queryKe
     }
   }
   const selectedOwner = data.team.find((member) => member.id === data.attendance.ownerId);
-  if (!data.canEdit)
-    return (
-      <div className="space-y-2 rounded-lg border p-3">
-        <h3 className="font-medium">Acompanhamento interno</h3>
-        <p className="text-xs">
-          Responsável no Jornada:{" "}
-          {selectedOwner?.name ??
-            (data.attendance.ownerId ? "Membro indisponível" : "Sem responsável")}
-        </p>
-        {data.attendance.nextAction ? (
-          <>
-            <p className="break-words">{data.attendance.nextAction}</p>
-            <p className="text-xs">
-              Prazo: {formatarDataHora(data.attendance.nextActionAt, data.timezone)}
-            </p>
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground">Sem retorno interno registrado.</p>
+  return (
+    <div className="space-y-3" aria-label="Acompanhamento interno">
+      <h3 className="font-medium">Próximo atendimento</h3>
+      <dl className="space-y-3">
+        <div>
+          <dt className="text-xs text-muted-foreground">Responsável no Jornada</dt>
+          <dd className="mt-1 break-words font-medium">
+            {selectedOwner?.name ??
+              (data.attendance.ownerId ? "Membro indisponível" : "Sem responsável")}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Próximo passo</dt>
+          <dd className="mt-1 break-words">
+            {data.attendance.nextAction ?? "Sem retorno interno registrado."}
+          </dd>
+        </div>
+        {data.attendance.nextActionAt && (
+          <div>
+            <dt className="text-xs text-muted-foreground">Retorno combinado</dt>
+            <dd className="mt-1 font-medium">
+              {formatarDataHora(data.attendance.nextActionAt, data.timezone)}
+              <span className="block text-xs font-normal text-muted-foreground">
+                {data.timezone}
+              </span>
+            </dd>
+          </div>
         )}
+      </dl>
+      <p className="text-xs text-muted-foreground">
+        Lembrete interno. Não é uma mensagem programada.
+      </p>
+      {!data.canEdit ? (
         <p className="text-xs text-muted-foreground">
           Seu acesso permite apenas consultar este acompanhamento.
         </p>
-      </div>
-    );
-  return (
-    <form
-      className="space-y-3 border-t pt-4"
-      aria-label="Acompanhamento interno"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <div>
-        <h3 className="font-medium">Acompanhamento interno</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Responsável e retorno apenas no Jornada AI. Salvar não envia mensagens nem altera o GHL.
-        </p>
-      </div>
-      {(remoteChanged || conflict) && (
-        <div role="alert" className="space-y-2 rounded-md border border-amber-400 p-2 text-xs">
-          <p>
-            {baseline.timezone !== data.timezone
-              ? "O fuso deste atendimento mudou."
-              : "Este acompanhamento mudou."}{" "}
-            Sua edição foi mantida; confira os dados atuais antes de salvar.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={pending || (conflict && !remoteChanged)}
-            onClick={() => reset(data)}
-          >
-            Usar dados atuais
-          </Button>
-        </div>
-      )}
-      <div className="space-y-1">
-        <label htmlFor={`${id}-owner`} className="text-xs font-medium">
-          Responsável no Jornada
-        </label>
-        <select
-          id={`${id}-owner`}
-          className="w-full min-w-0 rounded-md border bg-card p-2 text-sm"
-          value={owner}
-          disabled={blocked}
-          onChange={(event) => edit(() => setOwner(event.target.value))}
-        >
-          <option value="">Sem responsável</option>
-          {owner && !data.team.some((member) => member.id === owner) && (
-            <option value={owner} disabled>
-              Membro indisponível
-            </option>
+      ) : (
+        <>
+          {(remoteChanged || conflict) && (
+            <div role="alert" className="space-y-2 rounded-md border border-amber-400 p-2 text-xs">
+              <p>
+                {baseline.timezone !== data.timezone
+                  ? "O fuso deste atendimento mudou."
+                  : "Este acompanhamento mudou."}{" "}
+                Sua edição foi mantida; confira os dados atuais antes de salvar.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pending || (conflict && !remoteChanged)}
+                onClick={() => reset(data)}
+              >
+                Usar dados atuais
+              </Button>
+            </div>
           )}
-          {data.team.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="space-y-1">
-        <label htmlFor={`${id}-action`} className="text-xs font-medium">
-          Próxima ação interna
-        </label>
-        <Textarea
-          id={`${id}-action`}
-          rows={2}
-          maxLength={500}
-          value={text}
-          disabled={blocked}
-          onChange={(event) => edit(() => setText(event.target.value))}
-          placeholder="Ex.: verificar opções de horário"
-          aria-describedby={`${id}-privacy`}
-        />
-        <p id={`${id}-privacy`} className="text-xs text-muted-foreground">
-          Use uma descrição administrativa, sem informações clínicas.
-        </p>
-      </div>
-      <div className="min-w-0 space-y-1">
-        <label htmlFor={`${id}-due`} className="text-xs font-medium">
-          Prazo ({data.timezone})
-        </label>
-        <Input
-          id={`${id}-due`}
-          className="min-w-0 max-w-full"
-          type="datetime-local"
-          value={due}
-          disabled={blocked}
-          onChange={(event) => edit(() => setDue(event.target.value))}
-        />
-      </div>
-      {error && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p role="status" className="text-xs text-success">
+              {notice}
+            </p>
+          )}
+          {pending && (
+            <p role="status" className="text-xs text-muted-foreground">
+              A guardar acompanhamento…
+            </p>
+          )}
+          <details className="group border-t pt-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              <span>Editar responsável e retorno</span>
+              {dirty && (
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                  Edição não salva
+                </span>
+              )}
+            </summary>
+            <form
+              className="mt-3 space-y-3"
+              aria-label="Editar acompanhamento interno"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submit();
+              }}
+            >
+              <p className="text-xs text-muted-foreground">
+                Responsável e retorno apenas no Jornada AI. Salvar não envia mensagens nem altera o
+                GHL.
+              </p>
+              <div className="space-y-1">
+                <label htmlFor={`${id}-owner`} className="text-xs font-medium">
+                  Responsável no Jornada
+                </label>
+                <select
+                  id={`${id}-owner`}
+                  className="w-full min-w-0 rounded-md border bg-card p-2 text-sm"
+                  value={owner}
+                  disabled={blocked}
+                  onChange={(event) => edit(() => setOwner(event.target.value))}
+                >
+                  <option value="">Sem responsável</option>
+                  {owner && !data.team.some((member) => member.id === owner) && (
+                    <option value={owner} disabled>
+                      Membro indisponível
+                    </option>
+                  )}
+                  {data.team.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`${id}-action`} className="text-xs font-medium">
+                  Próxima ação interna
+                </label>
+                <Textarea
+                  id={`${id}-action`}
+                  rows={2}
+                  maxLength={500}
+                  value={text}
+                  disabled={blocked}
+                  onChange={(event) => edit(() => setText(event.target.value))}
+                  placeholder="Ex.: verificar opções de horário"
+                  aria-describedby={`${id}-privacy`}
+                />
+                <p id={`${id}-privacy`} className="text-xs text-muted-foreground">
+                  Use uma descrição administrativa, sem informações clínicas.
+                </p>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <label htmlFor={`${id}-due`} className="text-xs font-medium">
+                  Prazo ({data.timezone})
+                </label>
+                <Input
+                  id={`${id}-due`}
+                  className="min-w-0 max-w-full"
+                  type="datetime-local"
+                  value={due}
+                  disabled={blocked}
+                  onChange={(event) => edit(() => setDue(event.target.value))}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" size="sm" disabled={blocked || !dirty}>
+                  <Save className="size-3.5" />
+                  {pending ? "A salvar…" : "Salvar acompanhamento"}
+                </Button>
+                {dirty && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => reset(data)}
+                  >
+                    Descartar edição
+                  </Button>
+                )}
+              </div>
+            </form>
+          </details>
+          {data.attendance.nextAction && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={blocked || dirty}
+              onClick={() => void submit(true)}
+            >
+              <Check className="size-3.5" />
+              Concluir retorno
+            </Button>
+          )}
+          {dirty && data.attendance.nextAction && (
+            <p className="text-xs text-muted-foreground">
+              Salve ou descarte a edição antes de concluir o retorno.
+            </p>
+          )}
+        </>
       )}
-      {notice && (
-        <p role="status" className="text-xs text-success">
-          {notice}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="sm" disabled={blocked || !dirty}>
-          <Save className="size-3.5" />
-          {pending ? "A salvar…" : "Salvar acompanhamento"}
-        </Button>
-        {dirty && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={pending}
-            onClick={() => reset(data)}
-          >
-            Descartar edição
-          </Button>
-        )}
-        {data.attendance.nextAction && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={blocked || dirty}
-            onClick={() => void submit(true)}
-          >
-            <Check className="size-3.5" />
-            Concluir retorno
-          </Button>
-        )}
-      </div>
-      {dirty && data.attendance.nextAction && (
-        <p className="text-xs text-muted-foreground">
-          Salve ou descarte a edição antes de concluir o retorno.
-        </p>
-      )}
-    </form>
+    </div>
   );
 }

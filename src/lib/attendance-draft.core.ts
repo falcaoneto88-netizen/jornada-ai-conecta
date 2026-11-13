@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sourceAgentDraftSchema, type SourceAgentDraft } from "./commercial-agent/core";
 
 const ghlId = z.string().regex(/^[A-Za-z0-9_-]{1,100}$/);
 export const attendanceDraftScopeSchema = z
@@ -10,10 +11,12 @@ export const attendanceDraftScopeSchema = z
   .strict();
 export const attendanceDraftSaveSchema = attendanceDraftScopeSchema.extend({
   text: z.string().max(1500),
+  sourceAgentDraft: sourceAgentDraftSchema.optional(),
   expectedRevision: z.string().uuid().nullable(),
 });
 export const attendanceDraftClearSchema = attendanceDraftScopeSchema.extend({
   expectedText: z.string().max(1500),
+  expectedSourceAgentDraft: sourceAgentDraftSchema.optional(),
   expectedRevision: z.string().uuid().nullable(),
 });
 export type AttendanceDraftScope = z.infer<typeof attendanceDraftScopeSchema>;
@@ -21,7 +24,12 @@ export type AttendanceDraftSave = z.infer<typeof attendanceDraftSaveSchema>;
 export type AttendanceDraftClear = z.infer<typeof attendanceDraftClearSchema>;
 export type AttendanceDraftSnapshot = {
   revision: string | null;
-  draft: { text: string; updatedAt: string; expiresAt: string } | null;
+  draft: {
+    text: string;
+    updatedAt: string;
+    expiresAt: string;
+    sourceAgentDraft?: SourceAgentDraft;
+  } | null;
 };
 export type AttendanceDraftResult =
   | { ok: true; data: AttendanceDraftSnapshot }

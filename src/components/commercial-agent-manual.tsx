@@ -13,8 +13,10 @@ import type {
   ManualConversation,
   ManualPrepared,
 } from "@/lib/commercial-agent/core";
+import type { ManualQueuePage, ManualQueueRequest } from "@/lib/commercial-agent/queue-read";
 
 export type ManualActions = {
+  search?(request: ManualQueueRequest): Promise<ManualQueuePage>;
   context(conversation: ManualConversation): Promise<ManualContext>;
   pause(conversation: ManualConversation, version: number, paused: boolean): Promise<void>;
   prepare(input: {
@@ -52,17 +54,39 @@ const errors: Record<string, string> = {
 };
 const keyOf = (c: { contactId: string; conversationId: string }) =>
   `${c.contactId}:${c.conversationId}`;
+type SearchConversation = ManualConversation & {
+  contactName: string | null;
+  channel: string | null;
+};
+const contactLabel = (c: SearchConversation) =>
+  c.contactName?.trim() || `Contato sem nome · ${c.contactId.slice(-8)}`;
 
 export function CommercialAgentManual({
   conversations,
   names = {},
   actions,
+  disabled = false,
 }: {
   conversations: ManualConversation[];
   names?: Record<string, string>;
   actions: ManualActions;
+  disabled?: boolean;
 }) {
   const [selected, setSelected] = useState("");
+  const [selectedConversation, setSelectedConversation] = useState<SearchConversation | null>(null);
+  const [choosing, setChoosing] = useState(true);
+  const [query, setQuery] = useState("");
+  const [searchRequest, setSearchRequest] = useState<ManualQueueRequest>({
+    query: "",
+    page: 1,
+    pageSize: 25,
+  });
+  const [searchResult, setSearchResult] = useState<ManualQueuePage | null>(null);
+  const [searchBusy, setSearchBusy] = useState(Boolean(actions.search));
+  const [searchError, setSearchError] = useState(false);
+  const searchSequence = useRef(0);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const selectionHeading = useRef<HTMLHeadingElement>(null);
   const [context, setContext] = useState<ManualContext | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [prepared, setPrepared] = useState<ManualPrepared | null>(null);
@@ -72,8 +96,63 @@ export function CommercialAgentManual({
   const [clock, setClock] = useState(Date.now());
   const actionRef = useRef(actions);
   actionRef.current = actions;
-  const conversation = conversations.find((c) => keyOf(c) === selected);
+  const conversation = conversations.find((c) => keyOf(c) === selected) ?? selectedConversation;
+  const localMatches: SearchConversation[] = actions.search
+    ? []
+    : conversations
+        .map((c) => ({ ...c, contactName: names[c.contactId] ?? null, channel: null }))
+        .filter((c) =>
+          `${c.contactName ?? ""} ${c.contactId} ${c.conversationId}`
+            .toLocaleLowerCase()
+            .includes(searchRequest.query.toLocaleLowerCase()),
+        );
+  const visibleResults = actions.search
+    ? (searchResult?.items ?? []).slice(0, 25)
+    : localMatches.slice((searchRequest.page - 1) * 25, searchRequest.page * 25);
+  const hasMore = actions.search
+    ? Boolean(searchResult?.hasMore)
+    : localMatches.length > searchRequest.page * 25;
   const text = drafts[selected] ?? "";
+  useEffect(() => {
+    if (!actionRef.current.search) return;
+    const sequence = ++searchSequence.current;
+    let active = true;
+    setSearchBusy(true);
+    setSearchError(false);
+    setSearchResult(null);
+    actionRef.current
+      .search(searchRequest)
+      .then((result) => {
+        if (active && sequence === searchSequence.current) setSearchResult(result);
+      })
+      .catch(() => {
+        if (active && sequence === searchSequence.current) setSearchError(true);
+      })
+      .finally(() => {
+        if (active && sequence === searchSequence.current) setSearchBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [searchRequest]);
+  function changeSearch(request: ManualQueueRequest) {
+    searchSequence.current++;
+    setSearchResult(null);
+    setSearchBusy(Boolean(actions.search));
+    setSearchError(false);
+    setSearchRequest(request);
+  }
+  function chooseConversation(item: SearchConversation) {
+    if (busy) return;
+    setSelectedConversation(item);
+    setSelected(keyOf(item));
+    setChoosing(false);
+  }
+  useEffect(() => {
+    if (!selected) return;
+    if (choosing) searchInput.current?.focus();
+    else selectionHeading.current?.focus();
+  }, [selected, choosing]);
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 10000);
     return () => clearInterval(timer);
@@ -92,7 +171,19 @@ export function CommercialAgentManual({
     actionRef.current
       .context(conversation)
       .then((result) => {
-        if (active) setContext(result);
+        if (active) {
+          setContext(result);
+          setSelectedConversation((current) =>
+            current && keyOf(current) === selected
+              ? {
+                  ...current,
+                  sessionVersion: result.sessionVersion,
+                  paused: result.paused,
+                  optOut: result.optOut,
+                }
+              : current,
+          );
+        }
       })
       .catch(() => {
         if (active) setNotice("Não foi possível carregar esta conversa. Atualize o histórico.");
@@ -110,7 +201,13 @@ export function CommercialAgentManual({
     context && conversation && context.sessionVersion !== conversation.sessionVersion,
   );
   const blocked =
-    !conversation || !context || !context.paused || !context.sendAllowed || context.optOut || stale;
+    disabled ||
+    !conversation ||
+    !context ||
+    !context.paused ||
+    !context.sendAllowed ||
+    context.optOut ||
+    stale;
   const latestInbound = context?.snapshot.messages.find(
     (m) => m.id === context.snapshot.event.messageId,
   );
@@ -120,7 +217,7 @@ export function CommercialAgentManual({
     ? `https://app.leadconnectorhq.com/v2/location/${conversation.locationId}/conversations/conversations/${conversation.conversationId}`
     : "";
   async function run(fn: () => Promise<void>) {
-    if (busy) return;
+    if (busy || disabled) return;
     setBusy(true);
     setNotice("");
     try {
@@ -139,6 +236,16 @@ export function CommercialAgentManual({
     if (!conversation) return;
     const fresh = await actions.context(conversation);
     setContext(fresh);
+    setSelectedConversation((current) =>
+      current && keyOf(current) === selected
+        ? {
+            ...current,
+            sessionVersion: fresh.sessionVersion,
+            paused: fresh.paused,
+            optOut: fresh.optOut,
+          }
+        : current,
+    );
     setPrepared(null);
     await actions.refresh();
   }
@@ -151,28 +258,161 @@ export function CommercialAgentManual({
           pausado até a equipe retomá-lo.
         </p>
       </div>
-      <label className="block text-sm font-medium" htmlFor="manual-conversation">
-        Conversa para atendimento
-      </label>
-      <select
-        id="manual-conversation"
-        className="w-full rounded-lg border bg-background p-3 text-sm"
-        value={selected}
-        disabled={busy}
-        onChange={(e) => setSelected(e.target.value)}
-      >
-        <option value="">Selecione uma conversa recebida</option>
-        {conversations.map((c) => (
-          <option key={keyOf(c)} value={keyOf(c)}>
-            {names[c.contactId] ?? "Contato recebido"} · {c.contactId.slice(-8)}
-            {c.paused ? " · Com a equipe" : ""}
-          </option>
-        ))}
-      </select>
-      {!conversations.length && (
-        <p className="text-sm text-muted-foreground">
-          As novas conversas recebidas aparecerão aqui.
-        </p>
+      {selectedConversation && (
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <div className="min-w-0">
+            <h3
+              ref={selectionHeading}
+              tabIndex={-1}
+              className="break-words text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {contactLabel(selectedConversation)}
+            </h3>
+            <p className="break-all text-xs text-muted-foreground">
+              Conversa · {selectedConversation.conversationId.slice(-8)}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={busy}
+            aria-expanded={choosing}
+            aria-controls="manual-search-results"
+            onClick={() => setChoosing((value) => !value)}
+          >
+            {choosing ? "Manter esta conversa" : "Trocar conversa"}
+          </Button>
+        </div>
+      )}
+      {choosing && (
+        <div id="manual-search-results" className="min-w-0 space-y-3">
+          <form
+            role="search"
+            aria-label="Buscar conversa para atendimento"
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              changeSearch({ query: query.trim(), page: 1, pageSize: 25 });
+            }}
+          >
+            <div className="min-w-0 flex-1 basis-48 space-y-1.5">
+              <label className="block text-sm font-medium" htmlFor="manual-conversation-query">
+                Nome ou ID do contato
+              </label>
+              <input
+                ref={searchInput}
+                id="manual-conversation-query"
+                type="search"
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                maxLength={100}
+                autoComplete="off"
+                placeholder="Busque uma conversa recebida"
+              />
+            </div>
+            <Button type="submit" variant="outline">
+              Buscar conversa
+            </Button>
+          </form>
+          <div aria-live="polite" aria-atomic="true" className="text-sm text-muted-foreground">
+            {searchBusy
+              ? "Buscando conversas…"
+              : searchError
+                ? "A busca não foi concluída. Tente novamente."
+                : searchRequest.query
+                  ? `Resultados para “${searchRequest.query}”`
+                  : "Conversas recebidas mais recentes"}
+          </div>
+          {searchError && (
+            <Button
+              variant="outline"
+              onClick={() => changeSearch({ query: searchRequest.query, page: 1, pageSize: 25 })}
+            >
+              Tentar busca novamente
+            </Button>
+          )}
+          {!searchBusy &&
+            !searchError &&
+            (visibleResults.length ? (
+              <ul
+                aria-label="Conversas encontradas"
+                className="max-h-64 divide-y overflow-y-auto rounded-lg border"
+              >
+                {visibleResults.map((item) => (
+                  <li key={keyOf(item)}>
+                    <button
+                      type="button"
+                      className="flex w-full min-w-0 items-start justify-between gap-3 px-3 py-3 text-left text-sm hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+                      disabled={busy}
+                      aria-pressed={keyOf(item) === selected}
+                      aria-label={`Abrir conversa de ${contactLabel(item)} · ${item.conversationId.slice(-8)}`}
+                      onClick={() => chooseConversation(item)}
+                    >
+                      <span className="min-w-0 space-y-1">
+                        <span className="block break-words font-medium">{contactLabel(item)}</span>
+                        <span className="block break-all text-xs text-muted-foreground">
+                          Contato · {item.contactId.slice(-8)} · Conversa ·{" "}
+                          {item.conversationId.slice(-8)}
+                          {item.channel ? ` · ${item.channel}` : " · Canal a conferir"}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {keyOf(item) === selected
+                          ? "Selecionada"
+                          : item.paused
+                            ? "Com a equipe"
+                            : "Abrir"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="py-3 text-sm text-muted-foreground">
+                {searchRequest.query
+                  ? "Nenhuma conversa encontrada. Confira o nome ou procure pelo ID do contato."
+                  : "As conversas recebidas aparecerão aqui. Nenhum histórico é aberto até você selecionar um contato."}
+              </p>
+            ))}
+          {!searchBusy && !searchError && (searchRequest.page > 1 || hasMore) && (
+            <nav
+              aria-label="Páginas de conversas"
+              className="flex flex-wrap items-center justify-between gap-2"
+            >
+              <span className="text-xs tabular-nums text-muted-foreground">
+                Página {searchRequest.page}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  disabled={searchRequest.page <= 1}
+                  onClick={() =>
+                    changeSearch({
+                      ...searchRequest,
+                      page: searchRequest.page - 1,
+                      asOf: searchResult?.asOf,
+                    })
+                  }
+                >
+                  Conversas anteriores
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!hasMore}
+                  onClick={() =>
+                    changeSearch({
+                      ...searchRequest,
+                      page: searchRequest.page + 1,
+                      asOf: searchResult?.asOf,
+                    })
+                  }
+                >
+                  Próximas conversas
+                </Button>
+              </div>
+            </nav>
+          )}
+        </div>
       )}
       {notice && (
         <p role="status" className="rounded-lg border p-3 text-sm">
@@ -191,12 +431,14 @@ export function CommercialAgentManual({
             </a>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={busy} onClick={() => void run(reload)}>
+            <Button variant="outline" disabled={busy || disabled} onClick={() => void run(reload)}>
               Atualizar histórico
             </Button>
             <Button
               variant="outline"
-              disabled={busy || !context || context.optOut || stale || Boolean(unresolved)}
+              disabled={
+                busy || disabled || !context || context.optOut || stale || Boolean(unresolved)
+              }
               onClick={() =>
                 void run(async () => {
                   if (!context) return;
@@ -284,6 +526,11 @@ export function CommercialAgentManual({
                           ? { ...current, paused: true, sessionVersion: result.sessionVersion }
                           : current,
                       );
+                      setSelectedConversation((current) =>
+                        current
+                          ? { ...current, paused: true, sessionVersion: result.sessionVersion }
+                          : current,
+                      );
                       setPrepared(result);
                       await actions.refresh();
                     })
@@ -311,7 +558,7 @@ export function CommercialAgentManual({
                   />
                   <Button
                     variant="outline"
-                    disabled={busy || !/^[A-Za-z0-9_-]{1,100}$/.test(receipt.trim())}
+                    disabled={busy || disabled || !/^[A-Za-z0-9_-]{1,100}$/.test(receipt.trim())}
                     onClick={() =>
                       void run(async () => {
                         await actions.reconcile(context.lastDispatch!.id, receipt.trim());
@@ -359,6 +606,7 @@ export function CommercialAgentManual({
             <Button
               disabled={
                 busy ||
+                disabled ||
                 !prepared ||
                 Date.parse(prepared.expiresAt) <= clock ||
                 prepared.snapshot.event.contactId !== conversation?.contactId ||

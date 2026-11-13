@@ -4,6 +4,7 @@ import {
   ExternalLink,
   ArrowLeft,
   ArrowDown,
+  ArrowRight,
   Mic,
   Paperclip,
   RefreshCw,
@@ -14,7 +15,25 @@ import {
   UserRound,
   Undo2,
   X,
+  BookOpen,
+  Languages,
+  PanelRightClose,
 } from "lucide-react";
+import { InboxTranslator } from "@/components/inbox-translator";
+import { InboxTemplatePicker, type TemplateInsertMode } from "@/components/inbox-template-picker";
+import {
+  InboxAgentPanel,
+  type InboxAgentSuggestionSelection,
+} from "@/components/inbox-agent-panel";
+import type { SourceAgentDraft } from "@/lib/commercial-agent/core";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -47,6 +66,7 @@ import {
 import { useInboxMedia, type InboxAttachment } from "@/components/inbox-media";
 import {
   createInboxDraftStore,
+  sameInboxDraftContent,
   filterLoadedConversations,
   inboxAnalysisFingerprint,
   inboxDraftKey,
@@ -189,6 +209,8 @@ const ANTES_DO_ENVIO = new Set([
   "draft_stale",
   "version_conflict",
   "do_not_contact",
+  "human_paused",
+  "review_required",
   "unsupported_channel",
   "channel_window",
   "whatsapp_sender_unverified",
@@ -222,10 +244,15 @@ const ERROS_ENVIO: Record<string, string> = {
   manual_not_configured: "O envio manual não está configurado nesta clínica.",
   encryption_not_configured: "O envio manual não está configurado nesta clínica.",
   do_not_contact: "Contato com DND ativo ou pedido de interrupção. Envio bloqueado.",
+  human_paused: "O agente está pausado neste contato. Confira a supervisão; nada foi enviado.",
+  review_required:
+    "Esta resposta exige avaliação humana especializada. O texto foi mantido; nada foi enviado.",
+  review_retry_required:
+    "A tentativa foi encerrada antes do envio. Atualize o contexto e revise a resposta novamente.",
   unsupported_channel:
     "Este canal não tem envio manual por esta tela (só SMS, Instagram, Facebook e WhatsApp). Continue no GHL.",
   channel_window:
-    "A última mensagem recebida tem mais de 24 horas: a janela de resposta deste canal fechou. Continue no GHL.",
+    "A janela permitida para responder a esta mensagem encerrou. Confira o atendimento antes de continuar.",
   whatsapp_sender_unverified:
     "Remetente WhatsApp não identificado: o GHL não indicou o número comercial que recebeu a mensagem. Envio bloqueado.",
   request_expired: "O pedido demorou demais e foi interrompido antes do envio. Nada foi enviado.",
@@ -324,6 +351,7 @@ function CaixaGhl({
   const [soNaoLidas, setSoNaoLidas] = useState(false);
   const [canalFiltro, setCanalFiltro] = useState("all");
   const [mobileOpen, setMobileOpen] = useState(Boolean(initialConversation));
+  const listRef = useRef<HTMLDivElement | null>(null);
   useSyncExternalStore(drafts.subscribe, drafts.getVersion, drafts.getVersion);
   const result = useConversasGhl(query);
   const paginas = result.data?.pages ?? [];
@@ -344,8 +372,10 @@ function CaixaGhl({
       : ativa === null
         ? visiveis[0]
         : undefined);
+  const selectedIndex = visiveis.findIndex((c) => c.id === selecionada?.id);
+  const nextConversation = selectedIndex >= 0 ? visiveis[selectedIndex + 1] : undefined;
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3" data-inbox-workspace>
       <details className="shrink-0 text-xs text-muted-foreground">
         <summary className="cursor-pointer">Origem e atualização das conversas</summary>
         <p className="mt-2">
@@ -443,6 +473,7 @@ function CaixaGhl({
             </div>
           </div>
           <div
+            ref={listRef}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
             aria-label="Lista de conversas"
           >
@@ -516,9 +547,26 @@ function CaixaGhl({
               conversa={selecionada}
               organizationId={organizationId}
               fuso={fuso}
+              focusOnOpen={mobileOpen}
               drafts={drafts}
               draftKey={inboxDraftKey(scope, organizationId, selecionada.contactId, selecionada.id)}
-              onBack={() => setMobileOpen(false)}
+              onBack={() => {
+                setMobileOpen(false);
+                requestAnimationFrame(() =>
+                  listRef.current
+                    ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+                    ?.focus({ preventScroll: true }),
+                );
+              }}
+              {...(nextConversation
+                ? {
+                    nextName: nextConversation.nome,
+                    onNext: () => {
+                      setAtiva(nextConversation.id);
+                      setMobileOpen(true);
+                    },
+                  }
+                : {})}
             />
           ) : (
             <div className="surface-card space-y-3 p-5 text-sm text-muted-foreground">
@@ -572,6 +620,9 @@ function ConversaReal({
   drafts,
   draftKey,
   onBack,
+  onNext,
+  nextName,
+  focusOnOpen,
 }: {
   conversa: ConversaGhl;
   organizationId: string;
@@ -579,12 +630,31 @@ function ConversaReal({
   drafts: InboxDraftStore;
   draftKey: string;
   onBack: () => void;
+  onNext?: () => void;
+  nextName?: string;
+  focusOnOpen: boolean;
 }) {
-  const [panelTab, setPanelTab] = useState<"context" | "assistant">("context");
+  type PanelTab = "context" | "assistant" | "templates" | "translator";
+  const [panelTab, setPanelTab] = useState<PanelTab>("context");
+  const [visitedPanels, setVisitedPanels] = useState<Partial<Record<PanelTab, boolean>>>({
+    context: true,
+  });
   const [panelOpen, setPanelOpen] = useState(false);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const composer = useRef<HTMLTextAreaElement | null>(null);
+  const conversationHeading = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (focusOnOpen) conversationHeading.current?.focus({ preventScroll: true });
+  }, [focusOnOpen]);
+  const cursor = useRef({ start: 0, end: 0, text: "" });
+  const { escopo } = useModoDados();
+  const clinicName = useOrganizacao().data?.organizacao.name ?? "";
   const wide = useSyncExternalStore(subscribeWideInbox, wideInboxSnapshot, () => false);
-  function openPanel(tab: "context" | "assistant") {
+  function openPanel(tab: PanelTab) {
     setPanelTab(tab);
+    setVisitedPanels((old) => ({ ...old, [tab]: true }));
+    setPanelCollapsed(false);
     setPanelOpen(true);
   }
   const result = useMensagensGhl(conversa.id);
@@ -611,9 +681,24 @@ function ConversaReal({
     const scope = { organizationId, contactId: conversa.contactId, conversationId: conversa.id };
     return createAttendanceDraftSync(drafts, draftKey, {
       load: () => loadDraft({ data: scope }),
-      save: (text, expectedRevision) => saveDraft({ data: { ...scope, text, expectedRevision } }),
-      clear: (expectedText, expectedRevision) =>
-        clearDraft({ data: { ...scope, expectedText, expectedRevision } }),
+      save: (text, expectedRevision, sourceAgentDraft) =>
+        saveDraft({
+          data: {
+            ...scope,
+            text,
+            expectedRevision,
+            ...(sourceAgentDraft ? { sourceAgentDraft } : {}),
+          },
+        }),
+      clear: (expectedText, expectedRevision, expectedSourceAgentDraft) =>
+        clearDraft({
+          data: {
+            ...scope,
+            expectedText,
+            expectedRevision,
+            ...(expectedSourceAgentDraft ? { expectedSourceAgentDraft } : {}),
+          },
+        }),
     });
   });
   const draftState = useSyncExternalStore(
@@ -633,7 +718,19 @@ function ConversaReal({
     return () => window.removeEventListener("beforeunload", protectDraft);
   }, [draftSync]);
   const draftSendSnapshots = useRef(new Map<string, DraftSendSnapshot | null>());
-  const [undoDraft, setUndoDraft] = useState<{ previous: string; applied: string } | null>(null);
+  const [undoDraft, setUndoDraft] = useState<{
+    previous: string;
+    applied: string;
+    source?: SourceAgentDraft | undefined;
+  } | null>(null);
+  type SuggestionApproval = {
+    text: string;
+    sourceAgentDraft: SourceAgentDraft;
+    draftVersion: number;
+    fingerprint: string;
+    revision: Revisao;
+  };
+  const [suggestionApproval, setSuggestionApproval] = useState<SuggestionApproval | null>(null);
   const historyScroll = useInboxHistoryScroll(mensagens);
   const [analise, setAnalise] = useState<AnaliseIA | null>(null);
   const [erroIA, setErroIA] = useState<string | null>(null);
@@ -847,8 +944,66 @@ function ConversaReal({
       envioRef.current.estado === "a_enviar"
     )
       return;
-    setUndoDraft({ previous: rascunho, applied: text });
+    setUndoDraft({
+      source: drafts.get(draftKey).sourceAgentDraft,
+      previous: rascunho,
+      applied: text,
+    });
     editar(text);
+  }
+  function useAgentSuggestion(selection: InboxAgentSuggestionSelection) {
+    if (
+      selection.contactId !== conversa.contactId ||
+      selection.conversationId !== conversa.id ||
+      envioRef.current.estado === "a_enviar" ||
+      envioRef.current.estado === "incerto" ||
+      result.isError ||
+      !destino?.sendAllowed ||
+      !referencia ||
+      revisaoMudou ||
+      media.isBusy() ||
+      media.snapshot().length > 0 ||
+      !selection.text.trim() ||
+      selection.text.length > LIMITE
+    )
+      return false;
+    const before = drafts.get(draftKey);
+    setUndoDraft({
+      previous: before.text,
+      applied: selection.text,
+      source: before.sourceAgentDraft,
+    });
+    revisao.current += 1;
+    drafts.set(draftKey, selection.text, selection.source);
+    setSuggestionApproval(null);
+    setSuggestionOpen(false);
+    setPanelOpen(false);
+    setAviso("Sugestão no rascunho. Ajuste o texto e revise antes de aprovar o envio.");
+    if (envioRef.current.estado === "aceite") mudarEnvio({ estado: "livre" });
+    requestAnimationFrame(() => composer.current?.focus());
+    return true;
+  }
+  function reviewSuggestion() {
+    const current = drafts.get(draftKey);
+    if (
+      !current.sourceAgentDraft ||
+      !referencia ||
+      !destino?.sendAllowed ||
+      revisaoMudou ||
+      result.isError ||
+      envioRef.current.estado === "a_enviar" ||
+      envioRef.current.estado === "incerto" ||
+      media.isBusy() ||
+      media.snapshot().length
+    )
+      return;
+    setSuggestionApproval({
+      text: current.text,
+      sourceAgentDraft: { ...current.sourceAgentDraft },
+      draftVersion: current.version,
+      fingerprint: contextoAnalise,
+      revision: { ...referencia },
+    });
   }
   // Cada alteração do campo (digitação, sugestão, Jev, correção) gera nova revisão.
   // Durante o envio todas as entradas são recusadas no próprio handler.
@@ -858,6 +1013,34 @@ function ConversaReal({
     setRascunho(texto);
     setAviso(null);
     if (envioRef.current.estado === "aceite") mudarEnvio({ estado: "livre" });
+  }
+  function inserirModelo(text: string, mode: TemplateInsertMode) {
+    if (envioRef.current.estado === "a_enviar" || envioRef.current.estado === "incerto")
+      return false;
+    const before = drafts.get(draftKey).text;
+    const position =
+      cursor.current.text === before
+        ? cursor.current
+        : { start: before.length, end: before.length };
+    const next =
+      mode === "replace"
+        ? text
+        : mode === "append"
+          ? [before, text].filter(Boolean).join("\n\n")
+          : before.slice(0, position.start) + text + before.slice(position.end);
+    if (next.length > LIMITE) {
+      setAviso(
+        `O modelo e o rascunho juntos ultrapassam ${LIMITE} caracteres. O texto atual foi preservado.`,
+      );
+      return false;
+    }
+    setUndoDraft({
+      source: drafts.get(draftKey).sourceAgentDraft,
+      previous: before,
+      applied: next,
+    });
+    editar(next);
+    return true;
   }
   async function corrigir() {
     const draftCapturado = drafts.get(draftKey);
@@ -884,7 +1067,11 @@ function ConversaReal({
       if (r.ok) {
         if (r.texto === texto) setAviso("Nenhuma correção necessária.");
         else {
-          setUndoDraft({ previous: texto, applied: r.texto });
+          setUndoDraft({
+            source: drafts.get(draftKey).sourceAgentDraft,
+            previous: texto,
+            applied: r.texto,
+          });
           editar(r.texto);
           setAviso("Correção aplicada. Reveja e edite livremente antes de enviar.");
         }
@@ -895,7 +1082,7 @@ function ConversaReal({
       if (vivo.current) setCorrigindo(false);
     }
   }
-  async function enviar() {
+  async function enviar(approval?: SuggestionApproval) {
     const atual = envioRef.current.estado;
     // Incerto nunca envia: só verificação de leitura. Nenhuma retomada de texto oculto.
     if (
@@ -907,12 +1094,29 @@ function ConversaReal({
     )
       return;
     // Texto EXATO visível no campo agora: trim só para testar vazio.
-    const texto = drafts.get(draftKey).text;
+    const currentDraft = drafts.get(draftKey);
+    const texto = currentDraft.text;
+    const sourceAgentDraft = currentDraft.sourceAgentDraft;
+    if (
+      (sourceAgentDraft || approval) &&
+      (!sourceAgentDraft ||
+        !approval ||
+        approval.draftVersion !== currentDraft.version ||
+        !sameInboxDraftContent(currentDraft, approval) ||
+        approval.fingerprint !== contextoAnalise ||
+        !referencia ||
+        !mesmaRevisao(approval.revision, referencia) ||
+        result.isError)
+    ) {
+      setSuggestionApproval(null);
+      setAviso("O rascunho ou a conversa mudou. Revise novamente; nada foi enviado.");
+      return;
+    }
     const revisaoEnvio = referencia;
     if (!revisaoEnvio || !destino?.sendAllowed || revisaoMudou) return;
     const attachments = media.snapshot();
     if ((!texto.trim() && attachments.length === 0) || texto.length > LIMITE) return;
-    if (attachments.length && !mediaPermitida) return;
+    if (attachments.length && (!mediaPermitida || sourceAgentDraft)) return;
     if (!pedido.current || pedido.current.rev !== revisao.current)
       pedido.current = { rev: revisao.current, id: crypto.randomUUID() };
     const requestId = pedido.current.id;
@@ -921,6 +1125,7 @@ function ConversaReal({
     const rev = revisao.current;
     const desde = Date.now();
     mudarEnvio({ estado: "a_enviar" });
+    setSuggestionApproval(null);
     setAviso(null);
     let draftRevision: string | null = null;
     let requestStarted = false;
@@ -928,7 +1133,8 @@ function ConversaReal({
       mudarEnvio({ estado: "incerto", requestId, manualId, desde, draftRevision });
     try {
       const persisted = await draftSync.beforeSend();
-      const snapshot = persisted?.text === texto ? persisted : null;
+      const snapshot =
+        persisted && sameInboxDraftContent(persisted, currentDraft) ? persisted : null;
       draftRevision = snapshot?.text ? snapshot.revision : null;
       draftSendSnapshots.current.set(requestId, snapshot);
       // Persistir só quando o POST vai começar; salvar rascunho ainda não é enviar.
@@ -941,6 +1147,7 @@ function ConversaReal({
           conversationId: conversa.id,
           text: texto,
           draftRevision,
+          ...(sourceAgentDraft ? { sourceAgentDraft } : {}),
           ...(attachments.length ? { attachments } : {}),
           requestId,
           revision: revisaoEnvio,
@@ -1038,7 +1245,9 @@ function ConversaReal({
       setAviso(
         code === "route_changed"
           ? erroEnvio("route_changed")
-          : "O GHL recusou este envio (pode ser permissão, conexão do canal ou janela). O texto foi mantido. Pode tentar de novo com um novo clique em Enviar.",
+          : drafts.get(draftKey).sourceAgentDraft
+            ? "O GHL recusou este envio. O texto foi mantido. Confira o canal na supervisão; esta sugestão já foi tratada e precisa de uma nova revisão pelo atendimento humano."
+            : "O GHL recusou este envio (pode ser permissão, conexão do canal ou janela). O texto foi mantido. Pode tentar de novo com um novo clique em Enviar.",
       );
     } else if (state === "invalidated") {
       drafts.forget(requestId);
@@ -1048,7 +1257,7 @@ function ConversaReal({
       setReferencia(null);
       setTick((t) => t + 1);
       void result.refetch();
-      setAviso(erroEnvio("draft_stale"));
+      setAviso(erroEnvio(code === "review_retry_required" ? code : "draft_stale"));
     } else
       // prepared/sending/unknown não são terminais: o pedido original pode ainda enviar.
       mudarEnvio({ estado: "incerto", requestId, manualId, ...extra });
@@ -1118,7 +1327,7 @@ function ConversaReal({
     destino?.mediaAllowed === true &&
     destino.channel === "SMS" &&
     Boolean(destino.revision?.providerId);
-  const mediaBloqueada = enviando || envio.estado === "incerto";
+  const mediaBloqueada = enviando || envio.estado === "incerto" || Boolean(draft.sourceAgentDraft);
   const url = `https://app.gohighlevel.com/v2/location/${conversa.locationId}/contacts/detail/${conversa.contactId}`;
   const panel = (
     <>
@@ -1131,7 +1340,7 @@ function ConversaReal({
           aria-pressed={panelTab === "context"}
           variant={panelTab === "context" ? "secondary" : "ghost"}
           size="sm"
-          onClick={() => setPanelTab("context")}
+          onClick={() => openPanel("context")}
         >
           Contexto
         </Button>
@@ -1139,9 +1348,25 @@ function ConversaReal({
           aria-pressed={panelTab === "assistant"}
           variant={panelTab === "assistant" ? "secondary" : "ghost"}
           size="sm"
-          onClick={() => setPanelTab("assistant")}
+          onClick={() => openPanel("assistant")}
         >
-          Assistente
+          Izabel
+        </Button>
+        <Button
+          aria-pressed={panelTab === "templates"}
+          variant={panelTab === "templates" ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => openPanel("templates")}
+        >
+          Texto-base
+        </Button>
+        <Button
+          aria-pressed={panelTab === "translator"}
+          variant={panelTab === "translator" ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => openPanel("translator")}
+        >
+          Tradução
         </Button>
       </div>
       <div hidden={panelTab !== "context"}>
@@ -1153,6 +1378,10 @@ function ConversaReal({
         />
       </div>
       <div hidden={panelTab !== "assistant"}>
+        <p className="px-4 pt-3 text-xs text-muted-foreground">
+          A sugestão supervisionada está junto ao rascunho da conversa. Este apoio adicional não
+          envia mensagens.
+        </p>
         <section className="space-y-3 p-4" aria-label="Assistência IA">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <button
@@ -1162,7 +1391,8 @@ function ConversaReal({
               aria-expanded={mostrarAnalise}
             >
               <Sparkles className="size-4" />
-              Assistência IA{analiseDesatualizada && <Badge variant="outline">Desatualizada</Badge>}
+              Apoio à escrita
+              {analiseDesatualizada && <Badge variant="outline">Desatualizada</Badge>}
             </button>
             <Button
               size="sm"
@@ -1238,13 +1468,54 @@ function ConversaReal({
           )}
         </section>
       </div>
+      <div hidden={panelTab !== "templates"}>
+        {visitedPanels.templates && (
+          <InboxTemplatePicker
+            organizationId={organizationId}
+            contactId={conversa.contactId}
+            scope={escopo}
+            clinicName={clinicName}
+            hasDraft={Boolean(rascunho)}
+            draftVersion={draft.version}
+            disabled={enviando || envio.estado === "incerto"}
+            onInsert={inserirModelo}
+          />
+        )}
+      </div>
+      <div hidden={panelTab !== "translator"}>
+        {visitedPanels.translator && (
+          <InboxTranslator
+            workspaceKey={draftKey}
+            currentDraft={rascunho}
+            draftVersion={draft.version}
+            messages={mensagens
+              .filter((m) => m.direcao === "inbound" && m.texto)
+              .map((m) => ({ id: m.id, text: m.texto }))}
+            disabled={enviando || envio.estado === "incerto"}
+            onApply={(text) => {
+              if (envioRef.current.estado === "a_enviar" || envioRef.current.estado === "incerto")
+                return;
+              setUndoDraft({
+                source: drafts.get(draftKey).sourceAgentDraft,
+                previous: drafts.get(draftKey).text,
+                applied: text,
+              });
+              editar(text);
+            }}
+          />
+        )}
+      </div>
     </>
   );
   return (
-    <div className="grid h-full min-h-0 min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
+    <div
+      className={`grid h-full min-h-0 min-w-0 gap-3 ${panelCollapsed ? "" : "xl:grid-cols-[minmax(0,1fr)_300px]"}`}
+    >
       <section
         className="surface-card flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
         aria-label={`Atendimento de ${conversa.nome}`}
+        data-inbox-conversation
+        data-suggestion-open={suggestionOpen}
       >
         <header className="max-h-[30%] shrink-0 overflow-y-auto border-b border-border px-3 py-3 sm:px-4">
           <div className="flex items-start justify-between gap-2">
@@ -1262,7 +1533,13 @@ function ConversaReal({
                 <ArrowLeft className="size-4" />
               </Button>
               <div className="min-w-0">
-                <h2 className="truncate font-semibold">{conversa.nome}</h2>
+                <h2
+                  ref={conversationHeading}
+                  tabIndex={-1}
+                  className="truncate font-semibold focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  {conversa.nome}
+                </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                   <Badge variant="outline">
                     {destino?.channel ?? canalMensagem(conversa.tipo)}
@@ -1280,13 +1557,26 @@ function ConversaReal({
               <Button
                 size="sm"
                 variant="outline"
-                className="xl:hidden"
+                className={panelCollapsed ? "" : "xl:hidden"}
                 onClick={() => openPanel("context")}
                 aria-label="Ver contexto do atendimento"
               >
                 <UserRound className="size-4" />
                 <span className="hidden sm:inline">Contexto</span>
               </Button>
+              {wide && !panelCollapsed && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Recolher painel do atendimento"
+                  onClick={() => {
+                    setPanelCollapsed(true);
+                    setPanelOpen(false);
+                  }}
+                >
+                  <PanelRightClose className="size-4" />
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -1328,7 +1618,7 @@ function ConversaReal({
             </p>
           </details>
         </header>
-        <div className="relative min-h-20 flex-1">
+        <div className="inbox-history relative min-h-20 flex-1">
           <div
             ref={historyScroll.ref}
             onScroll={historyScroll.onScroll}
@@ -1429,15 +1719,68 @@ function ConversaReal({
         <div
           className="flex max-h-[48%] min-h-[11rem] shrink flex-col border-t border-border bg-card"
           aria-label="Preparar resposta"
+          data-inbox-composer
         >
           <div className="min-h-0 space-y-2 overflow-y-auto px-3 pt-3 sm:px-4">
+            <details
+              open={suggestionOpen}
+              onToggle={(event) => setSuggestionOpen(event.currentTarget.open)}
+              className="inbox-suggestion"
+              data-inbox-suggestion
+            >
+              <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+                <span>Sugestão supervisionada</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {suggestionOpen ? "Voltar à conversa" : "Revisar"}
+                </span>
+              </summary>
+              <InboxAgentPanel
+                organizationId={organizationId}
+                contactId={conversa.contactId}
+                conversationId={conversa.id}
+                timeZone={fuso}
+                hasDraft={Boolean(rascunho)}
+                onUseSuggestion={useAgentSuggestion}
+                disabled={
+                  enviando ||
+                  envio.estado === "incerto" ||
+                  !destino?.sendAllowed ||
+                  revisaoMudou ||
+                  result.isError ||
+                  Boolean(media.draft) ||
+                  media.state !== "idle"
+                }
+                disabledReason={
+                  media.draft
+                    ? "Remova ou conclua o anexo antes de revisar uma sugestão de texto."
+                    : (erroDestino ??
+                      (revisaoMudou
+                        ? "Confira as mensagens novas antes de usar uma sugestão."
+                        : "Confira o canal e o estado do envio antes de revisar."))
+                }
+              />
+            </details>
+            {draft.sourceAgentDraft && (
+              <p className="text-xs text-primary" role="status">
+                Sugestão em edição · envio somente após sua aprovação.
+              </p>
+            )}
             <label className="block text-sm font-medium" htmlFor="rascunho-ghl">
               Rascunho para {conversa.nome}
             </label>
             <Textarea
+              ref={composer}
               id="rascunho-ghl"
               value={rascunho}
               onChange={(e) => editar(e.target.value)}
+              onSelect={(e) => {
+                const field = e.currentTarget;
+                cursor.current = {
+                  start: field.selectionStart,
+                  end: field.selectionEnd,
+                  text: field.value,
+                };
+              }}
               readOnly={enviando}
               disabled={enviando}
               aria-busy={enviando}
@@ -1496,6 +1839,7 @@ function ConversaReal({
                       disabled={enviando}
                       onClick={() => {
                         setUndoDraft({
+                          source: drafts.get(draftKey).sourceAgentDraft,
                           previous: rascunho,
                           applied: draftState.remote?.draft?.text ?? "",
                         });
@@ -1554,6 +1898,7 @@ function ConversaReal({
                   disabled={enviando}
                   onClick={() => {
                     editar(undoDraft.previous);
+                    drafts.set(draftKey, undoDraft.previous, undoDraft.source ?? null);
                     setUndoDraft(null);
                   }}
                 >
@@ -1562,7 +1907,12 @@ function ConversaReal({
                 </Button>
               )}
             </div>
-            <div className="space-y-2" aria-label="Anexo da resposta">
+            <details className="space-y-2" aria-label="Anexo da resposta">
+              <summary className="min-h-9 cursor-pointer content-center text-xs text-muted-foreground">
+                {draft.sourceAgentDraft
+                  ? "Anexos indisponíveis durante a revisão da sugestão"
+                  : "Imagem ou áudio"}
+              </summary>
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={arquivoInput}
@@ -1699,13 +2049,13 @@ function ConversaReal({
                   )}
                 </div>
               )}
-            </div>
+            </details>
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">Revisão e privacidade do rascunho</summary>
               <p className="mt-1">
-                Apenas o texto pode ser recuperado entre sessões quando o salvamento estiver
-                disponível. Anexos e gravações são descartados ao sair da conversa. Nenhum rascunho
-                é enviado automaticamente.
+                Texto e referência da sugestão podem ser recuperados entre sessões quando o
+                salvamento estiver disponível. Anexos e gravações são descartados ao sair da
+                conversa. Nenhum rascunho é enviado automaticamente.
               </p>
             </details>
             <p className="text-xs text-muted-foreground">
@@ -1790,7 +2140,7 @@ function ConversaReal({
             )}
           </div>
           <div className="shrink-0 border-t border-border px-3 py-2 sm:px-4">
-            <div className="flex flex-wrap gap-2">
+            <div className="inbox-tools flex flex-wrap gap-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -1798,7 +2148,26 @@ function ConversaReal({
                 aria-label="Abrir assistente IA"
               >
                 <Sparkles className="size-4" />
-                <span className="hidden sm:inline">Assistente</span>
+                <span>Apoio IA</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openPanel("templates")}
+                aria-label="Abrir modelos de mensagem"
+              >
+                <BookOpen className="size-4" />
+                <span>Modelos</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openPanel("translator")}
+                aria-label="Abrir tradutor"
+                className={wide && !panelCollapsed ? "hidden" : ""}
+              >
+                <Languages className="size-4" />
+                <span>Tradução</span>
               </Button>
               <Button
                 variant="outline"
@@ -1821,17 +2190,106 @@ function ConversaReal({
                   revisaoMudou ||
                   rascunho.length > LIMITE
                 }
-                onClick={() => void enviar()}
+                onClick={() => (draft.sourceAgentDraft ? reviewSuggestion() : void enviar())}
               >
                 <Send className="size-4" />{" "}
-                {enviando ? "A enviar…" : `Enviar para ${conversa.nome}`}
+                {enviando
+                  ? "A enviar…"
+                  : draft.sourceAgentDraft
+                    ? "Revisar e aprovar"
+                    : `Enviar para ${conversa.nome}`}
+              </Button>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground">
+                {nextName ? `Na lista atual: ${nextName}` : "Último atendimento da lista carregada"}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onNext}
+                disabled={
+                  !onNext ||
+                  enviando ||
+                  envio.estado === "incerto" ||
+                  media.state !== "idle" ||
+                  Boolean(media.draft) ||
+                  Boolean(suggestionApproval)
+                }
+                title="Abre a próxima conversa da lista atual, sem arquivar ou marcar como lida"
+              >
+                Próximo atendimento <ArrowRight className="size-4" />
               </Button>
             </div>
           </div>
         </div>
       </section>
+      <Dialog
+        open={Boolean(suggestionApproval)}
+        onOpenChange={(open) => !open && setSuggestionApproval(null)}
+      >
+        <DialogContent
+          className="max-h-[90dvh] overflow-y-auto"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            composer.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Aprovar resposta para {conversa.nome}</DialogTitle>
+            <DialogDescription>
+              Confira o texto final e o destinatário. Aprovar envia esta mensagem pelo canal{" "}
+              {destino?.channel ?? "não verificado"}.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="whitespace-pre-wrap break-words rounded-lg border p-4 text-sm">
+            {suggestionApproval?.text}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Sua revisão ficará vinculada à sugestão original. A aprovação vale somente para esta
+            versão e esta conversa.
+          </p>
+          {suggestionApproval &&
+            (suggestionApproval.draftVersion !== draft.version ||
+              suggestionApproval.fingerprint !== contextoAnalise ||
+              revisaoMudou ||
+              result.isError ||
+              !destino?.sendAllowed) && (
+              <p role="alert" className="text-sm text-destructive">
+                A conversa ou o rascunho mudou. Volte ao texto e revise novamente.
+              </p>
+            )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSuggestionApproval(null);
+                requestAnimationFrame(() => composer.current?.focus());
+              }}
+            >
+              Voltar ao texto
+            </Button>
+            <Button
+              disabled={
+                !suggestionApproval ||
+                enviando ||
+                envio.estado === "incerto" ||
+                !destino?.sendAllowed ||
+                revisaoMudou ||
+                result.isError ||
+                suggestionApproval.draftVersion !== draft.version ||
+                suggestionApproval.fingerprint !== contextoAnalise
+              }
+              onClick={() => suggestionApproval && void enviar(suggestionApproval)}
+            >
+              Aprovar e enviar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <InboxContextDock
         wide={wide}
+        collapsed={panelCollapsed}
         open={panelOpen}
         onOpenChange={setPanelOpen}
         title={`Atendimento de ${conversa.nome}`}
