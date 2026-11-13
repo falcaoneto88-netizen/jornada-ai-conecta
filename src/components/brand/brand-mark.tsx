@@ -19,9 +19,9 @@ export function BrandMonogram({
       <img
         src={BRAND_MONOGRAM_SRC}
         alt={decorative ? "" : "Jornada AI — Dr. João Falcão"}
-        width={34}
-        height={34}
-        className="size-[34px] object-contain"
+        width={50}
+        height={50}
+        className="size-[50px] max-w-none shrink-0 object-contain"
         draggable={false}
       />
     </span>
