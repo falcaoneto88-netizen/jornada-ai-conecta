@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { BrandSignaturePanel } from "@/components/brand/brand-mark";
 import { PlayCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -111,9 +112,7 @@ function Auth() {
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <span className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-heading text-sm font-semibold text-background">
-            JF
-          </span>
+          <BrandSignaturePanel className="mb-5" />
           <h1 className="display-title text-2xl text-heading">Jornada AI</h1>
           <p className="mt-1 text-sm text-muted-foreground">Dr. João Falcão — atendimento e automações</p>
         </div>

@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { BrandMonogram } from "@/components/brand/brand-mark";
 import {
   LayoutDashboard,
   Inbox,
@@ -172,12 +173,7 @@ export function AppShell({
         <div
           className={cn("flex items-center gap-3 px-5 py-6", collapsed && "justify-center px-2")}
         >
-          <span
-            data-app-brand
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-semibold"
-          >
-            JF
-          </span>
+          <BrandMonogram decorative={!collapsed} />
           {!collapsed && (
             <div className="min-w-0">
               <p className="display-title truncate text-base leading-tight">Jornada AI</p>
@@ -216,8 +212,9 @@ export function AppShell({
             data-app-sidebar
             className="relative flex h-full w-[264px] flex-col bg-sidebar shadow-xl"
           >
-            <div className="flex items-center justify-between px-5 py-6">
-              <div>
+            <div className="flex items-center justify-between gap-3 px-5 py-6">
+              <BrandMonogram decorative />
+              <div className="min-w-0 flex-1">
                 <p className="display-title text-base leading-tight">Jornada AI</p>
                 <p className="text-xs text-sidebar-foreground/80">Dr. João Falcão</p>
               </div>
