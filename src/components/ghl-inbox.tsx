@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { InboxBookingPanel } from "@/components/inbox-booking-panel";
 import { InboxIzabelPanel, type IzabelDraftExpectation } from "@/components/inbox-izabel-panel";
-import { InboxTemplatePicker, type TemplateInsertMode } from "@/components/inbox-template-picker";
 import {
   InboxAgentPanel,
   type InboxAgentSuggestionSelection,
@@ -632,7 +631,6 @@ function ConversaReal({
   nextName?: string;
   focusOnOpen: boolean;
 }) {
-  const [libraryOpen, setLibraryOpen] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
@@ -644,7 +642,6 @@ function ConversaReal({
   }, [focusOnOpen]);
   const cursor = useRef({ start: 0, end: 0, text: "" });
   const { escopo } = useModoDados();
-  const clinicName = useOrganizacao().data?.organizacao.name ?? "";
   const wide = useSyncExternalStore(subscribeWideInbox, wideInboxSnapshot, () => false);
   function openPanel() {
     setPanelCollapsed(false);
@@ -983,34 +980,6 @@ function ConversaReal({
     setAviso(null);
     if (envioRef.current.estado === "aceite") mudarEnvio({ estado: "livre" });
   }
-  function inserirModelo(text: string, mode: TemplateInsertMode) {
-    if (envioRef.current.estado === "a_enviar" || envioRef.current.estado === "incerto")
-      return false;
-    const before = drafts.get(draftKey).text;
-    const position =
-      cursor.current.text === before
-        ? cursor.current
-        : { start: before.length, end: before.length };
-    const next =
-      mode === "replace"
-        ? text
-        : mode === "append"
-          ? [before, text].filter(Boolean).join("\n\n")
-          : before.slice(0, position.start) + text + before.slice(position.end);
-    if (next.length > LIMITE) {
-      setAviso(
-        `O modelo e o rascunho juntos ultrapassam ${LIMITE} caracteres. O texto atual foi preservado.`,
-      );
-      return false;
-    }
-    setUndoDraft({
-      source: drafts.get(draftKey).sourceAgentDraft,
-      previous: before,
-      applied: next,
-    });
-    editar(next);
-    return true;
-  }
   async function corrigir() {
     const draftCapturado = drafts.get(draftKey);
     const texto = draftCapturado.text;
@@ -1336,27 +1305,6 @@ function ConversaReal({
           conversationId={conversa.id}
           fuso={fuso}
         />
-      </details>
-      <details
-        className="border-t border-border"
-        open={libraryOpen}
-        onToggle={(event) => setLibraryOpen(event.currentTarget.open)}
-      >
-        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
-          Modelos de apoio
-        </summary>
-        {libraryOpen && (
-          <InboxTemplatePicker
-            organizationId={organizationId}
-            contactId={conversa.contactId}
-            scope={escopo}
-            clinicName={clinicName}
-            hasDraft={Boolean(rascunho)}
-            draftVersion={draft.version}
-            disabled={enviando || envio.estado === "incerto"}
-            onInsert={inserirModelo}
-          />
-        )}
       </details>
     </>
   );

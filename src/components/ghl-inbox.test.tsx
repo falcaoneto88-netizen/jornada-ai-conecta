@@ -1595,24 +1595,20 @@ it("falha ao persistir limpeza conserva a intenção confirmada e avisa para man
   expect(mocks.enviar).toHaveBeenCalledTimes(1);
 });
 
-it("biblioteca fica como apoio opcional dentro da Izabel e só altera o rascunho", async () => {
+it("painel da Izabel não tem modelos, texto-base nem tradutor", async () => {
   mocks.enviar.mockResolvedValue({ ok: true, data: { messageId: "one-send" } });
   render(<GhlInbox />);
   await flush();
   escrever("Minha resposta");
   fireEvent.click(screen.getByRole("button", { name: "Abrir Izabel" }));
-  fireEvent.click(screen.getByText("Modelos de apoio"));
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Inserir modelo sintético" })).toBeTruthy(),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Inserir modelo sintético" }));
-  expect(campo().value).toBe("Minha resposta\n\nTexto de teste");
+  expect(screen.queryByText("Modelos de apoio")).toBeNull();
+  expect(campo().value).toBe("Minha resposta");
   expect(screen.queryByRole("button", { name: "Abrir tradutor" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Texto-base" })).toBeNull();
   expect(mocks.enviar).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Enviar para Ana" }));
   await waitFor(() => expect(mocks.enviar).toHaveBeenCalledTimes(1));
-  expect(mocks.enviar.mock.calls[0]?.[0].data.text).toBe("Minha resposta\n\nTexto de teste");
+  expect(mocks.enviar.mock.calls[0]?.[0].data.text).toBe("Minha resposta");
 });
 
 it("sugestão supervisionada fica na conversa e só preenche o editor, sem envio ou análise nova", async () => {
