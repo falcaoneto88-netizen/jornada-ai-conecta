@@ -31,7 +31,7 @@ import {
   formatarData as dataPt,
   formatarDataHora as dataHoraPt,
 } from "@/lib/clinic-time";
-import { opcoesOrganizacao } from "@/lib/organization";
+import { opcoesOrganizacao, useOrganizacao } from "@/lib/organization";
 
 function gerarId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -271,9 +271,13 @@ export type Marcacao = {
   titulo: string;
   cliente: string;
   clienteId: string | null;
+  clienteGhlId?: string | null;
+  ghlAppointmentId?: string | null;
   inicio: string;
   inicioIso: string;
   fim: string | null;
+  fimIso?: string | null;
+  atualizadaIso?: string | null;
   estado: string;
   responsavel: string | null;
 };
@@ -297,28 +301,34 @@ type LinhaMarcacaoBd = {
   status: string;
   assigned_user_name: string | null;
   contact_id: string | null;
-  contacts: { full_name: string } | null;
+  ghl_appointment_id: string | null;
+  updated_at: string;
+  contacts: { full_name: string; ghl_contact_id: string | null } | null;
 };
 
 /** Marcações reais da organização (só leitura). Em demonstração fica vazia. */
 export function useMarcacoes() {
   const { demo, escopo, user, carregando } = useModoDados();
-  const qc = useQueryClient();
+  const contexto = useOrganizacao();
+  const orgId = contexto.data?.organizacao.id;
   return useQuery<Marcacao[]>({
-    queryKey: ["marcacoes", escopo],
+    queryKey: ["marcacoes", escopo, orgId],
     // A importação corre de hora a hora no backend; o quadro recarrega sozinho.
     refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
-    enabled: !carregando && (demo || Boolean(user)),
+    enabled: !carregando && (demo || Boolean(user && orgId && !contexto.isError)),
     queryFn: async () => {
       if (demo) return [];
-      const fuso = demo
-        ? FUSO_DEMO
-        : (await qc.fetchQuery(opcoesOrganizacao(user?.id))).organizacao.timezone;
+      if (!orgId || !contexto.data || contexto.isError)
+        throw new Error("Organização indisponível.");
+      const fuso = contexto.data.organizacao.timezone;
       const { data, error } = await supabase
         .from("appointments")
-        .select("id,title,start_at,end_at,status,assigned_user_name,contact_id,contacts(full_name)")
+        .select(
+          "id,title,start_at,end_at,status,assigned_user_name,contact_id,ghl_appointment_id,updated_at,contacts(full_name,ghl_contact_id)",
+        )
         .eq("is_demo", false)
+        .eq("organization_id", orgId)
         .order("start_at", { ascending: true });
       if (error) throw error;
       return (data as unknown as LinhaMarcacaoBd[]).map((m) => ({
@@ -326,9 +336,13 @@ export function useMarcacoes() {
         titulo: m.title,
         cliente: m.contacts?.full_name ?? "Cliente por associar",
         clienteId: m.contact_id,
+        clienteGhlId: m.contacts?.ghl_contact_id ?? null,
+        ghlAppointmentId: m.ghl_appointment_id,
         inicio: dataHoraPt(m.start_at, fuso),
         inicioIso: m.start_at,
         fim: m.end_at ? dataHoraPt(m.end_at, fuso) : null,
+        fimIso: m.end_at,
+        atualizadaIso: m.updated_at,
         estado: m.status,
         responsavel: m.assigned_user_name,
       }));
@@ -379,9 +393,7 @@ export function useContactos() {
         responsavel: c.owner_name ?? "—",
         proximaAcao: c.next_action ?? "—",
         ultimaInteracao: dataPt(c.last_interaction_at ?? c.updated_at, fuso),
-        agendamento: proximas.has(c.id)
-          ? dataHoraPt(proximas.get(c.id), fuso)
-          : null,
+        agendamento: proximas.has(c.id) ? dataHoraPt(proximas.get(c.id), fuso) : null,
         timeline: [
           {
             data: dataPt(c.created_at, fuso),

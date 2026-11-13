@@ -8,7 +8,7 @@ import { createFileRoute } from "@tanstack/react-router";
  * de fora, qual a versão publicada. `release` é o identificador do ambiente,
  * quando existe.
  */
-const BUILD = "jornada-global-palette-20261113.1";
+const BUILD = "jornada-agenda-workspace-20261113.1";
 
 export const Route = createFileRoute("/api/version")({
   server: {
@@ -28,6 +28,7 @@ export const Route = createFileRoute("/api/version")({
               inboxManualMedia: 1,
               inboxWorkspace: 1,
               overviewAgenda: 1,
+              appointmentFinance: 1,
               attendanceContext: 1,
               attendanceDrafts: 1,
               attendanceDraftRecovery: 1,
