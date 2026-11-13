@@ -495,7 +495,7 @@ describe("acesso da triagem ao atendimento da conversa", () => {
     render(
       <CommercialAgentQueue view={{ ...view, items: [...view.items, other] }} actions={actions} />,
     );
-    const first = screen.getByRole("link", { name: "Ajustar no Atendimento" });
+    const first = screen.getByRole("link", { name: "Ajustar no Meu Chat" });
     expect(first.getAttribute("href")).toBe(
       "/caixa-de-entrada?contact=contato-ficticio&conversation=conversa-ficticia",
     );
@@ -504,7 +504,7 @@ describe("acesso da triagem ao atendimento da conversa", () => {
         name: /Outro contato fictício/,
       }),
     );
-    const selected = screen.getByRole("link", { name: "Ajustar no Atendimento" });
+    const selected = screen.getByRole("link", { name: "Ajustar no Meu Chat" });
     expect(selected.getAttribute("href")).toBe(
       "/caixa-de-entrada?contact=contato-B+%2B%2F%26%3F&conversation=conversa-B+%2B%2F%26%3F",
     );
@@ -520,7 +520,7 @@ describe("acesso da triagem ao atendimento da conversa", () => {
     view.items[0].content = null;
     view.items[0].state = "unknown";
     render(<CommercialAgentQueue view={view} actions={actions} focused />);
-    expect(screen.getByRole("link", { name: "Abrir no Atendimento" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Abrir no Meu Chat" }).getAttribute("href")).toBe(
       "/caixa-de-entrada?contact=contato-ficticio&conversation=conversa-ficticia",
     );
     expect(screen.getByRole("alert").textContent).toContain("Este envio precisa de conferência");
@@ -533,7 +533,7 @@ describe("acesso da triagem ao atendimento da conversa", () => {
       const { view, actions } = fixture();
       view.items[0][field] = "outro-escopo";
       render(<CommercialAgentQueue view={view} actions={actions} focused />);
-      expect(screen.queryByRole("link", { name: /no Atendimento/ })).toBeNull();
+      expect(screen.queryByRole("link", { name: /no Meu Chat/ })).toBeNull();
       expect(actions.approve).not.toHaveBeenCalled();
     },
   );
@@ -541,6 +541,6 @@ describe("acesso da triagem ao atendimento da conversa", () => {
   it("a demonstração não liga registros fictícios ao atendimento real", () => {
     const { view, actions } = fixture();
     render(<CommercialAgentQueue view={view} actions={actions} demo focused />);
-    expect(screen.queryByRole("link", { name: /no Atendimento/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /no Meu Chat/ })).toBeNull();
   });
 });
