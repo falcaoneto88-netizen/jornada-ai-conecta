@@ -56,3 +56,9 @@ Pós-catálogo: fila md5 `80d21458f06b8ff1bd7821cfd3c61d87`, STABLE; manual md5 
 Extras da ferramenta: `drizzle/migrations/0023|0024_*.sql`, `meta/0023|0024_snapshot.json`, `meta/_journal.json`, `src/integrations/supabase/types.ts`.
 
 Gates no Lovable: TSC OK, build OK, `git diff --check` OK; vitest 90 arquivos/1957 testes aprovados, 382 ignorados; 20 suítes `*.db.test.ts` não executaram (sem `PG_TEST_BINDIR`) e `src/routes/-real-data.test.tsx` (fora do pacote) falhou por mock sem `createMiddleware`. ESLint nos arquivos do pacote: 0 erros/3 avisos (regra prettier desligada; repositório inteiro tem erros prettier preexistentes). Nenhum teste de migração contra produção, nenhum envio, nenhuma alteração em flags/V02/GHL/DND/workflows. Publicação ainda não acionada.
+
+### Correção da simulação do teste de rota (13/11/2026)
+
+ZIP `JORNADA_IA_REAL_DATA_TEST_FIX.zip` SHA-256 `4d608c07…af41cc52`. Único arquivo: `src/routes/-real-data.test.tsx`, antes `28c1d10e…5cf4e` (igual ao `baseSha256`), depois `a425263f…0558b7`. A falha `createMiddleware` era preexistente na base `a75951e`; a simulação passou a cobrir a fronteira `readAttendanceWorkspace`, `useModoDados` e `useQuery` por chave, mantendo o componente real Meu dia. Nenhum código de produção alterado.
+
+Resultados no Lovable: `-real-data.test.tsx` + `attendance-my-day.test.tsx` 17/17 aprovados (2 arquivos); TSC global OK. Lint: com ESLint original (Prettier ativo) nos TS/TSX do overlay + `api/version.ts` + teste corrigido, 0 erros/3 avisos. A contagem anterior de erros de formatação refere-se ao repositório inteiro (escopo diferente, formatação antiga fora do pacote), não ao gate desta entrega.

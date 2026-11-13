@@ -14,9 +14,42 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: estado.secrets, isPending: false, isError: false }),
+  useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => ({
+    data:
+      queryKey[0] === "attendance-workspace"
+        ? {
+            ok: true,
+            data: {
+              organizationId: "org-a",
+              timezone: "Europe/Lisbon",
+              checkedAt: "2026-09-14T12:00:00Z",
+              day: {
+                date: "2026-09-14",
+                startAt: "2026-09-13T23:00:00Z",
+                endAt: "2026-09-14T23:00:00Z",
+              },
+              source: { kind: "local", lastContactSyncAt: null, coverage: "linked_contacts" },
+              counts: {
+                awaitingResponse: null,
+                returnsToday: 0,
+                returnsOverdue: 0,
+                appointmentsToday: 0,
+              },
+              awaitingResponseUnavailableReason: "message_coverage_unavailable",
+              page: { index: 0, size: 25, totalItems: 0, hasMore: false },
+              rows: [],
+            },
+          }
+        : estado.secrets,
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
 }));
 vi.mock("@/lib/ghl.functions", () => ({ getGhlSecretsStatus: vi.fn() }));
+// Mock the server boundary, keeping the real Meu dia component in these route checks.
+vi.mock("@/lib/attendance-workspace.functions", () => ({ readAttendanceWorkspace: vi.fn() }));
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children, actions }: { children: ReactNode; actions?: ReactNode }) => (
     <main>
@@ -50,6 +83,7 @@ vi.mock("@/lib/organization", () => ({
   }),
 }));
 vi.mock("@/lib/repo", () => ({
+  useModoDados: () => ({ demo: estado.modo === "demo", escopo: "user-a:org-a" }),
   rotuloEstadoMarcacao: (estado: string) => (estado === "confirmada" ? "Confirmada" : estado),
   useLigacaoGhl: () => ({
     data: {
@@ -94,6 +128,7 @@ beforeEach(() => {
 });
 it("conta conectada vazia não recebe pacientes nem KPIs fictícios", () => {
   render(<VisaoGeral />);
+  expect(screen.getByText(/Nenhum item atribuído a você neste filtro/)).toBeTruthy();
   expect(screen.getByText(/Nenhum contacto real/)).toBeTruthy();
   expect(screen.getByText(/Nenhuma marcação ativa importada para hoje/)).toBeTruthy();
   expect(screen.queryByText("82%")).toBeNull();
