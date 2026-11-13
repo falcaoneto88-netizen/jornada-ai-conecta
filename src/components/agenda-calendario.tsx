@@ -14,7 +14,8 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import { rotuloEstadoMarcacao, type Marcacao } from "@/lib/repo";
+import type { Marcacao } from "@/lib/repo";
+import { estadoAdministrativo, euros, type AgendaValues } from "@/lib/agenda-workspace";
 
 import { chaveCelula, chaveDia, diaCivil, formatarHora } from "@/lib/clinic-time";
 
@@ -74,6 +75,7 @@ type Props = {
   fuso: string;
   dataReferencia: Date;
   marcacoes: Marcacao[];
+  valores?: AgendaValues[];
   onSelecionar: (m: Marcacao) => void;
   onAbrirDia: (d: Date) => void;
 };
@@ -82,27 +84,46 @@ function Cartao({
   m,
   onSelecionar,
   fuso,
+  valor,
 }: {
   m: Marcacao;
   onSelecionar: (m: Marcacao) => void;
   fuso: string;
+  valor?: AgendaValues | undefined;
 }) {
   return (
     <button
       type="button"
       onClick={() => onSelecionar(m)}
-      className="w-full rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        "w-full rounded-xl border border-border bg-card px-2.5 py-3 text-left transition-colors hover:border-ring hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        m.estado === "cancelada" && "bg-muted",
+      )}
     >
       <span className="flex items-center gap-2">
         <span className="font-mono text-xs text-muted-foreground">
           {formatarHora(m.inicioIso, fuso)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.cliente}</span>
+        <span className="min-w-0 flex-1 text-right text-[11px] text-muted-foreground">
+          {estadoAdministrativo(m.estado)}
+        </span>
       </span>
-      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+      <span className="mt-1.5 block break-words text-sm font-semibold">{m.cliente}</span>
+      <span className="mt-1 block break-words text-xs text-muted-foreground">
         {m.titulo}
         {m.responsavel ? ` · ${m.responsavel}` : ""}
       </span>
+      {valor && (
+        <span className="mt-2 block border-t border-border pt-2 text-xs tabular-nums">
+          <span className="block">Valor {euros(valor.totalCents)}</span>
+          <span className="mt-1 block text-muted-foreground">
+            Sinal {euros(valor.depositCents)}
+          </span>
+          <span className="mt-1 block font-medium">
+            Saldo {euros(valor.totalCents - valor.depositCents)}
+          </span>
+        </span>
+      )}
     </button>
   );
 }
@@ -112,10 +133,12 @@ export function AgendaCalendario({
   fuso,
   dataReferencia,
   marcacoes,
+  valores = [],
   onSelecionar,
   onAbrirDia,
 }: Props) {
   const isMobile = useIsMobile();
+  const porValor = new Map(valores.map((v) => [v.appointmentId, v]));
   const dias = useMemo(() => diasDaVista(vista, dataReferencia), [vista, dataReferencia]);
 
   const porDia = useMemo(() => {
@@ -157,8 +180,14 @@ export function AgendaCalendario({
                     </span>
                   </span>
                   <Badge variant={VARIANTE[m.estado] ?? "outline"}>
-                    {rotuloEstadoMarcacao(m.estado)}
+                    {estadoAdministrativo(m.estado)}
                   </Badge>
+                  {porValor.has(m.id) && (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      Saldo{" "}
+                      {euros(porValor.get(m.id)!.totalCents - porValor.get(m.id)!.depositCents)}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -191,7 +220,13 @@ export function AgendaCalendario({
             </button>
             <div className="mt-3 space-y-2">
               {doDia(d).map((m) => (
-                <Cartao key={m.id} m={m} fuso={fuso} onSelecionar={onSelecionar} />
+                <Cartao
+                  key={m.id}
+                  m={m}
+                  fuso={fuso}
+                  valor={porValor.get(m.id)}
+                  onSelecionar={onSelecionar}
+                />
               ))}
             </div>
           </div>
@@ -215,10 +250,19 @@ export function AgendaCalendario({
                 )}
               >
                 <span className="font-mono text-sm">{d.getDate()}</span> {diaCurto(d)}
+                <span className="mt-1 block text-[11px] font-normal text-muted-foreground">
+                  {doDia(d).length} {doDia(d).length === 1 ? "consulta" : "consultas"}
+                </span>
               </button>
               <div className="space-y-2 p-2">
                 {doDia(d).map((m) => (
-                  <Cartao key={m.id} m={m} fuso={fuso} onSelecionar={onSelecionar} />
+                  <Cartao
+                    key={m.id}
+                    m={m}
+                    fuso={fuso}
+                    valor={porValor.get(m.id)}
+                    onSelecionar={onSelecionar}
+                  />
                 ))}
               </div>
             </div>
