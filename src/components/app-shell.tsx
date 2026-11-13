@@ -27,7 +27,7 @@ import { useOrganizacao } from "@/lib/organization";
 
 const navItems = [
   { to: "/", label: "Meu dia", icon: LayoutDashboard },
-  { to: "/caixa-de-entrada", label: "Atendimento", icon: Inbox },
+  { to: "/caixa-de-entrada", label: "Meu Chat", icon: Inbox },
   { to: "/agente-supervisionado", label: "Agente supervisionado", icon: MessageSquareText },
   { to: "/jornada", label: "Jornada do Cliente", icon: RouteIcon },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
@@ -88,7 +88,7 @@ export function ModoBadge() {
 
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   return (
-    <nav className="flex flex-col gap-1 px-3">
+    <nav className="flex flex-col gap-1 px-3" data-app-nav>
       {navItems.map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
@@ -97,13 +97,16 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
           title={collapsed ? label : undefined}
           aria-label={label}
           activeOptions={{ exact: to === "/" }}
-          activeProps={{ className: "bg-sidebar-accent text-heading font-medium" }}
+          activeProps={{
+            className: "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+            "aria-current": "page",
+          }}
           className={cn(
-            "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+            "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring",
             collapsed && "justify-center px-2",
           )}
         >
-          <Icon className="size-4 shrink-0 text-primary" aria-hidden />
+          <Icon className="size-4 shrink-0" aria-hidden />
           {!collapsed && <span className="truncate">{label}</span>}
         </Link>
       ))}
@@ -159,6 +162,8 @@ export function AppShell({
     <div className={cn("bg-background", workspace ? "h-dvh overflow-hidden" : "min-h-screen")}>
       {/* Sidebar desktop */}
       <aside
+        data-app-sidebar
+        data-collapsed={collapsed}
         className={cn(
           "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar transition-[width,transform] duration-200 ease-(--ease-in-out) motion-reduce:transition-none md:flex",
           collapsed ? "w-[76px]" : "w-[264px]",
@@ -167,13 +172,16 @@ export function AppShell({
         <div
           className={cn("flex items-center gap-3 px-5 py-6", collapsed && "justify-center px-2")}
         >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-heading text-sm font-semibold text-background">
+          <span
+            data-app-brand
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-semibold"
+          >
             JF
           </span>
           {!collapsed && (
             <div className="min-w-0">
               <p className="display-title truncate text-base leading-tight">Jornada AI</p>
-              <p className="truncate text-xs text-muted-foreground">Dr. João Falcão</p>
+              <p className="truncate text-xs text-sidebar-foreground/80">Dr. João Falcão</p>
             </div>
           )}
         </div>
@@ -183,7 +191,7 @@ export function AppShell({
             type="button"
             onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-sidebar-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-heading"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring"
           >
             {collapsed ? (
               <PanelLeftOpen className="size-4" />
@@ -204,11 +212,14 @@ export function AppShell({
             className="absolute inset-0 bg-heading/40"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="relative flex h-full w-[264px] flex-col bg-sidebar shadow-xl">
+          <div
+            data-app-sidebar
+            className="relative flex h-full w-[264px] flex-col bg-sidebar shadow-xl"
+          >
             <div className="flex items-center justify-between px-5 py-6">
               <div>
                 <p className="display-title text-base leading-tight">Jornada AI</p>
-                <p className="text-xs text-muted-foreground">Dr. João Falcão</p>
+                <p className="text-xs text-sidebar-foreground/80">Dr. João Falcão</p>
               </div>
               <button type="button" aria-label="Fechar menu" onClick={() => setMobileOpen(false)}>
                 <X className="size-5" />
@@ -220,13 +231,18 @@ export function AppShell({
       )}
 
       <div
+        data-app-content
+        data-collapsed={collapsed}
         className={cn(
           "transition-[padding,margin] duration-200 ease-(--ease-in-out) motion-reduce:transition-none",
           collapsed ? "md:pl-[76px]" : "md:pl-[264px]",
           workspace && "flex h-full min-h-0 flex-col",
         )}
       >
-        <header className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/85 backdrop-blur">
+        <header
+          data-app-header
+          className="sticky top-0 z-20 shrink-0 border-b border-border bg-background/85 backdrop-blur"
+        >
           <div
             className={cn(
               "flex flex-wrap items-center gap-3 px-4 sm:px-6 lg:px-8",
@@ -276,6 +292,7 @@ export function AppShell({
           </div>
         </header>
         <main
+          data-app-main
           className={cn(
             "px-4 sm:px-6 lg:px-8",
             workspace ? "min-h-0 flex-1 overflow-hidden py-3 sm:py-4" : "py-6",
