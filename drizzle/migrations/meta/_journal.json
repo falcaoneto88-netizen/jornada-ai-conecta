@@ -183,6 +183,13 @@
       "when": 1794586420181,
       "tag": "0025_appointment_finance",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794598923522,
+      "tag": "0026_chat_booking_requests",
+      "breakpoints": true
     }
   ]
 }

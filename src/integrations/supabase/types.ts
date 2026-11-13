@@ -836,6 +836,136 @@ export type Database = {
           },
         ]
       }
+      chat_booking_abandoned_requests: {
+        Row: {
+          actor_id: string
+          created_at: string
+          ghl_contact_id: string
+          organization_id: string
+          request_id: string
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          ghl_contact_id: string
+          organization_id: string
+          request_id: string
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          ghl_contact_id?: string
+          organization_id?: string
+          request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_booking_abandoned_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_booking_abandoned_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_booking_requests: {
+        Row: {
+          actor_id: string
+          appointment_id: string | null
+          cache_synced: boolean
+          calendar_id: string
+          calendar_name: string
+          contact_id: string
+          created_at: string
+          dispatch_id: string
+          end_at: string
+          error_code: string | null
+          ghl_contact_id: string
+          input: Json
+          location_id: string
+          notify: boolean
+          organization_id: string
+          request_id: string
+          start_at: string
+          state: string
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          actor_id: string
+          appointment_id?: string | null
+          cache_synced?: boolean
+          calendar_id: string
+          calendar_name: string
+          contact_id: string
+          created_at?: string
+          dispatch_id: string
+          end_at: string
+          error_code?: string | null
+          ghl_contact_id: string
+          input: Json
+          location_id: string
+          notify?: boolean
+          organization_id: string
+          request_id: string
+          start_at: string
+          state: string
+          timezone: string
+          updated_at?: string
+        }
+        Update: {
+          actor_id?: string
+          appointment_id?: string | null
+          cache_synced?: boolean
+          calendar_id?: string
+          calendar_name?: string
+          contact_id?: string
+          created_at?: string
+          dispatch_id?: string
+          end_at?: string
+          error_code?: string | null
+          ghl_contact_id?: string
+          input?: Json
+          location_id?: string
+          notify?: boolean
+          organization_id?: string
+          request_id?: string
+          start_at?: string
+          state?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_booking_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_booking_requests_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_booking_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commercial_agent_audit: {
         Row: {
           actor_id: string | null
@@ -2741,6 +2871,16 @@ export type Database = {
           _page?: number
           _size?: number
           _view?: string
+        }
+        Returns: Json
+      }
+      chat_booking_command: {
+        Args: { _actor: string; _data?: Json; _op: string; _org: string }
+        Returns: Json
+      }
+      chat_booking_snapshot: {
+        Args: {
+          r: Database["public"]["Tables"]["chat_booking_requests"]["Row"]
         }
         Returns: Json
       }
