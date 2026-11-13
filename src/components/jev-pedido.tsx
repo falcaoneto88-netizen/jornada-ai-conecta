@@ -55,15 +55,23 @@ export function JevPedido({
     <div className="surface-card space-y-4 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-semibold">Classificação do pedido (Jev)</h3>
-        <Button size="sm" variant="outline" disabled={pausa > 0 || pendente || !texto} onClick={() => void executar()}>
-          <Tags className="size-4" /> {pendente ? "A classificar…" : pausa > 0 ? `Aguarde ${pausa} s` : "Classificar"}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pausa > 0 || pendente || !texto}
+          onClick={() => void executar()}
+        >
+          <Tags className="size-4" />{" "}
+          {pendente ? "A classificar…" : pausa > 0 ? `Aguarde ${pausa} s` : "Classificar"}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
         Classifica as últimas mensagens recebidas do paciente e sugere a próxima ação. Não altera o
         contacto, a oportunidade nem o funil no GoHighLevel.
       </p>
-      {!texto && <p className="text-sm text-muted-foreground">Não há mensagens recebidas com texto.</p>}
+      {!texto && (
+        <p className="text-sm text-muted-foreground">Não há mensagens recebidas com texto.</p>
+      )}
       {erro && (
         <p role="alert" className="text-sm text-destructive">
           {erro}
@@ -72,7 +80,9 @@ export function JevPedido({
       {c && (
         <div className="space-y-3">
           {res.para !== texto && (
-            <p className="text-sm text-destructive">Chegaram novas mensagens. Classifique novamente.</p>
+            <p className="text-sm text-destructive">
+              Chegaram novas mensagens. Classifique novamente.
+            </p>
           )}
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">
@@ -83,8 +93,8 @@ export function JevPedido({
             </Badge>
           </div>
           {c.revisao_humana && (
-            <p className="flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm">
-              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+            <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               Possível sintoma ou urgência: encaminhe a um profissional de saúde antes de responder.
               Não é sugerido rascunho automático.
             </p>
@@ -101,7 +111,9 @@ export function JevPedido({
             </article>
           )}
           {!c.revisao_humana && !c.modelo_sugerido && (
-            <p className="text-sm text-muted-foreground">Nenhuma mensagem da biblioteca se adequa.</p>
+            <p className="text-sm text-muted-foreground">
+              Nenhuma mensagem da biblioteca se adequa.
+            </p>
           )}
         </div>
       )}
