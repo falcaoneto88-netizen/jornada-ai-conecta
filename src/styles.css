@@ -67,7 +67,6 @@
   --overlay: rgb(18 25 44 / 80%);
   --radius: 1rem;
   --background: #f5f3ee;
-  --brand-signature-bg: #000000;
   --foreground: #172033;
   --heading: #12192c;
   --card: #fff;
@@ -227,9 +226,6 @@
 }
 [data-app-brand] {
   background: transparent;
-}
-[data-brand-signature] {
-  background: var(--brand-signature-bg);
 }
 [data-app-nav] a[aria-current="page"] {
   color: var(--sidebar-accent-foreground);

@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 
 export const BRAND_MONOGRAM_SRC = "/brand/jf-monograma.png";
-export const BRAND_SIGNATURE_SRC = "/brand/dr-joao-falcao-assinatura.jpeg";
+/** Assinatura com fundo removido (PNG transparente). O JPEG original permanece intacto em public/brand. */
+export const BRAND_SIGNATURE_SRC = "/brand/dr-joao-falcao-assinatura-transparente.png";
 
 /** Monograma JF dourado. `decorative` = nome da marca está visível ao lado. */
 export function BrandMonogram({
@@ -28,13 +29,13 @@ export function BrandMonogram({
   );
 }
 
-/** Assinatura original (500x500) enquadrada por CSS, sem cortar letras. */
+/** Assinatura original (500x500) enquadrada por CSS, sem cortar letras, sem fundo. */
 export function BrandSignaturePanel({ className }: { className?: string }) {
   return (
     <div
       data-brand-signature
       className={cn(
-        "relative mx-auto flex h-[150px] w-[200px] items-center justify-center overflow-hidden rounded-2xl sm:h-[176px] sm:w-[236px]",
+        "relative mx-auto flex h-[150px] w-[200px] items-center justify-center overflow-hidden sm:h-[176px] sm:w-[236px]",
         className,
       )}
     >
