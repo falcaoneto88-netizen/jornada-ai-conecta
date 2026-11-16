@@ -2022,6 +2022,63 @@ export type Database = {
           },
         ]
       }
+      n8n_bridge_runtime_policies: {
+        Row: {
+          allowed_kinds: string[]
+          calendar_id: string | null
+          channel: string | null
+          location_id: string | null
+          mode: string
+          organization_id: string
+          revision: number
+          updated_at: string
+          updated_by: string
+          verified_at: string | null
+          zaptos_provider_id: string | null
+        }
+        Insert: {
+          allowed_kinds?: string[]
+          calendar_id?: string | null
+          channel?: string | null
+          location_id?: string | null
+          mode: string
+          organization_id: string
+          revision: number
+          updated_at?: string
+          updated_by: string
+          verified_at?: string | null
+          zaptos_provider_id?: string | null
+        }
+        Update: {
+          allowed_kinds?: string[]
+          calendar_id?: string | null
+          channel?: string | null
+          location_id?: string | null
+          mode?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+          updated_by?: string
+          verified_at?: string | null
+          zaptos_provider_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "n8n_bridge_runtime_policies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "n8n_bridge_runtime_policies_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       n8n_bridge_sends: {
         Row: {
           contact_id: string | null
@@ -3206,6 +3263,19 @@ export type Database = {
       n8n_bridge_hit: {
         Args: { _limit: number; _org: string }
         Returns: boolean
+      }
+      n8n_bridge_set_runtime_policy: {
+        Args: {
+          _actor: string
+          _allowed_kinds: string[]
+          _calendar?: string
+          _expected_revision: number
+          _location?: string
+          _mode: string
+          _provider?: string
+          _verified_at?: string
+        }
+        Returns: Json
       }
       pedido_de_cliente: { Args: never; Returns: boolean }
       receive_bioreport_event: {

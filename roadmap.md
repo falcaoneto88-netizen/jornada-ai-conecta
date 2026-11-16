@@ -87,3 +87,6 @@
 
 
 - [x] Jev sem OpenRouter: ligação pela IA da plataforma (typesafe/jev-latest); pendência da OPENROUTER_API_KEY retirada.
+# Roadmap
+- [ ] Aguardar complemento DND case-insensitive (Dr. João) antes de publicar n8n runtime policy
+- [ ] Publicar só após complemento e gates
