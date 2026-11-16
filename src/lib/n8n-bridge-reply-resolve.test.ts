@@ -267,6 +267,68 @@ describe("reply discovery does not guess identity or appointment", () => {
     f.requests.length = 0;
     expect((await f.run()).body.error).toBe("confirmation_request_missing");
   });
+  it("does not require omitted DND preferences for a contact without an eligible request", async () => {
+    const f = fixture();
+    f.requests.length = 0;
+    vi.mocked(f.deps.contacto).mockResolvedValue({
+      ok: true,
+      data: { total: 1, contacts: [{ id: CONTACT, locationId: LOC }] },
+    });
+    expect(await f.run()).toEqual({
+      status: 409,
+      body: { error: "confirmation_request_missing" },
+    });
+    expect(f.evidence.requests).toHaveBeenCalledExactlyOnceWith(
+      ORG,
+      CONTACT,
+      "2026-10-06T12:05:00.000Z",
+    );
+    expect(f.evidence.message).not.toHaveBeenCalled();
+    expect(f.evidence.conversationMessages).not.toHaveBeenCalled();
+    expect(f.deps.consulta).not.toHaveBeenCalled();
+  });
+  it("still blocks an eligible request when both DND fields are omitted", async () => {
+    const f = fixture();
+    vi.mocked(f.deps.contacto).mockResolvedValue({
+      ok: true,
+      data: { total: 1, contacts: [{ id: CONTACT, locationId: LOC }] },
+    });
+    expect(await f.run()).toEqual({
+      status: 409,
+      body: { error: "contact_preferences_not_verified" },
+    });
+    expect(f.evidence.requests).toHaveBeenCalledOnce();
+    expect(f.evidence.message).not.toHaveBeenCalled();
+    expect(f.evidence.conversationMessages).not.toHaveBeenCalled();
+    expect(f.deps.consulta).not.toHaveBeenCalled();
+  });
+  it("does not confuse unavailable request evidence with an ineligible contact", async () => {
+    const f = fixture();
+    vi.mocked(f.deps.contacto).mockResolvedValue({
+      ok: true,
+      data: { total: 1, contacts: [{ id: CONTACT, locationId: LOC }] },
+    });
+    f.evidence.requests.mockRejectedValue(new Error("synthetic unavailable ledger"));
+    expect(await f.run()).toEqual({
+      status: 503,
+      body: { error: "confirmation_evidence_unavailable" },
+    });
+    expect(f.evidence.message).not.toHaveBeenCalled();
+  });
+  it.each(["id", "locationId"])(
+    "still verifies exact contact %s before discovering a missing request",
+    async (key) => {
+      const f = fixture();
+      f.requests.length = 0;
+      vi.mocked(f.deps.contacto).mockResolvedValue({
+        ok: true,
+        data: { total: 1, contacts: [{ id: CONTACT, locationId: LOC, [key]: "different01" }] },
+      });
+      expect((await f.run()).body.error).toBe("contact_not_verified");
+      expect(f.evidence.requests).not.toHaveBeenCalled();
+      expect(f.evidence.message).not.toHaveBeenCalled();
+    },
+  );
   it.each(["appointment", "conversation", "start"])("refuses competing %s", async (kind) => {
     const f = fixture();
     f.requests.push({

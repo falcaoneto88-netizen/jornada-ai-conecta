@@ -45,8 +45,6 @@ export async function resolverResposta(
   if (!contact.ok) return fail("ghl_unavailable", 502);
   if (!parseIdentidadeContacto(contact.data, contactId, scope.locationId))
     return fail("contact_not_verified");
-  if (!parseContacto(contact.data, contactId, scope.locationId))
-    return fail("contact_preferences_not_verified");
 
   // The existing scoped RPC returns accepted req24/req12 sends only. 51 means overflow.
   const listed = await evidence
@@ -55,6 +53,10 @@ export async function resolverResposta(
   if (!listed.ok) return fail("confirmation_evidence_unavailable", 503);
   if (listed.data.length > 50) return fail("confirmation_evidence_overflow");
   if (!listed.data.length) return fail("confirmation_request_missing");
+  // A general contact reply without a request needs no messaging-preference decision.
+  // Eligible candidates still require the complete, strict contact representation.
+  if (!parseContacto(contact.data, contactId, scope.locationId))
+    return fail("contact_preferences_not_verified");
   const candidates = new Set<string>();
   const conversations = new Set<string>();
   const acceptedIds = new Set<string>();
