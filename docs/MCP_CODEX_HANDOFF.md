@@ -680,3 +680,4 @@ Contrato, URLs e plano de retomada: `docs/n8n-runtime-policy-2026-11-16.md`. Reg
 - Flags preservadas (org f07ab3be…): bridge_enabled=true, simulation=true, live_send_enabled=false, channel_verified=false; calendar nPXR1Fyp0r3CpaMMGSki, whatsapp_zaptos, provider 6770181745a2e55f83cab3eb. Produção não ativada.
 - Gates no Lovable: 727/727 (17 suítes), tsc, ESLint dirigido, diff-check e build OK. Suítes PostgreSQL não executadas aqui (runtime ausente).
 - Nenhum envio, reexecução de evento, edição GHL/n8n/contatos/DND.
+- Publicado a partir de `6643bade`: GET https://jornada-ai-conecta.lovable.app/api/version em 2026-11-16T13:01:10Z → build `jornada-n8n-production-20261116.1`, `n8nRuntimePolicy:1`, `release:null` (ID de deployment não exposto). Flags relidas após publicação: simulation=true, live_send_enabled=false, channel_verified=false.
