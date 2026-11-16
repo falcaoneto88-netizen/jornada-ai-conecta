@@ -950,7 +950,7 @@ describe("confirmation runtime authorization", () => {
     updated_at: "2026-10-06T11:00:00Z",
     updated_by: "f07ab3be-7419-4779-a901-ef71c5fc27f0",
   });
-  it("blocks appointment.confirm in continuous production even with valid reply proof", async () => {
+  it("blocks appointment.confirm when not explicitly selected in production", async () => {
     const f = fixture(),
       row = policy();
     f.scope.orgId = row.organization_id;
@@ -962,10 +962,120 @@ describe("confirmation runtime authorization", () => {
     });
     expect(await f.run()).toMatchObject({
       status: 403,
-      body: { error: "production_action_not_supported" },
+      body: { error: "production_not_authorized" },
     });
     expect(f.conf.claim).not.toHaveBeenCalled();
     expect(f.conf.confirm).not.toHaveBeenCalled();
+  });
+  function continuous<T extends ReturnType<typeof fixture>>(f: T) {
+    const row = policy();
+    row.allowed_kinds = ["appointment.confirm", "confirm"];
+    f.scope.orgId = row.organization_id;
+    f.deps.lerPoliticaRuntime = async () => ({ ok: true, data: row });
+    f.deps.lerPiloto = vi.fn(async () => ({ ok: true, data: null }));
+    Object.assign(f.cfg, {
+      channel: "whatsapp_zaptos",
+      channelVerified: true,
+      zaptosProviderId: "provider01",
+    });
+    return { ...f, row };
+  }
+  it("production confirms only the proven reply, with durable finish and no pilot or message", async () => {
+    const f = continuous(fixture());
+    expect(await f.run()).toMatchObject({
+      status: 200,
+      body: { confirmed: true, duplicate: false },
+    });
+    expect(f.conf.confirm).toHaveBeenCalledExactlyOnceWith(LOC, "appoint01");
+    expect(f.conf.finish).toHaveBeenCalledWith(f.scope.orgId, "confirmation01", "confirmed", null);
+    expect(f.deps.lerPiloto).not.toHaveBeenCalled();
+    expect(f.deps.enviar).not.toHaveBeenCalled();
+  });
+  it("production confirmation still rejects ambiguous requests before claim or PUT", async () => {
+    const f = continuous(fixture());
+    f.evidence.push({
+      ...f.evidence[0]!,
+      id: "reserved02",
+      appointmentId: "appoint02",
+      messageId: "outbound02",
+    });
+    expect((await f.run()).body.error).toBe("confirmation_ambiguous");
+    expect(f.conf.claim).not.toHaveBeenCalled();
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+  });
+  it("production cannot repeat an unknown confirmation", async () => {
+    const f = continuous(fixture());
+    f.deps.confirmacao!.claim = async () => ({
+      reserved: false,
+      id: "confirmation01",
+      state: "unknown",
+    });
+    expect((await f.run()).body.error).toBe("confirmation_already_attempted");
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+  });
+  it("production acknowledgement accepts unchanged evidence without repeating PUT", async () => {
+    const f = continuous(acknowledgementFixture());
+    expect((await f.sendAck()).body.status).toBe("accepted");
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.conf.conversationMessages).toHaveBeenCalledTimes(2);
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+    expect(f.deps.lerPiloto).not.toHaveBeenCalled();
+  });
+  it("production does not ignore even the exact activity accepted by the serial pilot", async () => {
+    const f = continuous(acknowledgementFixture());
+    f.history.push(technicalActivity());
+    expect((await f.sendAck()).body.error).toBe("reply_superseded");
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it.each(["activity", "human", "negative"])(
+    "production blocks %s arriving during the ACK claim",
+    async (change) => {
+      const f = continuous(acknowledgementFixture());
+      f.reserve.mockImplementation(async () => {
+        f.history.push(
+          change === "activity"
+            ? technicalActivity()
+            : {
+                ...(change === "human" ? f.outbound : f.inbound),
+                id: "newmessage01",
+                dateAdded: "2026-10-06T12:01:00Z",
+                body: change === "human" ? "Aguarde a equipa" : "NAO",
+              },
+        );
+        return { reserved: true, id: "acksend01" };
+      });
+      expect((await f.sendAck()).body.error).toBe("reply_superseded");
+      expect(f.send).not.toHaveBeenCalled();
+      expect(f.finish).toHaveBeenCalledWith(
+        f.scope.orgId,
+        "acksend01",
+        "rejected",
+        null,
+        "reply_superseded",
+      );
+    },
+  );
+  it("losing the runtime read cannot silently enable the pilot activity exception", async () => {
+    const f = continuous(acknowledgementFixture());
+    f.reserve.mockImplementation(async () => {
+      f.history.push(technicalActivity());
+      f.deps.lerPoliticaRuntime = async () => ({ ok: false });
+      return { reserved: true, id: "acksend01" };
+    });
+    expect((await f.sendAck()).body.error).toBe("runtime_policy_unavailable");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it("switching production to pilot during claim never borrows the pilot exception for a send", async () => {
+    const f = continuous(acknowledgementFixture());
+    f.reserve.mockImplementation(async () => {
+      f.history.push(technicalActivity());
+      f.row.mode = "pilot";
+      f.row.revision++;
+      return { reserved: true, id: "acksend01" };
+    });
+    expect((await f.sendAck()).body.error).toBe("runtime_policy_changed");
+    expect(f.send).not.toHaveBeenCalled();
   });
   it.each(["off", "production", "unavailable"])(
     "blocks runtime %s changed after pilot reservation, before PUT",

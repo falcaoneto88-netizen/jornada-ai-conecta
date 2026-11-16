@@ -189,11 +189,29 @@ describe("runtime authority admin contract", () => {
     { allowedKinds: [] },
     { allowedKinds: ["booking", "booking"] },
     { allowedKinds: ["handoff"] },
-    { allowedKinds: ["confirm"] },
-    { allowedKinds: ["appointment.confirm"] },
   ])("rejects unsafe caller contract %#", async (change) => {
     const f = fixture();
     expect(await f.run({ ...input, ...change })).toMatchObject({ code: "invalid_request" });
+    expect(f.rpc).not.toHaveBeenCalled();
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+  it.each(["appointment.confirm", "confirm"])(
+    "can explicitly authorize %s without a pilot",
+    async (kind) => {
+      const f = fixture();
+      expect(await f.run({ ...input, allowedKinds: [kind] })).toEqual({ ok: true, revision: 1 });
+      expect(f.rpc).toHaveBeenCalledWith(
+        "n8n_bridge_set_runtime_policy",
+        expect.objectContaining({ _allowed_kinds: [kind] }),
+      );
+    },
+  );
+  it("requires a configured address only when acknowledgement is selected", async () => {
+    const f = fixture();
+    f.rows["n8n_bridge_settings"]![0]!["clinic_address"] = " ";
+    expect(await f.run({ ...input, allowedKinds: ["confirm"] })).toMatchObject({
+      code: "address_not_configured",
+    });
     expect(f.rpc).not.toHaveBeenCalled();
     expect(f.fetch).not.toHaveBeenCalled();
   });

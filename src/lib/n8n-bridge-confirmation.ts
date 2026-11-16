@@ -301,6 +301,7 @@ export async function validarAgradecimento(
   deps: Pick<DepsBridge, "consulta">,
   confirmation: DepsConfirmacao,
   cfg: ConfigBridge,
+  allowPilotActivity = false,
 ): Promise<{ ok: true } | { ok: false; code: string; status: number }> {
   const fail = (code: string, status = 409) => ({ ok: false as const, code, status });
   const start = normalizarInstante(event.startTime);
@@ -375,7 +376,9 @@ export async function validarAgradecimento(
     inbound.conversationId,
   );
   const historyError = history
-    ? acknowledgementContext(history, inbound, request, event, record.finishedAt, now)
+    ? allowPilotActivity
+      ? acknowledgementContext(history, inbound, request, event, record.finishedAt, now)
+      : validarContextoResposta(history, inbound, request, new Set([request.messageId]))
     : "reply_history_unavailable";
   if (historyError) return fail(historyError);
   // The original calendar read can have become stale during evidence/history reads.

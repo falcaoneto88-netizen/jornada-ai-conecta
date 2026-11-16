@@ -214,18 +214,20 @@ describe("n8n runtime administrative control", () => {
     expect(p.save).not.toHaveBeenCalled();
   });
 
-  it("offers only booking and confirmation requests in production; reply handling remains supervised", () => {
+  it("offers explicit confirmation and strict acknowledgement without auto activation", () => {
     const p = props();
     render(<N8nRuntimeControl {...p} />);
     chooseProduction();
-    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
-    expect(screen.queryByLabelText("Agradecer a confirmação comprovada")).toBeNull();
-    expect(screen.queryByLabelText("Confirmar a consulta após resposta SIM comprovada")).toBeNull();
-    expect(screen.getByText(/confirmação após a resposta continua supervisionada/)).toBeTruthy();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(5);
+    expect(screen.getByLabelText("Agradecer a confirmação comprovada")).toBeTruthy();
+    expect(screen.getByLabelText("Confirmar a consulta após resposta SIM comprovada")).toBeTruthy();
+    expect(
+      screen.getByText(/atividade sem autoria comprovada impede o agradecimento/),
+    ).toBeTruthy();
     expect(p.save).not.toHaveBeenCalled();
   });
 
-  it("does not carry hidden supervised actions into a production request", async () => {
+  it("does not carry previous pilot selections into a production request", async () => {
     const p = props();
     p.state = { ...initial(), mode: "pilot", allowedKinds: ["confirm", "appointment.confirm"] };
     render(<N8nRuntimeControl {...p} />);

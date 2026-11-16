@@ -2,7 +2,13 @@ import { z } from "zod";
 import { PILOT_KINDS, type PilotKind } from "./n8n-bridge-pilot";
 
 export const RUNTIME_MODES = ["off", "pilot", "production"] as const;
-export const PRODUCTION_KINDS = ["booking", "req24", "req12"] as const;
+export const PRODUCTION_KINDS = [
+  "booking",
+  "req24",
+  "req12",
+  "appointment.confirm",
+  "confirm",
+] as const;
 export type ProductionKind = (typeof PRODUCTION_KINDS)[number];
 export type RuntimeMode = (typeof RUNTIME_MODES)[number];
 const id = z.string().regex(/^[A-Za-z0-9_-]{6,64}$/);

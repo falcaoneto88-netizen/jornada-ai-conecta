@@ -481,7 +481,20 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     if (pedido.kind !== "confirm") return null;
     if (!deps.confirmacao)
       return { ok: false as const, code: "confirmation_evidence_unavailable", status: 503 };
-    const valid = await validarAgradecimento(res, e, deps.now(), deps, deps.confirmacao, cfg);
+    // Never promote the pilot's temporal activity correlation into continuous production.
+    // Re-read on both sides of the claim; final authority still checks revision and mode.
+    const runtime = await estadoRuntime(deps, res.orgId);
+    if (!runtime.available)
+      return { ok: false as const, code: "runtime_policy_unavailable", status: 503 };
+    const valid = await validarAgradecimento(
+      res,
+      e,
+      deps.now(),
+      deps,
+      deps.confirmacao,
+      cfg,
+      runtime.mode === "pilot",
+    );
     return valid.ok ? null : valid;
   };
   const acknowledgementError = await revalidarAgradecimento();

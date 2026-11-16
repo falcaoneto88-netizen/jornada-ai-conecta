@@ -82,7 +82,7 @@ export async function autorizarRuntime(
     return denied("runtime_configuration_changed", 409);
 
   if (policy.mode === "production") {
-    // The acknowledgement activity exception is only validated for supervised pilots.
+    // Production acknowledgements apply strict history validation, without the pilot exception.
     if (!PRODUCTION_KINDS.includes(target.kind as ProductionKind))
       return denied("production_action_not_supported");
     if (

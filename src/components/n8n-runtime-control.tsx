@@ -30,6 +30,8 @@ const ACTIONS: { kind: ProductionKind; label: string }[] = [
   { kind: "booking", label: "Mensagem inicial do agendamento" },
   { kind: "req24", label: "Pedido de confirmação — 24 horas antes" },
   { kind: "req12", label: "Pedido de confirmação — 12 horas antes" },
+  { kind: "appointment.confirm", label: "Confirmar a consulta após resposta SIM comprovada" },
+  { kind: "confirm", label: "Agradecer a confirmação comprovada" },
 ];
 const productionKinds = (kinds: readonly PilotKind[] | undefined): ProductionKind[] =>
   (kinds ?? []).filter((kind): kind is ProductionKind =>
@@ -82,7 +84,9 @@ export function N8nRuntimeControl({
   refresh,
 }: Props) {
   const [mode, setMode] = useState<Mode>(state?.mode ?? "off");
-  const [kinds, setKinds] = useState<ProductionKind[]>(productionKinds(state?.allowedKinds));
+  const [kinds, setKinds] = useState<ProductionKind[]>(
+    productionKinds(state?.mode === "production" ? state.allowedKinds : []),
+  );
   const [revision, setRevision] = useState(state?.revision ?? 0);
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState(false);
@@ -92,7 +96,7 @@ export function N8nRuntimeControl({
   useEffect(() => {
     if (dirty) return;
     setMode(state?.mode ?? "off");
-    setKinds(productionKinds(state?.allowedKinds));
+    setKinds(productionKinds(state?.mode === "production" ? state.allowedKinds : []));
     setRevision(state?.revision ?? 0);
   }, [state, dirty]);
   if (!authorized) return null;
@@ -231,10 +235,10 @@ export function N8nRuntimeControl({
         </div>
       </dl>
       <p className="text-sm text-muted-foreground">
-        Produção para agendamento e pedidos de confirmação. A confirmação após a resposta continua
-        supervisionada. Apenas as ações selecionadas podem funcionar continuamente na agenda
-        vinculada; cada execução confere o contato, os bloqueios e os registros para evitar
-        duplicações.
+        Apenas as ações selecionadas podem funcionar continuamente na agenda vinculada. A resposta
+        SIM deve corresponder ao pedido enviado e à consulta atual. Nova mensagem ou atividade sem
+        autoria comprovada impede o agradecimento e exige revisão humana; cada execução confere o
+        contato, os bloqueios e os registros para evitar duplicações.
       </p>
       {state?.available && (
         <p className="text-xs text-muted-foreground">

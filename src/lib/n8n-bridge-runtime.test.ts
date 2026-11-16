@@ -112,12 +112,23 @@ describe("runtime authority", () => {
       expect(await f.authorize()).toMatchObject({ code: "runtime_scope_changed" });
     },
   );
-  it.each(["confirm", "appointment.confirm", "handoff", "escalation"])(
+  it.each(["handoff", "escalation"])(
     "does not promote unsupported %s to production",
     async (kind) => {
       const f = fixture();
       f.target.kind = kind;
       expect(await f.authorize()).toMatchObject({ code: "production_action_not_supported" });
+    },
+  );
+  it.each(["appointment.confirm", "confirm"] as const)(
+    "requires explicit selection for %s",
+    async (kind) => {
+      const f = fixture();
+      f.target.kind = kind;
+      expect(await f.authorize()).toMatchObject({ code: "production_not_authorized" });
+      f.policy.allowed_kinds.push(kind);
+      expect(await f.authorize()).toMatchObject({ ok: true, authority: { mode: "production" } });
+      expect(f.pilot).not.toHaveBeenCalled();
     },
   );
   it("respects kinds subset", async () => {

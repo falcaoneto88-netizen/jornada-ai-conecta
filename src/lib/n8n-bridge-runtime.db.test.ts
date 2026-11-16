@@ -8,6 +8,7 @@ const USER = "33333333-3333-4333-8333-333333333333",
   FOREIGN = "44444444-4444-4444-8444-444444444444";
 const VIEWER = "55555555-5555-4555-8555-555555555555";
 let db: Awaited<ReturnType<typeof confirmationDb>>;
+let upgradePreservedState = false;
 beforeAll(async () => {
   db = await confirmationDb();
   await db.query(`create table public.profiles(id uuid primary key,organization_id uuid not null references public.organizations(id));
@@ -21,6 +22,20 @@ beforeAll(async () => {
   await db.query(readFileSync("drizzle/migrations/0027_n8n_bridge_runtime_policy.sql", "utf8"));
   await db.query(`insert into organizations values('${ORG}','Test A'),('${OTHER}','Test B');
     insert into profiles values('${USER}','${ORG}'),('${FOREIGN}','${OTHER}'),('${VIEWER}','${ORG}');`);
+  await db.query(`insert into n8n_bridge_settings(organization_id,simulation,live_send_enabled)
+    values('${ORG}',false,true);
+    insert into n8n_bridge_runtime_policies(organization_id,mode,location_id,calendar_id,channel,
+      zaptos_provider_id,allowed_kinds,revision,verified_at,updated_by)
+    values('${ORG}','production','location01','calendar01','whatsapp_zaptos','provider01',
+      ARRAY['booking'],4,clock_timestamp(),'${USER}');`);
+  const before = await db.query(`select row_to_json(p)::text,row_to_json(s)::text
+    from n8n_bridge_runtime_policies p join n8n_bridge_settings s using(organization_id)`);
+  await db.query(
+    readFileSync("drizzle/migrations/0028_n8n_strict_confirmation_production.sql", "utf8"),
+  );
+  const after = await db.query(`select row_to_json(p)::text,row_to_json(s)::text
+    from n8n_bridge_runtime_policies p join n8n_bridge_settings s using(organization_id)`);
+  upgradePreservedState = JSON.stringify(before) === JSON.stringify(after);
 }, 180_000);
 afterAll(() => db?.stop());
 beforeEach(async () => {
@@ -57,6 +72,9 @@ const run = async (args: Args = {}) =>
   JSON.parse(String((await db.query(command(args)))[0]!["c0"]));
 
 describe("runtime policy migration and transactional authority", () => {
+  it("0028 preserves preexisting policy selections, revision and flags without enabling new actions", () => {
+    expect(upgradePreservedState).toBe(true);
+  });
   it("has no active seed and preserves simulation flags until explicit activation", async () => {
     expect((await db.query("select count(*) from n8n_bridge_runtime_policies"))[0]!["c0"]).toBe(
       "0",
@@ -195,11 +213,25 @@ describe("runtime policy migration and transactional authority", () => {
     "ARRAY['confirm']",
     "ARRAY['appointment.confirm']",
     "ARRAY['booking','req24','confirm']",
-  ])("does not expand pilot-only actions to production: %s", async (kinds) => {
-    expect(await run({ kinds })).toEqual({ error: "invalid_request" });
+  ])(
+    "allows explicit production authorization with evidence still enforced in the backend: %s",
+    async (kinds) => {
+      expect(await run({ kinds })).toEqual({ revision: 1 });
+      expect((await db.query("select count(*) from n8n_bridge_runtime_policies"))[0]!["c0"]).toBe(
+        "1",
+      );
+    },
+  );
+  it("cannot authorize acknowledgement with an address removed after server verification", async () => {
+    await db.query(
+      `update n8n_bridge_settings set clinic_address=' ' where organization_id='${ORG}'`,
+    );
+    expect(await run({ kinds: "ARRAY['confirm']" })).toEqual({ error: "address_not_configured" });
     expect((await db.query("select count(*) from n8n_bridge_runtime_policies"))[0]!["c0"]).toBe(
       "0",
     );
+    expect((await db.query("select count(*) from audit_logs"))[0]!["c0"]).toBe("0");
+    expect(await run({ kinds: "ARRAY['appointment.confirm']" })).toEqual({ revision: 1 });
   });
   it.each([
     "NULL",

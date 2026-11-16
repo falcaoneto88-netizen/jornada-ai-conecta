@@ -54,6 +54,8 @@ export async function guardarPoliticaBridge(
     const settings = await lerConfigBridge(db, auth.org).catch(() => ({ ok: false as const }));
     if (!settings.ok || !settings.cfg.calendarId) return { ok: false, code: "bridge_unavailable" };
     const cfg = settings.cfg;
+    if (requested.allowedKinds.includes("confirm") && !cfg.clinicAddress.trim())
+      return { ok: false, code: "address_not_configured" };
     if (cfg.channel !== "whatsapp_zaptos" || !cfg.zaptosProviderId)
       return { ok: false, code: "channel_not_verified" };
     const envToken = process.env["N8N_JORNADA_BRIDGE_TOKEN"];
@@ -124,6 +126,7 @@ export async function guardarPoliticaBridge(
       "configuration_changed",
       "binding_unavailable",
       "verification_expired",
+      "address_not_configured",
     ];
     return { ok: false, code: known.includes(out.error) ? out.error : "persist_failed" };
   }

@@ -697,13 +697,13 @@ describe("production authorization around live send", () => {
       expect(f.d.enviar).toHaveBeenCalledTimes(1);
     },
   );
-  it("does not promote the acknowledgement temporal exception to production", async () => {
+  it("does not authorize acknowledgement when it is absent from allowed actions", async () => {
     const f = production();
     f.d.consulta = async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) });
     f.d.claim = vi.fn();
     expect(await run({ ...envio, kind: "confirm" }, f.d)).toMatchObject({
       status: 403,
-      json: { error: "production_action_not_supported" },
+      json: { error: "production_not_authorized" },
     });
     expect(f.d.claim).not.toHaveBeenCalled();
     expect(f.d.enviar).not.toHaveBeenCalled();
