@@ -690,3 +690,12 @@ Contrato, URLs e plano de retomada: `docs/n8n-runtime-policy-2026-11-16.md`. Reg
 - GET /api/version 2026-11-16T16:12:04Z: build jornada-n8n-production-20261116.2, n8nRuntimePolicy:1, n8n-bridge:3, release null.
 - Flags relidas após publicar: simulation=true, live_send_enabled=false, channel_verified=false. 0027 não reaplicada; nenhuma migração nova.
 - Nenhum workflow/envio executado; contas, organizações, credenciais e contatos inalterados. Jornada ainda NÃO declarada operacional (aguarda adaptação do workflow n8n).
+
+## Confirmação estrita em produção — 16/11/2026 (build jornada-n8n-production-20261116.3)
+
+- Pacote JORNADA_N8N_STRICT_CONFIRMATION_2026-11-16 (base 49b7b6c7): 17/17 before_sha256 conferidos; 14 arquivos de código/docs gravados com after_sha256 exato. 0028.sql com after_sha256 exato (a7a533b9…, newline final restaurada após a ferramenta).
+- 0028 aplicada UMA vez via ferramenta oficial (journal idx 28, when 1794846035259 real; candidato 1794844800000 não usado). Snapshot 0028 id 203d62c4-21a4-47c7-a3fc-5f98f29fc449 (candidato d2dfc2d6…), prevId 386c4836-6fa6-4b13-9957-5d8fb2ff72fa igual ao pacote. 0027 (when 1794833741237, snapshot 386c4836) intocada.
+- Pré-aplicação: n8n_bridge_runtime_policies_check só admitia booking/req24/req12; 0 linhas. Pós: substituída por n8n_bridge_runtime_production_check (+appointment.confirm, confirm); demais checks iguais; RLS ativa, 0 políticas, 0 linhas; ACL postgres=arwdDxtm/sandbox_exec=ar/service_role=r (sandbox_exec = privilégio administrativo da plataforma observado); função SECURITY DEFINER, EXECUTE só postgres/service_role. Histórico __drizzle_migrations não legível pelo papel de leitura.
+- Gates no Lovable: vitest n8n 743/743 em 17 suítes; tsc OK; ESLint dos 13 TS/TSX alterados OK; diff-check OK; vite build OK. NÃO executados aqui: 41 provas PG (n8n-bridge-runtime.db.test.ts e confirmação DB; sem runtime PG).
+- Revisões: código 0f41297, registos da migração 08e11081 (publicada). GET /api/version 2026-11-16T16:23:55Z: build jornada-n8n-production-20261116.3, n8nRuntimePolicy:1.
+- Flags relidas após publicar: bridge_enabled=true, simulation=true, live_send_enabled=false, channel_verified=false; calendar nPXR1Fyp0r3CpaMMGSki, canal whatsapp_zaptos, provider 6770181745a2e55f83cab3eb inalterados. Nenhum workflow/envio executado; jornada ainda não operacional.
