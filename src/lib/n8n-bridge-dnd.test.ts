@@ -56,6 +56,87 @@ describe("GHL DND representation", () => {
       expect(dndPermite(c, "whatsapp_zaptos")).toBe(false);
     }
   });
+  it.each(["SMS", "sms", "Sms", "sMs", "WhatsApp", "whatsapp", "WHATSAPP", "wHaTsApP"])(
+    "evaluates every casing of %s without changing the source or fabricating consent",
+    (key) => {
+      for (const status of ["inactive", "active", "permanent"] as const) {
+        const source = { [key]: { status } };
+        const c = parseContacto(raw({ dndSettings: source }), CONTACT, LOC)!;
+        expect(c.dndSettings).toEqual(source);
+        expect(dndPermite(c, "whatsapp_zaptos")).toBe(status === "inactive");
+        expect(dndPermite(c, "sms")).toBe(key.toLowerCase() !== "sms" || status === "inactive");
+        expect(c).not.toHaveProperty("smsConsent");
+        expect(c).not.toHaveProperty("optIn");
+      }
+    },
+  );
+  it.each([
+    ["SMS", "sms"],
+    ["sms", "SMS"],
+    ["Sms", "sMs"],
+    ["WhatsApp", "whatsapp"],
+    ["whatsapp", "WhatsApp"],
+    ["WHATSAPP", "wHaTsApP"],
+  ])("blocked %s wins over inactive %s regardless of property order", (blocked, inactive) => {
+    for (const status of ["active", "permanent"] as const) {
+      for (const settings of [
+        { [blocked]: { status }, [inactive]: { status: "inactive" } },
+        { [inactive]: { status: "inactive" }, [blocked]: { status } },
+      ]) {
+        const c = parseContacto(raw({ dndSettings: settings }), CONTACT, LOC)!;
+        expect(Object.keys(c.dndSettings)).toHaveLength(2);
+        expect(dndPermite(c, "whatsapp_zaptos")).toBe(false);
+        expect(dndPermite(c, "sms")).toBe(blocked.toLowerCase() !== "sms");
+      }
+    }
+  });
+  it("inactive mixed aliases remain no configured block, not an opt-in", () => {
+    const c = parseContacto(
+      raw({
+        dndSettings: {
+          SMS: { status: "inactive" },
+          sms: { status: "inactive" },
+          WhatsApp: { status: "inactive" },
+          whatsapp: { status: "inactive" },
+        },
+      }),
+      CONTACT,
+      LOC,
+    )!;
+    expect(dndPermite(c, "sms")).toBe(true);
+    expect(dndPermite(c, "whatsapp_zaptos")).toBe(true);
+    expect(c).not.toHaveProperty("consent");
+  });
+  it.each(["Email", "email", "EMAIL", "Call", "call", "CALL"])(
+    "valid unrelated %s block is not an SMS/WhatsApp block",
+    (key) => {
+      const c = parseContacto(
+        raw({ dndSettings: { [key]: { status: "permanent" } } }),
+        CONTACT,
+        LOC,
+      )!;
+      expect(dndPermite(c, "sms")).toBe(true);
+      expect(dndPermite(c, "whatsapp_zaptos")).toBe(true);
+    },
+  );
+  it.each(["sms", "whatsapp", "SmS", "wHaTsApP"])(
+    "malformed alias %s cannot be overridden by inactive uppercase entry",
+    (key) => {
+      expect(
+        parseContacto(
+          raw({
+            dndSettings: {
+              SMS: { status: "inactive" },
+              WhatsApp: { status: "inactive" },
+              [key]: { status: "unknown" },
+            },
+          }),
+          CONTACT,
+          LOC,
+        ),
+      ).toBeNull();
+    },
+  );
   it("unrelated valid Email block does not become an SMS block", () => {
     const c = parseContacto(
       raw({ dndSettings: { Email: { status: "permanent" } } }),
@@ -174,18 +255,22 @@ describe("absence of DND does not authorize a real send", () => {
     expect(f.claim).not.toHaveBeenCalled();
     expect(f.send).not.toHaveBeenCalled();
   });
-  it.each(["active", "permanent"])(
-    "explicit %s block prevents reservation even with live flags",
-    async (status) => {
-      const f = setup();
-      f.cfg.simulation = false;
-      f.cfg.liveSendEnabled = true;
-      f.deps.contacto = async () => ({ ok: true, data: raw({ dndSettings: { SMS: { status } } }) });
-      expect((await f.run()).body.error).toBe("dnd_not_confirmed");
-      expect(f.claim).not.toHaveBeenCalled();
-      expect(f.send).not.toHaveBeenCalled();
-    },
-  );
+  it.each(
+    ["SMS", "sms", "SmS", "WhatsApp", "whatsapp", "wHaTsApP"].flatMap((channel) =>
+      ["active", "permanent"].map((status) => [channel, status]),
+    ),
+  )("explicit %s %s block prevents reservation even with live flags", async (channel, status) => {
+    const f = setup();
+    f.cfg.simulation = false;
+    f.cfg.liveSendEnabled = true;
+    f.deps.contacto = async () => ({
+      ok: true,
+      data: raw({ dndSettings: { [channel!]: { status } } }),
+    });
+    expect((await f.run()).body.error).toBe("dnd_not_confirmed");
+    expect(f.claim).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("contact identity diagnostics do not authorize DND", () => {

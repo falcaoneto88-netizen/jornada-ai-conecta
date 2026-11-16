@@ -660,3 +660,23 @@ Gates locais finais da candidata: 176 testes combinados; subconjunto inbox/conte
 - **Estados nesta anotação:** implementado e testado localmente; publicação e migração remota pendentes; ponta a ponta não verificada; nenhum envio real. Mesmo depois de publicar o controlo, ativação deve aguardar revalidação do workflow n8n e de sua leitura de `health.runtime` — não falsear o piloto/concorrência. Confirmação automática integral continua pendente de homologação específica.
 
 Contrato, URLs e plano de retomada: `docs/n8n-runtime-policy-2026-11-16.md`. Registar abaixo a integração/publicação efetivamente observada, sem substituir estes resultados históricos.
+
+### Complemento de revisão DND — 16/11/2026
+
+- A leitura autenticada de um contacto de teste existente retornou preferências `sms`, `call` e `email` em minúsculas. A guarda antiga só examinava `SMS`/`WhatsApp`, um defeito concreto que podia ignorar `active/permanent` sob alias minúsculo. A publicação foi retida para corrigir esse caso.
+- `dndPermite` agora avalia todos os aliases relevantes sem distinção de caixa, sem mesclar/sobrescrever campos: qualquer bloqueio prevalece em qualquer ordem. Ausência continua sem significar opt-in; identidade e preferências malformadas continuam recusadas. Testes incluem caixa mista, aliases contraditórios, bloqueio antes e depois da reserva e canais não relacionados.
+- Gates finais do complemento: **727 testes/17 suítes** unitários/contrato/UI; build repetido e aprovado. Os 53 testes PostgreSQL anteriores continuam válidos pois SQL não mudou. TypeScript e lint do complemento passaram. Contagens substituem as 688 anteriores, não se somam.
+- Integração intermediária `1426bf3b064547031c4583c9b5013f6e211b9b5c`: 25 arquivos de aplicação/documentação conferidos por SHA-256 contra candidata local `29ef177c49e10a8fe5eb9c235c756e7d31a6ec39`, sem extras; arquivos 0027/metadados ainda não presentes nessa revisão Git. O Lovable informou migração aplicada; ainda se aguarda conferência dos artefatos/ACLs e integração final do complemento. Nenhuma publicação ou ativação inferida do título automático do commit.
+
+## Integração Lovable — política de runtime n8n + complemento DND (16/11/2026)
+
+- Base no projeto original: `206e6517`; pacote principal (28 arquivos) + complemento DND (5 arquivos).
+- Hashes: 27/29 caminhos únicos idênticos ao `after_sha256` (inclui `0027_n8n_bridge_runtime_policy.sql`, `06c88c15…`, e `n8n-bridge.core.ts`, `7d10d5fc…`).
+  Diferenças oficiais da plataforma, semanticamente equivalentes: `_journal.json` idx 27 com `when=1794833741237` (real gravado pela ferramenta; candidato 1794834000000 não usado para evitar reexecução) e `0027_snapshot.json` com `id` 386c4836… (candidato 392896da…), restante igual.
+- Arquivos adicionais alterados pela plataforma: `src/integrations/supabase/types.ts` (regenerado), `roadmap.md`. Commit automático intermediário `1426bf3` (mensagem "Corrigiu JWT validation flow") contém apenas arquivos do pacote.
+- 0027 aplicada uma única vez pela ferramenta oficial (SQL igual ao do pacote, apenas a newline final retirada pela ferramenta e restaurada no repositório). Histórico `drizzle.__drizzle_migrations` não legível pelo papel de leitura (permission denied); aplicação não repetida.
+- `n8n_bridge_runtime_policies`: RLS ativa, 0 políticas, 0 linhas; ACL `postgres=arwdDxtm`, `service_role=r`, `sandbox_exec=ar` (privilégio administrativo da plataforma observado); anon/authenticated sem privilégio.
+- `n8n_bridge_set_runtime_policy`: SECURITY DEFINER, EXECUTE apenas postgres/service_role.
+- Flags preservadas (org f07ab3be…): bridge_enabled=true, simulation=true, live_send_enabled=false, channel_verified=false; calendar nPXR1Fyp0r3CpaMMGSki, whatsapp_zaptos, provider 6770181745a2e55f83cab3eb. Produção não ativada.
+- Gates no Lovable: 727/727 (17 suítes), tsc, ESLint dirigido, diff-check e build OK. Suítes PostgreSQL não executadas aqui (runtime ausente).
+- Nenhum envio, reexecução de evento, edição GHL/n8n/contatos/DND.

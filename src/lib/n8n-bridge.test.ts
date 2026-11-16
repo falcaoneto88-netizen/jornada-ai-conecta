@@ -774,6 +774,16 @@ describe("production authorization around live send", () => {
   it.each([
     [{ dnd: true }, "dnd_not_confirmed"],
     [{ dndSettings: { SMS: { status: "active" } } }, "dnd_not_confirmed"],
+    [{ dndSettings: { sms: { status: "active" } } }, "dnd_not_confirmed"],
+    [{ dndSettings: { whatsapp: { status: "permanent" } } }, "dnd_not_confirmed"],
+    [
+      { dndSettings: { SMS: { status: "inactive" }, sms: { status: "active" } } },
+      "dnd_not_confirmed",
+    ],
+    [
+      { dndSettings: { WhatsApp: { status: "inactive" }, whatsapp: { status: "permanent" } } },
+      "dnd_not_confirmed",
+    ],
     [{ dndSettings: { WhatsApp: { status: "permanent" } } }, "dnd_not_confirmed"],
     [{ dndSettings: undefined }, "contact_not_verified"],
     [{ phone: "+351910000001" }, "contact_changed"],

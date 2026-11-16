@@ -270,10 +270,11 @@ export const CANAIS_DND: Record<Canal, readonly string[]> = {
 /** Only absence of a configured DND block, never consent or authority to send. */
 export function dndPermite(c: ContactoBridge, canal: Canal): boolean {
   if (c.dnd !== false || !obj(c.dndSettings)) return false;
-  return CANAIS_DND[canal].every(
-    (k) =>
-      !Object.prototype.hasOwnProperty.call(c.dndSettings, k) ||
-      c.dndSettings[k]?.status === "inactive",
+  const relevant = CANAIS_DND[canal].map((key) => key.toLowerCase());
+  // GHL emits both SMS/WhatsApp and sms/whatsapp. Inspect every alias without
+  // merging them: a later inactive duplicate must never erase an earlier block.
+  return Object.entries(c.dndSettings).every(
+    ([key, setting]) => !relevant.includes(key.toLowerCase()) || setting?.status === "inactive",
   );
 }
 
