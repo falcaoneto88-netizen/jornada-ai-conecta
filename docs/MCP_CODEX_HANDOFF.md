@@ -681,3 +681,12 @@ Contrato, URLs e plano de retomada: `docs/n8n-runtime-policy-2026-11-16.md`. Reg
 - Gates no Lovable: 727/727 (17 suítes), tsc, ESLint dirigido, diff-check e build OK. Suítes PostgreSQL não executadas aqui (runtime ausente).
 - Nenhum envio, reexecução de evento, edição GHL/n8n/contatos/DND.
 - Publicado a partir de `6643bade`: GET https://jornada-ai-conecta.lovable.app/api/version em 2026-11-16T13:01:10Z → build `jornada-n8n-production-20261116.1`, `n8nRuntimePolicy:1`, `release:null` (ID de deployment não exposto). Flags relidas após publicação: simulation=true, live_send_enabled=false, channel_verified=false.
+
+## Reply eligibility antes do DND — 16/11/2026 (build jornada-n8n-production-20261116.2)
+
+- Pacote JORNADA_N8N_REPLY_ELIGIBILITY_2026-11-16 (base 7e038036): 3/3 arquivos com before_sha256 e after_sha256 conferidos (n8n-bridge-reply-resolve.ts e100c4ca…, .test.ts ff42e6cf…, api/version.ts f27ada39…). Recuperação de senha (7e03803) preservada sem alterações.
+- Revisão integrada e publicada: 7c114be03f875ca2620777fe09ea0121830a3891.
+- Gates no Lovable: vitest n8n 732/732 em 17 suítes; tsc, ESLint dos 3 arquivos, diff-check e vite build OK. Provas PG não executadas (runtime ausente).
+- GET /api/version 2026-11-16T16:12:04Z: build jornada-n8n-production-20261116.2, n8nRuntimePolicy:1, n8n-bridge:3, release null.
+- Flags relidas após publicar: simulation=true, live_send_enabled=false, channel_verified=false. 0027 não reaplicada; nenhuma migração nova.
+- Nenhum workflow/envio executado; contas, organizações, credenciais e contatos inalterados. Jornada ainda NÃO declarada operacional (aguarda adaptação do workflow n8n).
