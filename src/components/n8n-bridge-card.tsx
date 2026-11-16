@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { N8nPilotControl } from "@/components/n8n-pilot-control";
+import { N8nRuntimeControl } from "@/components/n8n-runtime-control";
 import { ChaveN8nSetup } from "@/components/n8n-bridge-key";
-import { estadoPonteN8n, guardarPonteN8n } from "@/lib/n8n-bridge.functions";
+import { estadoPonteN8n, guardarPonteN8n, guardarPoliticaN8n } from "@/lib/n8n-bridge.functions";
 
 type Canal = "" | "sms" | "whatsapp_zaptos";
 
@@ -26,6 +27,7 @@ function Linha({ rotulo, ok, texto }: { rotulo: string; ok: boolean; texto: stri
 export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
   const ler = useServerFn(estadoPonteN8n);
   const guardar = useServerFn(guardarPonteN8n);
+  const guardarPolitica = useServerFn(guardarPoliticaN8n);
   const qc = useQueryClient();
   const { data, isError, isFetching, refetch } = useQuery({
     queryKey: ["n8n-bridge"],
@@ -54,7 +56,7 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
       <div className="surface-card space-y-3 p-6">
         <p className="font-medium">n8n — Confirmação de consultas</p>
         <p role="alert" className="text-sm text-destructive">
-          Não foi possível verificar o estado da ponte e do piloto. Atualize a leitura antes de
+          Não foi possível verificar o estado da ponte e da operação. Atualize a leitura antes de
           configurar.
         </p>
         <Button size="sm" disabled={isFetching} onClick={() => void refetch()}>
@@ -92,8 +94,8 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
         <Badge variant="outline">{data?.bridgeEnabled ? "Ponte ligada" : "Ponte desligada"}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">
-        O estado da ponte mostra a configuração disponível. A execução de ponta a ponta depende de
-        um teste com o contato e o agendamento autorizados. Ativação é manual e feita no servidor.
+        A ponte usa o canal atual do GHL. A configuração de produção é separada da comprovação de
+        entrega: confira os registros de execução e as respostas recebidas.
       </p>
       {data && (
         <ChaveN8nSetup
@@ -134,7 +136,11 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
             ok={!!data.calendarId}
             texto={data.calendarId ? "Definida" : "Por definir"}
           />
-          <Linha rotulo="Canal" ok={!!data.channel} texto={data.channel ?? "Por definir"} />
+          <Linha
+            rotulo="Canal"
+            ok={data.channelVerified}
+            texto={data.channel === "whatsapp_zaptos" ? "GHL → Zaptos/WhatsApp" : "Por verificar"}
+          />
           <Linha
             rotulo="Morada"
             ok={data.clinicAddress.trim() !== ""}
@@ -146,6 +152,24 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
             texto={data.fallbackUserId ? "Definido" : "Nenhum"}
           />
         </ul>
+      )}
+      {data && (
+        <N8nRuntimeControl
+          authorized={data.autorizado}
+          state={data.runtime}
+          calendarId={data.calendarId}
+          channel={data.channel}
+          zaptosProviderId={data.zaptosProviderId}
+          channelVerified={data.channelVerified}
+          refreshing={isFetching}
+          disabled={pending}
+          save={(change) => guardarPolitica({ data: change })}
+          refresh={async () => {
+            const latest = await refetch();
+            if (latest.isError || !latest.data?.autorizado || !latest.data.runtime?.available)
+              throw new Error("state_unavailable");
+          }}
+        />
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
@@ -166,8 +190,12 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
             onChange={(e) => setCanal(e.target.value as Canal)}
           >
             <option value="">Por definir</option>
-            <option value="sms">SMS de operadora (indisponível na v1)</option>
-            <option value="whatsapp_zaptos">WhatsApp (ZaptosWPP, via tipo SMS)</option>
+            {canal === "sms" && (
+              <option value="sms" disabled>
+                SMS de operadora — configuração anterior indisponível
+              </option>
+            )}
+            <option value="whatsapp_zaptos">GHL → Zaptos/WhatsApp</option>
           </select>
         </div>
         <div className="space-y-1 sm:col-span-2">
@@ -190,13 +218,13 @@ export function N8nBridgeCard({ allowed }: { allowed: boolean }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Guardar não altera o estado de ativação. Mudar canal ou provedor anula a verificação do
-        canal, que só é feita na implantação administrativa. Nenhum canal está escolhido por
-        omissão. O estado “aceite” da API não comprova entrega.
+        canal, que será conferido pelo servidor ao ativar a produção. Nenhum canal está escolhido
+        por omissão. O estado “aceite” da API não comprova entrega.
       </p>
       <Button onClick={gravar} disabled={pending} size="sm">
         {pending ? "A guardar…" : "Guardar configuração"}
       </Button>
-      {data && (
+      {data && (!data.runtime || data.runtime.mode === "pilot") && (
         <N8nPilotControl
           state={data}
           refreshing={isFetching}

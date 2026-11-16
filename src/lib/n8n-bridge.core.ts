@@ -12,7 +12,13 @@ import {
 } from "./n8n-bridge-confirmation";
 
 import { resolverResposta } from "./n8n-bridge-reply-resolve";
-import { autorizarPiloto, estadoPiloto, type PilotRead } from "./n8n-bridge-pilot";
+import { estadoPiloto, type PilotRead } from "./n8n-bridge-pilot";
+import {
+  autorizarRuntime,
+  estadoRuntime,
+  type RuntimeRead,
+  type RuntimeAuthority,
+} from "./n8n-bridge-runtime";
 import { validarLembrete, type DepsLembretes } from "./n8n-bridge-reminders";
 
 import { KINDS_INTERNOS, N8N_KINDS, montarMensagem, type KindN8n } from "./n8n-bridge.templates";
@@ -115,6 +121,7 @@ export type Reserva =
 export type LeituraCredencial = { ok: true; digest: string | null } | { ok: false };
 
 export type DepsBridge = {
+  lerPoliticaRuntime?: (orgId: string) => Promise<RuntimeRead>;
   lerPiloto?: (orgId: string) => Promise<PilotRead>;
   confirmacao?: DepsConfirmacao;
   lembretes?: DepsLembretes;
@@ -334,10 +341,11 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     }
   }
   if (!res) return erro("binding_unavailable", 503);
+  res = { ...res };
 
   const lida = await deps.lerConfig(res.orgId).catch(() => ({ ok: false as const }));
   if (!lida.ok) return erro("bridge_schema_unavailable", 503);
-  const cfg = lida.cfg;
+  const cfg = { ...lida.cfg };
 
   const cabe = await deps.hit(res.orgId).catch(() => null);
   if (cabe === null) return erro("bridge_schema_unavailable", 503);
@@ -345,6 +353,7 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
 
   if (pedido.op === "health") {
     const pilot = await estadoPiloto(deps, res.orgId);
+    const runtime = await estadoRuntime(deps, res.orgId);
     return reply(
       {
         ok: true,
@@ -358,6 +367,7 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
         smsRouteConfigured: false,
         addressConfigured: cfg.clinicAddress.trim() !== "",
         pilot,
+        runtime,
       },
       200,
     );
@@ -492,15 +502,21 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
   if (!cfg.liveSendEnabled || !res.writeEnabled || !res.integracaoConectada)
     return erro("live_send_disabled", 403);
 
-  const revalidarPiloto = () =>
-    autorizarPiloto(deps, res.orgId, {
-      contactId: e.contactId,
-      appointmentId: e.id,
-      startTime: atual,
-      kind: pedido.kind,
-    });
-  const pilot = await revalidarPiloto();
-  if (!pilot.ok) return erro(pilot.code, pilot.status);
+  const revalidarAutoridade = (previous?: RuntimeAuthority) =>
+    autorizarRuntime(
+      deps,
+      res,
+      cfg,
+      {
+        contactId: e.contactId,
+        appointmentId: e.id,
+        startTime: atual,
+        kind: pedido.kind,
+      },
+      previous,
+    );
+  const authority = await revalidarAutoridade();
+  if (!authority.ok) return erro(authority.code, authority.status);
 
   const reserva = await deps
     .claim(res.orgId, e.id, atual, pedido.kind, c.data.id)
@@ -532,11 +548,44 @@ export async function processarBridge(request: Request, deps: DepsBridge): Promi
     return erro(latestAcknowledgementError.code, latestAcknowledgementError.status);
   }
 
-  // Única tentativa externa desta reserva.
-  const latestPilot = await revalidarPiloto();
-  if (!latestPilot.ok) {
-    await deps.finish(res.orgId, reserva.id, "rejected", null, latestPilot.code).catch(() => false);
-    return erro(latestPilot.code, latestPilot.status);
+  // Booking has no reminder-history validator: re-read the appointment after reservation too.
+  if (pedido.kind === "booking") {
+    const freshEvent = await lerEvento(deps, res.locationId, pedido.appointmentId, cfg.calendarId);
+    const error = !freshEvent.ok
+      ? freshEvent
+      : freshEvent.data.contactId !== e.contactId ||
+          normalizarInstante(freshEvent.data.startTime) !== atual ||
+          !ESTADOS_ATIVOS.has(freshEvent.data.appointmentStatus) ||
+          Date.parse(atual) <= deps.now()
+        ? { code: "appointment_changed", status: 409 }
+        : null;
+    if (error) {
+      await deps.finish(res.orgId, reserva.id, "rejected", null, error.code).catch(() => false);
+      return erro(error.code, error.status);
+    }
+  }
+
+  // Única tentativa externa desta reserva, com preferências atuais.
+  if (!interno) {
+    const freshContact = await lerContacto(deps, res.locationId, pedido.contactId);
+    const error = !freshContact.ok
+      ? freshContact
+      : freshContact.data.phone !== c.data.phone
+        ? { code: "contact_changed", status: 409 }
+        : !dndPermite(freshContact.data, cfg.channel!)
+          ? { code: "dnd_not_confirmed", status: 409 }
+          : null;
+    if (error) {
+      await deps.finish(res.orgId, reserva.id, "rejected", null, error.code).catch(() => false);
+      return erro(error.code, error.status);
+    }
+  }
+  const latestAuthority = await revalidarAutoridade(authority.authority);
+  if (!latestAuthority.ok) {
+    await deps
+      .finish(res.orgId, reserva.id, "rejected", null, latestAuthority.code)
+      .catch(() => false);
+    return erro(latestAuthority.code, latestAuthority.status);
   }
   const envio = await deps
     .enviar(corpoGhl)

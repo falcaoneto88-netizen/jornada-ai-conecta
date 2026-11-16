@@ -90,6 +90,7 @@ function fixture() {
   };
   const deps: DepsBridge = {
     token: TOKEN,
+    lerPoliticaRuntime: async () => ({ ok: true, data: null }),
     lerPiloto: testPilot(ORG, "contact01", "appoint01", START),
     now: () => NOW,
     resolver: async () => scope,
@@ -932,5 +933,79 @@ describe("appointment.confirm pilot authorization", () => {
     expect((await f.run()).status).toBe(403);
     expect(f.conf.confirm).not.toHaveBeenCalled();
     expect(f.conf.finish).not.toHaveBeenCalledWith(ORG, "confirmation01", "confirmed", null);
+  });
+});
+
+describe("confirmation runtime authorization", () => {
+  const policy = (mode: "off" | "pilot" | "production" = "production") => ({
+    organization_id: "f07ab3be-7419-4779-a901-ef71c5fc27f0",
+    mode,
+    revision: 1,
+    location_id: LOC,
+    calendar_id: CAL,
+    channel: "whatsapp_zaptos",
+    zaptos_provider_id: "provider01",
+    allowed_kinds: ["booking", "req24", "req12"],
+    verified_at: "2026-10-06T11:00:00Z",
+    updated_at: "2026-10-06T11:00:00Z",
+    updated_by: "f07ab3be-7419-4779-a901-ef71c5fc27f0",
+  });
+  it("blocks appointment.confirm in continuous production even with valid reply proof", async () => {
+    const f = fixture(),
+      row = policy();
+    f.scope.orgId = row.organization_id;
+    f.deps.lerPoliticaRuntime = async () => ({ ok: true, data: row });
+    Object.assign(f.cfg, {
+      channel: "whatsapp_zaptos",
+      channelVerified: true,
+      zaptosProviderId: "provider01",
+    });
+    expect(await f.run()).toMatchObject({
+      status: 403,
+      body: { error: "production_action_not_supported" },
+    });
+    expect(f.conf.claim).not.toHaveBeenCalled();
+    expect(f.conf.confirm).not.toHaveBeenCalled();
+  });
+  it.each(["off", "production", "unavailable"])(
+    "blocks runtime %s changed after pilot reservation, before PUT",
+    async (change) => {
+      const f = fixture();
+      f.conf.claim.mockImplementationOnce(async () => {
+        const row = policy(change === "off" ? "off" : "production");
+        // The legacy fixture uses a synthetic non-UUID org; use the authenticated scope as-is
+        // for unavailable, or move to a valid explicit policy only for a matching test tenant.
+        f.deps.lerPoliticaRuntime =
+          change === "unavailable"
+            ? async () => ({ ok: false })
+            : async () => ({ ok: true, data: row });
+        return { reserved: true, id: "confirmation01" };
+      });
+      f.scope.orgId = "f07ab3be-7419-4779-a901-ef71c5fc27f0";
+      f.deps.lerPiloto = testPilot(f.scope.orgId, "contact01", "appoint01", START);
+      const expected =
+        change === "off"
+          ? "runtime_disabled"
+          : change === "production"
+            ? "runtime_policy_changed"
+            : "runtime_policy_unavailable";
+      expect((await f.run()).body.error).toBe(expected);
+      expect(f.conf.confirm).not.toHaveBeenCalled();
+      expect(f.conf.finish).toHaveBeenCalledWith(
+        f.scope.orgId,
+        "confirmation01",
+        "rejected",
+        expected,
+      );
+    },
+  );
+  it("rechecks integration write authority after pilot reservation", async () => {
+    const f = fixture();
+    f.conf.claim.mockImplementationOnce(async () => {
+      f.scope.writeEnabled = false;
+      return { reserved: true, id: "confirmation01" };
+    });
+    expect((await f.run()).body.error).toBe("live_send_disabled");
+    expect(f.conf.confirm).not.toHaveBeenCalled();
   });
 });

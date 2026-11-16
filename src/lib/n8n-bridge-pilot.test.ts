@@ -53,6 +53,7 @@ function fixture() {
   const deps: DepsBridge = {
     token: TOKEN,
     now: () => clock,
+    lerPoliticaRuntime: async () => ({ ok: true, data: null }),
     lerPiloto: read,
     resolver: async () => ({
       orgId: ORG,

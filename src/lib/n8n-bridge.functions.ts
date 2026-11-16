@@ -5,6 +5,19 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { configEntradaSchema } from "./n8n-bridge.schema";
 import { pilotInputSchema } from "./n8n-bridge-pilot.schema";
+import { runtimeInputSchema } from "./n8n-bridge-runtime.schema";
+
+export const guardarPoliticaN8n = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => runtimeInputSchema.parse(data))
+  .handler(async ({ context, data }) => {
+    const { guardarPoliticaBridge } = await import("./n8n-bridge-runtime.admin.server");
+    return guardarPoliticaBridge(
+      { supabase: context.supabase as never, userId: context.userId },
+      getRequest().headers,
+      data,
+    );
+  });
 
 /** Separate explicit admin action; never toggles existing live/channel/simulation flags. */
 export const guardarPilotoN8n = createServerFn({ method: "POST" })

@@ -3,12 +3,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EstadoPonteN8n } from "@/lib/n8n-bridge.admin.server";
-const mocked = vi.hoisted(() => ({ save: vi.fn(), read: vi.fn(), config: vi.fn() }));
+const mocked = vi.hoisted(() => ({
+  save: vi.fn(),
+  read: vi.fn(),
+  config: vi.fn(),
+  runtime: vi.fn(),
+}));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
 vi.mock("@/lib/n8n-bridge.functions", () => ({
   guardarPilotoN8n: mocked.save,
   estadoPonteN8n: mocked.read,
   guardarPonteN8n: mocked.config,
+  guardarPoliticaN8n: mocked.runtime,
 }));
 vi.mock("@/components/n8n-bridge-key", () => ({ ChaveN8nSetup: () => null }));
 import { N8nBridgeCard } from "./n8n-bridge-card";
@@ -40,6 +46,18 @@ const state = (): EstadoPonteN8n => ({
     allowedKinds: [],
   },
   pilotCheckedAt: "2026-10-08T12:00:00.000Z",
+  runtime: {
+    available: true,
+    mode: "pilot",
+    revision: 0,
+    allowedKinds: [],
+    locationId: "location01",
+    calendarId: "calendar01",
+    channel: "whatsapp_zaptos",
+    zaptosProviderId: "provider01",
+    verifiedAt: null,
+    updatedAt: null,
+  },
 });
 const active = () => ({
   ...state(),
@@ -221,10 +239,30 @@ describe("existing integration card wiring", () => {
         <N8nBridgeCard allowed />
       </QueryClientProvider>,
     );
-    await screen.findByText("Piloto de um agendamento");
+    await screen.findByRole("heading", { name: "Piloto de um agendamento" });
     expect(mocked.read).toHaveBeenCalledTimes(1);
     expect(mocked.save).not.toHaveBeenCalled();
+    expect(mocked.runtime).not.toHaveBeenCalled();
     expect(button("Guardar autorização do piloto")).toBeTruthy();
+    query.clear();
+  });
+  it("production hides the single-appointment pilot form and shows continuous controls", async () => {
+    const data = state();
+    data.runtime.mode = "production";
+    data.runtime.revision = 2;
+    data.runtime.allowedKinds = ["booking"];
+    mocked.read.mockResolvedValue(data);
+    const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={query}>
+        <N8nBridgeCard allowed />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Operação da automação");
+    expect(screen.queryByText("Piloto de um agendamento", { selector: "h3" })).toBeNull();
+    expect(screen.queryByLabelText("ID exato do contato de teste")).toBeNull();
+    expect(button("Desligar envios")).toBeTruthy();
+    expect(mocked.runtime).not.toHaveBeenCalled();
     query.clear();
   });
   it("does not query or expose pilot for forbidden/demo route", () => {

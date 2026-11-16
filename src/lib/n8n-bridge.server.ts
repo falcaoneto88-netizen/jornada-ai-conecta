@@ -13,6 +13,7 @@ import {
 import type { DepsLembretes, ReminderEvidence } from "./n8n-bridge-reminders";
 import { normalizarMensagemGhl, type DepsConfirmacao } from "./n8n-bridge-confirmation";
 import type { PilotRead } from "./n8n-bridge-pilot";
+import type { RuntimeRead } from "./n8n-bridge-runtime";
 import { GHL_ORIGIN, GHL_VERSION, ghlFetch, readGhlSecrets, type GhlConfig } from "./ghl.server";
 
 type Resp = { data: unknown; error: { code?: string; message?: string } | null };
@@ -291,6 +292,7 @@ export function criarDepsBridge(db: ClienteBridge): DepsBridge {
   return {
     token: process.env["N8N_JORNADA_BRIDGE_TOKEN"],
     lerPiloto: (orgId) => lerPilotoBridge(db, orgId),
+    lerPoliticaRuntime: (orgId) => lerPoliticaBridge(db, orgId),
     confirmacao: criarDepsConfirmacao(db),
     lembretes: criarDepsLembretes(db),
     verifiedConfirmation: async (orgId, appointmentId, startTime) => {
@@ -398,6 +400,18 @@ export async function lerPilotoBridge(db: ClienteBridge, orgId: string): Promise
     .from("n8n_bridge_pilot_grants")
     .select(
       "organization_id,enabled,contact_id,ghl_appointment_id,start_time,expires_at,allowed_kinds",
+    )
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  return r.error ? { ok: false } : { ok: true, data: r.data };
+}
+
+/** Missing row keeps legacy pilot authority; unavailable schema never grants authority. */
+export async function lerPoliticaBridge(db: ClienteBridge, orgId: string): Promise<RuntimeRead> {
+  const r = await db
+    .from("n8n_bridge_runtime_policies")
+    .select(
+      "organization_id,mode,location_id,calendar_id,channel,zaptos_provider_id,allowed_kinds,revision,verified_at,updated_by,updated_at",
     )
     .eq("organization_id", orgId)
     .maybeSingle();

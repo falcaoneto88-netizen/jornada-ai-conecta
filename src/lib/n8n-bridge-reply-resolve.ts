@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   normalizarInstante,
   parseContacto,
+  parseIdentidadeContacto,
   parseEvento,
   type ConfigBridge,
   type DepsBridge,
@@ -42,8 +43,10 @@ export async function resolverResposta(
   if (!Number.isFinite(observedAt)) return fail("reply_clock_unavailable", 503);
   const contact = await deps.contacto(scope.locationId, contactId).catch(unavailable);
   if (!contact.ok) return fail("ghl_unavailable", 502);
-  if (!parseContacto(contact.data, contactId, scope.locationId))
+  if (!parseIdentidadeContacto(contact.data, contactId, scope.locationId))
     return fail("contact_not_verified");
+  if (!parseContacto(contact.data, contactId, scope.locationId))
+    return fail("contact_preferences_not_verified");
 
   // The existing scoped RPC returns accepted req24/req12 sends only. 51 means overflow.
   const listed = await evidence

@@ -315,6 +315,20 @@ describe("reply discovery does not guess identity or appointment", () => {
       expect((await f.run()).body.error).toBe("appointment_changed");
     },
   );
+  it.each([undefined, null, [], { SMS: { status: "unknown" } }])(
+    "distinguishes malformed preferences from verified identity %#",
+    async (dndSettings) => {
+      const f = fixture();
+      vi.mocked(f.deps.contacto).mockResolvedValue({
+        ok: true,
+        data: {
+          total: 1,
+          contacts: [{ id: "contact01", locationId: LOC, dnd: false, dndSettings }],
+        },
+      });
+      expect((await f.run()).body.error).toBe("contact_preferences_not_verified");
+    },
+  );
   it("requires authenticated exact contact", async () => {
     const f = fixture();
     vi.mocked(f.deps.contacto).mockResolvedValue({ ok: true, data: { total: 0, contacts: [] } });

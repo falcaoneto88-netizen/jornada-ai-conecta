@@ -1,7 +1,7 @@
 /** Regressão na fronteira do adaptador real: só 4xx explícito é definitivo. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { criarDepsBridge, type ClienteBridge } from "./n8n-bridge.server";
+import { criarDepsBridge, lerPoliticaBridge, type ClienteBridge } from "./n8n-bridge.server";
 import { dndPermite, parseContacto } from "./n8n-bridge.core";
 
 const db = {} as ClienteBridge;
@@ -128,5 +128,36 @@ describe("contacto (leitura individual GHL)", () => {
       ok: false,
     });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runtime policy adapter", () => {
+  it.each([null, { mode: "off" }])(
+    "scopes the read and preserves absence vs policy",
+    async (data) => {
+      const chain = { eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data, error: null })) };
+      chain.eq.mockReturnValue(chain);
+      const select = vi.fn((_columns: string) => chain);
+      const from = vi.fn(() => ({ select }));
+      const client = { from } as unknown as ClienteBridge;
+      expect(await lerPoliticaBridge(client, "org-only-server")).toEqual({ ok: true, data });
+      expect(from).toHaveBeenCalledWith("n8n_bridge_runtime_policies");
+      expect(chain.eq).toHaveBeenCalledExactlyOnceWith("organization_id", "org-only-server");
+      expect(select.mock.calls[0]?.[0]).toBe(
+        "organization_id,mode,location_id,calendar_id,channel,zaptos_provider_id,allowed_kinds,revision,verified_at,updated_by,updated_at",
+      );
+    },
+  );
+  it("unavailable schema is not mistaken for absent pilot-default policy", async () => {
+    const chain = {
+      eq: vi.fn(),
+      maybeSingle: vi.fn(async () => ({ data: null, error: { code: "42P01" } })),
+    };
+    chain.eq.mockReturnValue(chain);
+    const client = { from: () => ({ select: () => chain }) } as unknown as ClienteBridge;
+    expect(await lerPoliticaBridge(client, "org-only-server")).toEqual({ ok: false });
+    expect(await criarDepsBridge(client).lerPoliticaRuntime!("org-only-server")).toEqual({
+      ok: false,
+    });
   });
 });

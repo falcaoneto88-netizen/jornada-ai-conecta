@@ -156,6 +156,7 @@ function deps(
   const enviar = vi.fn(async () => ({ ok: true as const, messageId: "msg-1" }));
   return {
     token: TOKEN,
+    lerPoliticaRuntime: async () => ({ ok: true, data: null }),
     lerPiloto: testPilot(ORG, "contact01", "appt0001", INICIO),
     verifiedConfirmation: async () => true,
     confirmacao: acknowledgementEvidence(),
@@ -648,5 +649,179 @@ describe("templates", () => {
     });
     expect(m).toContain("Morada: Rua X");
     expect(m).not.toContain("<");
+  });
+});
+
+describe("production authorization around live send", () => {
+  function production() {
+    const cfg = { ...PRONTO };
+    const policy = {
+      organization_id: ORG,
+      mode: "production",
+      revision: 1,
+      location_id: LOC,
+      calendar_id: CAL,
+      channel: "whatsapp_zaptos",
+      zaptos_provider_id: PRONTO.zaptosProviderId,
+      allowed_kinds: ["booking", "req24", "req12"],
+      verified_at: "2026-10-01T08:00:00Z",
+      updated_at: "2026-10-01T08:00:00Z",
+      updated_by: ORG,
+    };
+    const d = deps({
+      cfg,
+      lerPoliticaRuntime: async () => ({ ok: true, data: policy }),
+      lerPiloto: vi.fn(async () => ({ ok: true, data: null })),
+      finish: vi.fn(async () => true),
+    });
+    const originalScope = {
+      orgId: ORG,
+      locationId: LOC,
+      writeEnabled: true,
+      integracaoConectada: true,
+    };
+    const scope = { ...originalScope };
+    d.resolver = async () => scope;
+    const send = () => run({ ...envio, kind: "booking" }, d);
+    return { cfg, policy, d, scope, send };
+  }
+  it.each(["booking", "req24", "req12"])(
+    "sends only authorized %s with existing evidence, no pilot",
+    async (kind) => {
+      const f = production();
+      expect(await run({ ...envio, kind }, f.d)).toMatchObject({
+        status: 200,
+        json: { status: "accepted", delivered: false },
+      });
+      expect(f.d.lerPiloto).not.toHaveBeenCalled();
+      expect(f.d.enviar).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("does not promote the acknowledgement temporal exception to production", async () => {
+    const f = production();
+    f.d.consulta = async () => ({ ok: true, data: eventoRaw({ appointmentStatus: "confirmed" }) });
+    f.d.claim = vi.fn();
+    expect(await run({ ...envio, kind: "confirm" }, f.d)).toMatchObject({
+      status: 403,
+      json: { error: "production_action_not_supported" },
+    });
+    expect(f.d.claim).not.toHaveBeenCalled();
+    expect(f.d.enviar).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["off", "runtime_disabled"],
+    ["revision", "runtime_policy_changed"],
+    ["mode", "runtime_policy_changed"],
+    ["provider", "runtime_configuration_changed"],
+    ["calendar", "runtime_configuration_changed"],
+    ["location", "runtime_scope_changed"],
+    ["org", "runtime_scope_changed"],
+    ["write", "live_send_disabled"],
+    ["simulation", "live_send_disabled"],
+    ["bridge", "bridge_disabled"],
+    ["live", "live_send_disabled"],
+    ["schema", "runtime_policy_unavailable"],
+  ])("rejects %s change during reservation without POST", async (change, error) => {
+    const f = production();
+    f.d.claim = vi.fn(async () => {
+      if (change === "off") f.policy.mode = "off";
+      if (change === "revision") f.policy.revision++;
+      if (change === "mode") f.policy.mode = "pilot";
+      if (change === "provider") f.cfg.zaptosProviderId = "otherprovider01";
+      if (change === "calendar") f.cfg.calendarId = "othercalendar01";
+      if (change === "location") f.scope.locationId = "otherlocation01";
+      if (change === "org") f.scope.orgId = "12345678-1234-4234-8234-123456789012";
+      if (change === "write") f.scope.writeEnabled = false;
+      if (change === "simulation") f.cfg.simulation = true;
+      if (change === "bridge") f.cfg.bridgeEnabled = false;
+      if (change === "live") f.cfg.liveSendEnabled = false;
+      if (change === "schema") f.d.lerPoliticaRuntime = async () => ({ ok: false });
+      return { reserved: true as const, id: "reserved-production" };
+    });
+    expect((await f.send()).json["error"]).toBe(error);
+    expect(f.d.enviar).not.toHaveBeenCalled();
+    expect(f.d.finish).toHaveBeenCalledWith(ORG, "reserved-production", "rejected", null, error);
+  });
+  it.each([
+    [{ appointmentStatus: "cancelled" }, "appointment_changed"],
+    [{ startTime: "2026-10-03T10:00:00Z" }, "appointment_changed"],
+    [{ contactId: "othercontact01" }, "appointment_changed"],
+    [{ locationId: "otherlocation01" }, "appointment_not_verified"],
+    [{ calendarId: "othercalendar01" }, "calendar_mismatch"],
+    [{ id: "otherappointment01" }, "appointment_not_verified"],
+  ])("rechecks booking appointment after reservation %#", async (updated, error) => {
+    const f = production();
+    f.d.claim = vi.fn(async () => {
+      f.d.consulta = async () => ({
+        ok: true,
+        data: eventoRaw(updated as Record<string, unknown>),
+      });
+      return { reserved: true as const, id: "reserved-production" };
+    });
+    expect((await f.send()).json["error"]).toBe(error);
+    expect(f.d.enviar).not.toHaveBeenCalled();
+    expect(f.d.finish).toHaveBeenCalledWith(ORG, "reserved-production", "rejected", null, error);
+  });
+  it("does not book after start elapsed while reserving", async () => {
+    const f = production();
+    f.d.claim = vi.fn(async () => {
+      f.d.now = () => Date.parse(INICIO);
+      return { reserved: true as const, id: "reserved-production" };
+    });
+    expect((await f.send()).json["error"]).toBe("appointment_changed");
+    expect(f.d.enviar).not.toHaveBeenCalled();
+  });
+  it.each([
+    [{ dnd: true }, "dnd_not_confirmed"],
+    [{ dndSettings: { SMS: { status: "active" } } }, "dnd_not_confirmed"],
+    [{ dndSettings: { WhatsApp: { status: "permanent" } } }, "dnd_not_confirmed"],
+    [{ dndSettings: undefined }, "contact_not_verified"],
+    [{ phone: "+351910000001" }, "contact_changed"],
+    [{ locationId: "otherlocation01" }, "contact_not_verified"],
+  ] as const)("rechecks contact/DND after reservation %#", async (updated, error) => {
+    const f = production();
+    f.d.claim = vi.fn(async () => {
+      f.d.contacto = async () => ({ ok: true, data: contactoRaw(updated) });
+      return { reserved: true as const, id: "reserved-production" };
+    });
+    expect((await f.send()).json["error"]).toBe(error);
+    expect(f.d.enviar).not.toHaveBeenCalled();
+    expect(f.d.finish).toHaveBeenCalledWith(ORG, "reserved-production", "rejected", null, error);
+  });
+  it.each(["reserved", "rejected", "unknown"] as const)(
+    "does not replay %s ledger entry in production",
+    async (state) => {
+      const f = production();
+      f.d.claim = async () => ({ reserved: false, id: "duplicate", state, messageId: null });
+      expect(await f.send()).toMatchObject({
+        status: 409,
+        json: { error: "send_already_attempted", state },
+      });
+      expect(f.d.enviar).not.toHaveBeenCalled();
+    },
+  );
+  it("preserves accepted ID dedup and unknown delivery result without resend", async () => {
+    const f = production();
+    f.d.claim = async () => ({
+      reserved: false,
+      id: "duplicate",
+      state: "accepted",
+      messageId: "existing-message",
+    });
+    expect((await f.send()).json).toMatchObject({
+      status: "accepted",
+      duplicate: true,
+      messageId: "existing-message",
+      delivered: false,
+    });
+    expect(f.d.enviar).not.toHaveBeenCalled();
+  });
+  it("simulation remains simulation even with production policy and flags enabled", async () => {
+    const f = production();
+    f.cfg.simulation = true;
+    f.d.claim = vi.fn();
+    expect((await f.send()).json).toMatchObject({ status: "simulated", delivered: false });
+    expect(f.d.claim).not.toHaveBeenCalled();
+    expect(f.d.enviar).not.toHaveBeenCalled();
   });
 });

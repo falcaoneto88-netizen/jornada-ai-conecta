@@ -85,6 +85,7 @@ function fixture() {
   };
   const deps: DepsBridge = {
     token: "synthetic-reminder-test-token-only-32-characters",
+    lerPoliticaRuntime: async () => ({ ok: true, data: null }),
     lerPiloto: testPilot(ORG, CONTACT, "appoint01", START),
     now: () => NOW,
     resolver: async () => ({

@@ -15,6 +15,7 @@ import {
 } from "./n8n-bridge.server";
 import { ghlFetch } from "./ghl.server";
 import { estadoPiloto, type PilotStatus } from "./n8n-bridge-pilot";
+import { emptyRuntimeStatus, type RuntimeStatus } from "./n8n-bridge-runtime.schema";
 
 export type Sessao = {
   supabase: {
@@ -33,6 +34,7 @@ export type Sessao = {
 };
 
 export type EstadoPonteN8n = {
+  runtime: RuntimeStatus;
   pilot: PilotStatus;
   pilotCheckedAt: string | null;
   autorizado: boolean;
@@ -57,6 +59,7 @@ export type EstadoPonteN8n = {
 };
 
 const NEGADO: EstadoPonteN8n = {
+  runtime: emptyRuntimeStatus(),
   pilot: {
     status: "unavailable",
     contactId: null,
@@ -127,7 +130,10 @@ export async function lerEstadoPonte(
   const pilot = a.escopo
     ? await estadoPiloto({ lerPiloto: (org) => lerPilotoBridge(db, org), now: Date.now }, a.org)
     : NEGADO.pilot;
+  const { lerEstadoPolitica } = await import("./n8n-bridge-runtime.admin.server");
+  const runtime = await lerEstadoPolitica(db, a.org);
   return {
+    runtime,
     pilot,
     pilotCheckedAt: new Date().toISOString(),
     autorizado: true,
