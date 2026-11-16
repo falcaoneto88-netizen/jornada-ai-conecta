@@ -699,3 +699,25 @@ Contrato, URLs e plano de retomada: `docs/n8n-runtime-policy-2026-11-16.md`. Reg
 - Gates no Lovable: vitest n8n 743/743 em 17 suítes; tsc OK; ESLint dos 13 TS/TSX alterados OK; diff-check OK; vite build OK. NÃO executados aqui: 41 provas PG (n8n-bridge-runtime.db.test.ts e confirmação DB; sem runtime PG).
 - Revisões: código 0f41297, registos da migração 08e11081 (publicada). GET /api/version 2026-11-16T16:23:55Z: build jornada-n8n-production-20261116.3, n8nRuntimePolicy:1.
 - Flags relidas após publicar: bridge_enabled=true, simulation=true, live_send_enabled=false, channel_verified=false; calendar nPXR1Fyp0r3CpaMMGSki, canal whatsapp_zaptos, provider 6770181745a2e55f83cab3eb inalterados. Nenhum workflow/envio executado; jornada ainda não operacional.
+
+## Ativação de produção n8n — 16/11/2026 (registo documental; sem mudança de código/configuração)
+
+Histórico anterior preservado: até 16:23:55Z (build .3) a produção estava DESLIGADA (simulation=true, live_send_enabled=false, channel_verified=false, 0 políticas).
+
+Informado pelo Dr. João Falcão (não verificado por mim no n8n):
+- Workflow ORIGINAL WrDn82MwKBcuM73G, versão 069eae82-daae-4f39-8f44-8c5bc9507b02, "Produção GHL — Jornada 2026-11-16"; 108 nós, 1 webhook, 1 manual; credenciais/webhookId preservados; IDs/posições regenerados, batchSize=1 default normalizado, ramo vazio removido (sem diferença semântica). SHA256 export adb3d0457c016b5c48390233704ea54dae69fae4a910e964d5af5674ec7d48b8.
+- Teste sintético n8n 1615 às 16:27:05Z: succeeded, 23/23 cenários test_passed=true, sem efeito externo; 54 testes locais do candidato.
+- Ativação em /integracoes após conferência GHL pelo servidor; UI relida mostra Modo Real / Envio Ligado.
+
+Leitura do banco (SELECT, org f07ab3be-7419-4779-a901-ef71c5fc27f0), confirmada:
+- n8n_bridge_runtime_policies (1 linha no total): mode=production, revision=1, allowed_kinds=[booking,req24,req12,appointment.confirm,confirm], location ok2UHC2QMZsd8UHsAgEa, calendar nPXR1Fyp0r3CpaMMGSki, canal whatsapp_zaptos, provider 6770181745a2e55f83cab3eb, verified_at 2026-11-16T16:29:06.768Z, updated_at 16:29:06.958498Z.
+- n8n_bridge_settings: bridge_enabled=true, simulation=false, live_send_enabled=true, channel_verified=true, updated_at 16:29:06.958498Z.
+- audit_logs: 1 evento n8n.runtime.policy.changed, 16:29:06.891222Z, verified=true, pilot→production, revision 0→1, live_send_enabled=true, simulation=false, mesmos kinds/location/calendar/canal/provider.
+
+Estado: implementado ✔ · testado local ✔ · publicado ✔ (build .3) · produção configurada ✔ · **NÃO verificado ponta a ponta**: o teste real depende de uma consulta futura do contato autorizado; ainda não há comprovante de entrega nem de SIM após esta ativação.
+
+Limites operacionais:
+- Mudança de revisão da política invalida esperas/timers antigos (não retomam efeitos).
+- ACK ambíguo vira pendência humana, sem efeito automático.
+- Callbacks duplicados podem manter timers ativos no n8n, mas o ledger (claims únicos/idempotência) impede duplicação de efeito.
+- Nenhuma execução antiga foi repetida; nenhuma mensagem enviada nem consulta criada por esta verificação.
