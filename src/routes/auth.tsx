@@ -60,7 +60,7 @@ function Auth() {
     e.preventDefault();
     setOcupado(true);
     desativarDemo();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setOcupado(false);
     if (error) {
       toast.error(
@@ -102,6 +102,24 @@ function Auth() {
     irParaDestino();
   }
 
+  async function recuperarSenha() {
+    const alvo = email.trim();
+    if (!alvo) {
+      toast.error("Indique o e-mail da conta para receber o link de redefinição.");
+      return;
+    }
+    setOcupado(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(alvo, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setOcupado(false);
+    if (error) {
+      toast.error(`Não foi possível enviar o link: ${error.message}`);
+      return;
+    }
+    toast.success("Se a conta existir, enviámos um link de redefinição para o e-mail indicado.");
+  }
+
   function entrarDemo() {
     ativarDemo();
     toast.info("Modo demonstração ativo — todos os dados são fictícios.");
@@ -137,6 +155,14 @@ function Auth() {
                 <Button type="submit" className="w-full" disabled={ocupado}>
                   {ocupado ? "A entrar…" : "Entrar"}
                 </Button>
+                <button
+                  type="button"
+                  onClick={() => void recuperarSenha()}
+                  disabled={ocupado}
+                  className="w-full text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Esqueci a palavra-passe
+                </button>
               </form>
             </TabsContent>
 

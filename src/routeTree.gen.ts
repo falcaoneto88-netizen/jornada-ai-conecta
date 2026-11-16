@@ -21,6 +21,7 @@ import { Route as IntegracoesRouteImport } from './routes/integracoes'
 import { Route as JornadaRouteImport } from './routes/jornada'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ModelosRouteImport } from './routes/modelos'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as ApiVersionRouteImport } from './routes/api/version'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
@@ -95,6 +96,11 @@ const McpRoute = McpRouteImport.update({
 const ModelosRoute = ModelosRouteImport.update({
   id: '/modelos',
   path: '/modelos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Char91DotwellKnownChar93OauthProtectedResourceRoute =
@@ -194,6 +200,7 @@ export interface FileRoutesByFullPath {
   '/jornada': typeof JornadaRoute
   '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
@@ -223,6 +230,7 @@ export interface FileRoutesByTo {
   '/jornada': typeof JornadaRoute
   '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
@@ -253,6 +261,7 @@ export interface FileRoutesById {
   '/jornada': typeof JornadaRoute
   '/mcp': typeof McpRoute
   '/modelos': typeof ModelosRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/version': typeof ApiVersionRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
@@ -284,6 +293,7 @@ export interface FileRouteTypes {
     | '/jornada'
     | '/mcp'
     | '/modelos'
+    | '/reset-password'
     | '/.well-known/oauth-protected-resource'
     | '/api/version'
     | '/.lovable/oauth/consent'
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/jornada'
     | '/mcp'
     | '/modelos'
+    | '/reset-password'
     | '/.well-known/oauth-protected-resource'
     | '/api/version'
     | '/.lovable/oauth/consent'
@@ -342,6 +353,7 @@ export interface FileRouteTypes {
     | '/jornada'
     | '/mcp'
     | '/modelos'
+    | '/reset-password'
     | '/.well-known/oauth-protected-resource'
     | '/api/version'
     | '/.lovable/oauth/consent'
@@ -372,6 +384,7 @@ export interface RootRouteChildren {
   JornadaRoute: typeof JornadaRoute
   McpRoute: typeof McpRoute
   ModelosRoute: typeof ModelosRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiVersionRoute: typeof ApiVersionRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
@@ -473,6 +486,13 @@ declare module '@tanstack/react-router' {
       path: '/modelos'
       fullPath: '/modelos'
       preLoaderRoute: typeof ModelosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/.well-known/oauth-protected-resource': {
@@ -596,6 +616,7 @@ const rootRouteChildren: RootRouteChildren = {
   JornadaRoute: JornadaRoute,
   McpRoute: McpRoute,
   ModelosRoute: ModelosRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiVersionRoute: ApiVersionRoute,
