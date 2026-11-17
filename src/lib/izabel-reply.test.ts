@@ -152,6 +152,7 @@ describe("Izabel scoped drafting", () => {
     const result = await prepareIzabelReplyForSession(session, input, deps);
     expect(result.ok).toBe(true);
     const request = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    expect(request.max_tokens).toBe(4096);
     const policy = request.messages[0].content;
     expect(policy).toContain("REFERÊNCIA TEXTUAL V03 ELEGÍVEL");
     expect(policy).toContain('"id":"SYNTHETIC_WELCOME"');
@@ -417,6 +418,9 @@ describe("Izabel scoped drafting", () => {
     "Olá [PENDENTE: appointment.only_start_date]",
     "A consulta é às 11:00.",
     "{{contact.name}}, vou responder.",
+    "A data é appointment.start_time",
+    "Olá contact.name",
+    "O endereço é location.address",
     "Enviei o material.",
     "Este procedimento é sem riscos.",
     "Tome 5 mg desse medicamento.",
@@ -472,6 +476,44 @@ describe("Izabel scoped drafting", () => {
     const result = await prepareIzabelReplyForSession(session, input, deps);
     expect(result).toMatchObject({ ok: false, code });
     expect(JSON.stringify(result)).not.toContain("private provider");
+  });
+  it.each([
+    ["length", "erro_ia"],
+    ["content_filter", "invalid_response"],
+    ["tool_calls", "invalid_response"],
+  ])(
+    "rejects %s even with complete-looking JSON, without retry or payload disclosure",
+    async (finishReason, code) => {
+      const transport = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                { finish_reason: finishReason, message: { content: JSON.stringify(draft) } },
+              ],
+            }),
+          ),
+      );
+      const { deps } = setup(draft, { fetch: transport });
+      const result = await prepareIzabelReplyForSession(session, input, deps);
+      expect(result).toMatchObject({ ok: false, code });
+      expect(JSON.stringify(result)).not.toContain(draft.text);
+      expect(transport).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("accepts a completed response without widening the output schema", async () => {
+    const { deps } = setup(draft, {
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: "stop", message: { content: JSON.stringify(draft) } }],
+          }),
+        ),
+    });
+    expect(await prepareIzabelReplyForSession(session, input, deps)).toMatchObject({
+      ok: true,
+      data: { text: draft.text },
+    });
   });
   it("handles missing credentials and malformed or failed model response without exposing payloads", async () => {
     const missing = setup(draft, { apiKey: () => undefined });
@@ -618,5 +660,12 @@ describe("language and patient-safe text", () => {
     expect(
       unsafeReply("Posso ajudar com a sua consulta. Prefere uma avaliação presencial ou online?"),
     ).toBe(false);
+  });
+  it.each([
+    "You can ask about the appointment.",
+    "We can discuss the location.",
+    "You may ask your contact.",
+  ])("does not mistake sentence-ending English for a technical marker: %s", (text) => {
+    expect(unsafeReply(text)).toBe(false);
   });
 });

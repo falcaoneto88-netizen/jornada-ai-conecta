@@ -732,3 +732,18 @@ Limites operacionais:
 - Respostas sintéticas Meu Chat (google/gemini-2.5-flash, sem paciente, sem envio, sem fila): FR dúvida sem fonte OK (sem inventar, alerta de confirmação); PT opt-out OK (handover, sem abordagem comercial); EN clínica individual OK numa execução. **Bloqueio:** PT consulta comercial e EN adiamento falharam (`erro_ia`) — `finish_reason=length`: ~957 de 1000 `max_tokens` consumidos por raciocínio, JSON truncado. Requer ajuste no pacote (ex.: limite maior ou raciocínio desligado) antes de publicar.
 - Fila supervisionada (openai/gpt-5.4-mini, reasoning none): coberta só por testes unitários; sem geração real.
 - Estado: local ✔ / prévia ✔ parcial (bloqueio acima) / publicado ✘. Autonomia não ativada.
+
+### Izabel V03 — complemento de conclusão (17/11/2026 ~14:56 UTC, prévia, NÃO publicado)
+- Pacote JORNADA_IZABEL_V03_COMPLETION_FIX: 3 arquivos (izabel-reply.server.ts, izabel-reply.core.ts, izabel-reply.test.ts) sobre base cb007b9; before/after sha256 conferidos e gravados exatos. Sem migração, GHL, n8n, flags ou autonomia. Recuperação de senha intacta.
+- Mudança: max_tokens 1000→4096 (Meu Chat); finish_reason=length → erro_ia e qualquer outro ≠ stop → invalid_response, antes do parse, sem reparo/retry; unsafeReply só bloqueia `appointment|contact|location.` seguido de identificador (fim de frase inglesa deixa de ser falso positivo). Schema, timeout 30s, limites e guardas inalterados.
+- Histórico preservado: na execução anterior PT consulta comercial e EN adiamento falharam com finish_reason=length (~957/1000 tokens em raciocínio).
+- Gates: 334/334 testes (izabel-reply, knowledge-v03, providers, providers-v03, lovable-provider, runtime-scope, observer, http, policy-staleness); tsc, ESLint (3 arquivos), diff-check OK. Não executados: *.db.test.ts e provas PG (sem runtime PG).
+- Casos sintéticos reais (snapshot sintético, loader privado real com escopo f07ab3be/ok2UHC2QMZsd8UHsAgEa; sem worker/eventos/persistência/envio). Meu Chat pediu google/gemini-2.5-flash; o gateway reportou google/gemini-3.8-flash. Fila: openai/gpt-5.4-mini (reportado gpt-5.4-mini).
+  | Caso | Meu Chat | Fila |
+  |---|---|---|
+  | PT consulta comercial | ok, 200, stop, 7573/1172 (raciocínio 1058), 11,7s | ok, 200, completed, 6157/84, 1,3s |
+  | FR dúvida sem fonte | ok, 200, stop, 7576/975 (869), 9,1s | ok, 200, completed, 6159/74, 1,6s, missing_policy |
+  | EN adiamento | ok, 200, stop, 7572/1792 (1680), 16,1s, handover | ok, 200, completed, 6157/71, 1,2s, handoff |
+  | PT opt-out | ok, 200, stop, 7572/471 (380), 4,7s, handover | ok, 200, completed, 6155/62, 1,4s, optOut+handoff |
+  | EN clínica individual | ok, 200, stop, 7580/472 (349), 5,4s, handover, sem recomendação de tratamento | ok, 200, completed, 6165/85, 1,3s, clinical+urgent+handoff |
+- Estado: implementado ✔ · testado local ✔ · prévia ✔ (10/10) · publicado ✘ (aguarda revisão independente).

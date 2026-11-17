@@ -236,7 +236,7 @@ export const izabelModelReplySchema = z
 export function unsafeReply(text: string): boolean {
   const t = plain(text);
   return (
-    /\[|\]|\{\{|\}\}|\bappointment\.|\bcontact\.|\blocation\.|\bpendente\s*:|<[^>]*>|https?:\/\/|\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/.test(
+    /\[|\]|\{\{|\}\}|\b(?:appointment|contact|location)\.[a-z_]|\bpendente\s*:|<[^>]*>|https?:\/\/|\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/.test(
       text,
     ) ||
     /\b(?:base operacional|v0[23]|prompt|instrucoes internas|system message|ghl|lovable_api_key)\b/.test(

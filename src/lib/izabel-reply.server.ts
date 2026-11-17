@@ -333,7 +333,9 @@ export async function prepareIzabelReplyForSession(
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         temperature: 0.2,
-        max_tokens: 1000,
+        // Gemini includes reasoning in this budget. The previous 1,000-token cap
+        // truncated valid V03 drafts in live synthetic checks; output stays schema-bounded.
+        max_tokens: 4096,
         store: false,
         messages: [
           {
@@ -377,8 +379,16 @@ export async function prepareIzabelReplyForSession(
     if (response.status === 429) return izabelFailure("rate_limited");
     if (response.status === 402) return izabelFailure("sem_creditos");
     if (!response.ok) return izabelFailure("erro_ia");
-    const envelope = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
-    const content = envelope.choices?.[0]?.message?.content;
+    const envelope = (await response.json()) as {
+      choices?: { finish_reason?: unknown; message?: { content?: unknown } }[];
+    };
+    const choice = envelope.choices?.[0];
+    // A syntactically valid fragment is not a completed response. Never repair or
+    // automatically retry an interrupted/filtered generation with patient context.
+    if (choice?.finish_reason === "length") return izabelFailure("erro_ia");
+    if (choice?.finish_reason != null && choice.finish_reason !== "stop")
+      return izabelFailure("invalid_response");
+    const content = choice?.message?.content;
     if (typeof content !== "string" || content.length > 8000)
       return izabelFailure("invalid_response");
     const model = izabelModelReplySchema.safeParse(
