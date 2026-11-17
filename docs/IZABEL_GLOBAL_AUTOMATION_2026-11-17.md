@@ -81,7 +81,7 @@ Pendente: aplicação/publicação desta revisão, verificação autenticada do 
 - 0029 e 0030 aplicadas UMA vez cada via lov_database--migration (transação da ferramenta). Variante única: Drizzle; espelhos supabase/migrations gravados mas não executados (idênticos ao Drizzle). 0030 aplicada sem as linhas `begin;`/`commit;` (a ferramenta proíbe controle de transação e fornece a transação); demais linhas idênticas. Journal real: idx 29 when 1794954385800, idx 30 when 1794954505405 (candidatos 1794931200000/1794934800000 não usados); snapshots 0029/0030 gerados pela plataforma; entradas 0000–0028 preservadas. SQL gravado = pacote exceto newline final (restaurada) e begin/commit da 0030.
 - types.ts: o gerado tipava dispatch_origin como string; mantido o conteúdo exato do pacote (união "supervised"|"automatic"), necessário para o tsc.
 - Pós-aplicação (SELECT): automation_enabled=false, version=0, canais vazios, since/ator/policy_hash nulos; 230/230 drafts dispatch_origin=supervised; estados inalterados; audit=6579 (índice criado sem gravar linhas). RPCs commercial_agent_automation_command e commercial_agent_queue_read_v2: SECURITY DEFINER, search_path="", EXECUTE só postgres/service_role. RLS ativa em settings/drafts/audit, sem novas policies. n8n: bridge_enabled/live_send/channel_verified inalterados.
-- Gates: tsc OK; vite build OK; ESLint nos 41 TS/TSX do pacote (types.ts excluído) 0 erros, 3 avisos fast-refresh; git diff --check OK; vitest 1725/1725 em 45 arquivos (commercial-agent, izabel, UI, n8n; sem *.db). NÃO executados: 9 arquivos *.db.test.ts (234 testes) — initdb falha no sandbox; os 1148 PG locais não foram repetidos.
+- Gates: tsc OK; vite build OK; ESLint nos 41 TS/TSX do pacote (types.ts excluído) 0 erros, 3 avisos fast-refresh; git diff --check OK; vitest 1725/1725 em 45 arquivos (commercial-agent, izabel, UI, n8n; sem *.db). NÃO executados: 9 arquivos *.db.test.ts (234 testes) — initdb falha no sandbox; os 9 arquivos PG / 234 testes não foram repetidos no Lovable. (Correção 17/11 22:40 UTC: os 1148 testes locais em 36 arquivos relatados pelo Dr. João incluem unitários, UI e PG — NÃO são 1148 testes de banco.)
 - Geração sintética direta (configuredAutomaticGenerator, loader privado real, escopo f07ab3be/ok2UHC2QMZsd8UHsAgEa; sem worker/evento/fila/persistência/envio), modelo openai/gpt-5.4-mini, modo automatic, todas com fontes approved_owner:
   - PT comercial: ok, 4913/109 tokens, 4 fontes, handoff=true (flags commercial_conflict, unsupported_action), 1,6 s.
   - FR sem fonte: ok, 4913/79, handoff=true (missing_policy), 1,0 s.
@@ -91,3 +91,14 @@ Pendente: aplicação/publicação desta revisão, verificação autenticada do 
   Nota: com flags, o servidor exigiria revisão (review_required); nenhum caso seria enviado automaticamente.
 - Configuração (só presença): IZABEL_KNOWLEDGE_BUCKET, LOVABLE_API_KEY, COMMERCIAL_AGENT_AI_PROVIDER, COMMERCIAL_AGENT_MODEL, COMMERCIAL_AGENT_ENABLED, COMMERCIAL_AGENT_SEND_ENABLED, COMMERCIAL_AGENT_DISCOVERY_ENABLED, COMMERCIAL_AGENT_WORKER_SECRET presentes no sandbox. Bucket izabel-knowledge privado; binding org↔location presente; ghl_connections.write_enabled=true. Agendadores (cron): não legíveis pelo papel de leitura — não verificados nem alterados.
 - Estado: local ✔ · prévia ✔ (automação global OFF) · publicado ✘ (aguarda comparação independente) · E2E com paciente ✘.
+
+## Casos sintéticos positivos — 17/11/2026 ~22:38 UTC (prévia; NÃO publicado)
+
+Comparação independente relatada pelo Dr. João sobre 6eae29d: 42/46 exatos; diferenças só nos 2 documentos, journal real, envelope transacional da 0030 e snapshots gerados. Código e guardas não alterados.
+
+Gerador automático real direto (configuredAutomaticGenerator, loader privado real, mesmo escopo; sem worker/fila/persistência/envio), openai/gpt-5.4-mini:
+- PT saudação simples: ok, flags [], handoff=false, optOut=false; 2 fontes approved_owner; 4904/64 tokens; 0,96 s.
+- PT institucional (localização, resposta expressa em fonte approved_owner): ok, flags [], handoff=false, optOut=false; 1 fonte approved_owner; 4907/55 tokens; 0,89 s.
+O gerador não devolve campo requiresHumanReview; o equivalente servidor é flags>0 → review_required. Com flags vazias e sem handoff, ambos são elegíveis no gerador. O envio continua dependente das demais verificações do servidor (automação ligada, janela, versão, canal) — atualmente OFF.
+
+Observer/worker (SELECT apenas, nada executado): receive_cursor_until = 2026-11-17 22:33:00.787 UTC (avançando); inbox: última ignored 18:30:06 UTC (5963), última ready 13:08:03 UTC (230); último draft 13:08:04 UTC; último audit 22:19:37 UTC (últimas 6 h: human_paused 3, human_resumed 1); audit total 6579. Agendadores (cron): não legíveis pelo papel de leitura.
