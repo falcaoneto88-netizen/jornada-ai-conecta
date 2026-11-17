@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: (f: unknown) => f }));
+vi.mock("@/components/izabel-takeover-control", () => ({ IzabelTakeoverControl: () => null }));
 vi.mock("@/lib/izabel-reply.functions", () => ({ prepareIzabelReply: mocks.analisar }));
 vi.mock("@/lib/correcao-texto.functions", () => ({ corrigirRascunho: mocks.corrigir }));
 vi.mock("@/lib/commercial-agent.functions", () => ({

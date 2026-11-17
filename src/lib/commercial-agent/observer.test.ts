@@ -178,28 +178,31 @@ describe("recebimento geral separado do envio", () => {
     },
   );
 
-  it("falha parcial não confirma cursor; nova tentativa pode usar deduplicação durável", async () => {
-    const f = fixture(broad);
-    f.discoverLocation.mockResolvedValue([
-      { event: newEvent, observedAt },
-      { event: { ...newEvent, messageId: "later" }, observedAt: "2026-10-06T12:56:00Z" },
-    ]);
-    f.receive
-      .mockResolvedValueOnce({ status: "accepted" })
-      .mockRejectedValueOnce(new AgentError("storage_unavailable"));
-    await expect(f.observer.observerPilot(org, locationId)).rejects.toThrow("storage_unavailable");
-    expect(f.command).toHaveBeenCalledTimes(1);
-    f.receive
-      .mockResolvedValueOnce({ status: "duplicate" })
-      .mockResolvedValueOnce({ status: "accepted" });
-    expect(await f.observer.observerPilot(org, locationId)).toMatchObject({
-      accepted: 1,
-      duplicates: 1,
-    });
-    expect(f.command).toHaveBeenLastCalledWith("receive_advance", org, {
-      until: new Date(now).toISOString(),
-    });
-  });
+  it.each(["storage_unavailable", "receipt_pending"])(
+    "%s parcial não confirma cursor; nova tentativa pode usar deduplicação durável",
+    async (code) => {
+      const f = fixture(broad);
+      f.discoverLocation.mockResolvedValue([
+        { event: newEvent, observedAt },
+        { event: { ...newEvent, messageId: "later" }, observedAt: "2026-10-06T12:56:00Z" },
+      ]);
+      f.receive
+        .mockResolvedValueOnce({ status: "accepted" })
+        .mockRejectedValueOnce(new AgentError(code));
+      await expect(f.observer.observerPilot(org, locationId)).rejects.toThrow(code);
+      expect(f.command).toHaveBeenCalledTimes(1);
+      f.receive
+        .mockResolvedValueOnce({ status: "duplicate" })
+        .mockResolvedValueOnce({ status: "accepted" });
+      expect(await f.observer.observerPilot(org, locationId)).toMatchObject({
+        accepted: 1,
+        duplicates: 1,
+      });
+      expect(f.command).toHaveBeenLastCalledWith("receive_advance", org, {
+        until: new Date(now).toISOString(),
+      });
+    },
+  );
 
   it("desativação durante ingresso não confirma cursor nem continua", async () => {
     const f = fixture(broad);

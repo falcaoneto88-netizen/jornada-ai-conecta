@@ -211,6 +211,13 @@
       "when": 1794954385800,
       "tag": "0029_commercial_agent_global_automation",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794954505405,
+      "tag": "0030_commercial_agent_automation_queue",
+      "breakpoints": true
     }
   ]
 }

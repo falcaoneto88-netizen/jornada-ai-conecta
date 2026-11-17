@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AgentError, decisionSchema, eventSchema, type DraftPayload, type Settings } from "./core";
-import { POLICY_HASH, replyHash, unseal } from "./providers.server";
+import { AUTOMATION_POLICY_HASH, POLICY_HASH, replyHash, unseal } from "./providers.server";
 import {
   queueCategorySchema,
   type AgentQueuePage,
@@ -49,6 +49,9 @@ const rawDraftSchema = z.object({
   policy_hash: z.string(),
   contact_name: z.string().nullable(),
   category: queueCategorySchema,
+  dispatch_origin: z.enum(["supervised", "automatic"]),
+  automation_authorized_by: z.string().uuid().nullable(),
+  automation_authorized_at: z.string().nullable(),
 });
 const baseSchema = z.object({ settings: settingsSchema, asOf: z.string() });
 const queueResultSchema = baseSchema.extend({
@@ -94,7 +97,7 @@ async function readProjection(
   kind: "drafts" | "manual",
   category = "review",
 ) {
-  const response = await client.rpc("commercial_agent_queue_read", {
+  const response = await client.rpc("commercial_agent_queue_read_v2", {
     _org: scope.organizationId,
     _location: scope.locationId,
     _actor: scope.actorId,
@@ -105,6 +108,7 @@ async function readProjection(
     _page_size: input.pageSize,
     _as_of: input.asOf ?? null,
     _policy_hash: POLICY_HASH,
+    _automation_policy_hash: AUTOMATION_POLICY_HASH,
   });
   if (response.error) {
     const code = (response.error as { code?: string }).code;
@@ -163,6 +167,11 @@ export async function readAgentQueuePage(
       row.category !== input.category
     )
       throw new AgentError("scope_mismatch");
+    if (
+      row.category === "review" &&
+      (row.policy_hash === AUTOMATION_POLICY_HASH || row.dispatch_origin === "automatic")
+    )
+      throw new AgentError("scope_mismatch");
     const { payload, policy_hash, contact_name, ...safeRow } = row;
     const content = payload
       ? unseal<DraftPayload>(
@@ -186,6 +195,15 @@ export async function readAgentQueuePage(
         replyHash(content) !== row.reply_hash
       )
         throw new AgentError("scope_mismatch");
+      // A malformed projection cannot turn an automatic result into a human
+      // approval candidate. Approval itself has an independent server guard.
+      if (
+        row.category === "review" &&
+        (content.generationMode === "automatic" ||
+          policy_hash === AUTOMATION_POLICY_HASH ||
+          row.dispatch_origin === "automatic")
+      )
+        throw new AgentError("scope_mismatch");
     }
     const inbound = content?.snapshot.messages.find(
       (message) => message.id === row.message_id && message.direction === "inbound",
@@ -195,7 +213,8 @@ export async function readAgentQueuePage(
       content,
       contactName: contact_name,
       channel: typeof inbound?.channel === "string" ? inbound.channel : null,
-      policyCurrent: content?.policyHash === POLICY_HASH,
+      policyCurrent:
+        content?.policyHash === POLICY_HASH || content?.policyHash === AUTOMATION_POLICY_HASH,
     };
   });
   return {

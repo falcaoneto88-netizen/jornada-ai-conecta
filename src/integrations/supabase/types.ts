@@ -1014,7 +1014,7 @@ export type Database = {
           conversation_id: string
           created_at: string
           dispatch_id: string | null
-          dispatch_origin: string
+          dispatch_origin: "supervised" | "automatic"
           error_code: string | null
           event_id: string
           expires_at: string
@@ -1044,7 +1044,7 @@ export type Database = {
           conversation_id: string
           created_at?: string
           dispatch_id?: string | null
-          dispatch_origin?: string
+          dispatch_origin?: "supervised" | "automatic"
           error_code?: string | null
           event_id: string
           expires_at?: string
@@ -1074,7 +1074,7 @@ export type Database = {
           conversation_id?: string
           created_at?: string
           dispatch_id?: string | null
-          dispatch_origin?: string
+          dispatch_origin?: "supervised" | "automatic"
           error_code?: string | null
           event_id?: string
           expires_at?: string
@@ -3003,6 +3003,22 @@ export type Database = {
         Args: {
           _actor: string
           _as_of?: string
+          _category?: string
+          _kind?: string
+          _location: string
+          _org: string
+          _page?: number
+          _page_size?: number
+          _policy_hash?: string
+          _query?: string
+        }
+        Returns: Json
+      }
+      commercial_agent_queue_read_v2: {
+        Args: {
+          _actor: string
+          _as_of?: string
+          _automation_policy_hash?: string
           _category?: string
           _kind?: string
           _location: string

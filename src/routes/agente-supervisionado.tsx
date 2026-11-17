@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { id } from "@/lib/commercial-agent/core";
 import { AppShell } from "@/components/app-shell";
+import { IzabelGlobalControl } from "@/components/izabel-global-control";
 import "@/components/supervision-art-direction.css";
 import { useModoDados } from "@/lib/repo";
 import {
@@ -44,11 +45,11 @@ type ReviewScope = { contactId: string; conversationId: string; draftId?: string
 export const Route = createFileRoute("/agente-supervisionado")({
   validateSearch: (search) => reviewSearchSchema.parse(search),
   component: AgentPage,
-  head: () => ({ meta: [{ title: "Agente supervisionado — Jornada AI" }] }),
+  head: () => ({ meta: [{ title: "Supervisão da Izabel — Jornada AI" }] }),
 });
 function AgentPage() {
   const org = useOrganizacao();
-  const { escopo } = useModoDados();
+  const { demo, escopo } = useModoDados();
   const search = Route.useSearch();
   const scope: ReviewScope | undefined =
     search.contactId && search.conversationId
@@ -60,9 +61,14 @@ function AgentPage() {
       : undefined;
   return (
     <div className="supervision-art-direction">
-      <AppShell title="Agente supervisionado">
+      <AppShell title="Supervisão da Izabel">
         {org.data ? (
           <>
+            {!demo && (
+              <div className="mb-4">
+                <IzabelGlobalControl organizationId={org.data.organizacao.id} />
+              </div>
+            )}
             <ConnectedQueue
               key={JSON.stringify([escopo, org.data.organizacao.id, scope])}
               org={org.data.organizacao.id}
@@ -73,8 +79,9 @@ function AgentPage() {
                 <p className="text-sm text-muted-foreground">
                   A Izabel prepara respostas com o núcleo textual V03 no Meu Chat e nesta fila.
                   Mídias e textos com condições não verificadas continuam indisponíveis. Sugestões
-                  anteriores preservam sua versão; gere uma nova para usar a base atual. O atendente
-                  continua responsável pela revisão e pelo envio.
+                  anteriores preservam sua versão; gere uma nova para usar a base atual. As
+                  sugestões desta fila que exigem revisão continuam dependendo da aprovação do
+                  atendente.
                 </p>
               </div>
             )}

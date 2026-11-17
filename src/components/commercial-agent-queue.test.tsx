@@ -100,6 +100,22 @@ afterEach(() => {
 });
 
 describe("autorização de envio na fila supervisionada", () => {
+  it.each(["generationMode", "dispatch_origin"] as const)(
+    "bloqueia aprovação de registro automático por %s mesmo com política atual e sem flags",
+    (source) => {
+      const { view, actions } = fixture();
+      const row = view.items[0];
+      row.policyCurrent = true;
+      if (source === "generationMode") row.content!.generationMode = "automatic";
+      else row.dispatch_origin = "automatic";
+      render(<CommercialAgentQueue view={view} actions={actions} />);
+      expect(approvalButton().disabled).toBe(true);
+      fireEvent.click(approvalButton());
+      expect(actions.approve).not.toHaveBeenCalled();
+      expect(screen.getByText(/registro é do atendimento automático/)).toBeTruthy();
+    },
+  );
+
   it("revisão específica não abre um segundo atendimento manual nem descreve recebimento global", () => {
     const { view, actions } = fixture();
     actions.manual = {

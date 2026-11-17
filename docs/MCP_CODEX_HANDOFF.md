@@ -757,3 +757,43 @@ Limites operacionais:
 - Problema conhecido: o roteamento Zaptos continua à espera do fornecedor; os cadastros ficam separados, por decisão do utilizador.
 - Configuração referida apenas pelo nome: IZABEL_KNOWLEDGE_BUCKET, LOVABLE_API_KEY (sem valores; nenhuma credencial nova).
 - Estado: implementado ✔ · testado local/prévia ✔ · publicado ✔ (build jornada-izabel-v03-20261117.1) · **E2E com paciente PENDENTE**.
+
+## 17/11/2026 — Ativação global da Izabel no Meu Chat (implementação local)
+
+Pedido desta etapa: uma ativação para todo o chat, sem ligar a Izabel contato por contato. Foram preparados controle global autenticado, intervenção humana individual, política automática V03 separada, despacho e auditoria persistidos e fila compatível. O padrão permanece desligado. Não houve publicação, aplicação de migração remota, ativação, envio, alteração GHL/n8n/Zaptos ou mesclagem de contatos.
+
+- Projeto original: `36345211-2616-42f7-bb9e-e78a9d00ca22`.
+- Origem do incremento local: `fb19952b9a42d21ff30b3fa93220b99b51637944`. Candidata isolada para implantação baseada exatamente em `6dfb88e1728c88149e2d1ed9799b763118a9f4e8` (`origin/main`, conferido em 17/11). Os três arquivos `izabel-reply.*` já eram idênticos ao remoto e foram omitidos do pacote; recuperação de senha, roadmap e seções remotas deste handoff foram preservados.
+- Esta candidata é um diff ainda não aplicado ao remoto. Se `main` avançar antes da aplicação, conferir novamente os hashes anteriores de todos os arquivos do pacote. O SHA da base não comprova o SHA publicado.
+- Build preparado: `jornada-izabel-global-20261117.1`. Revisão publicada desta capacidade: **não verificada/não publicada por esta etapa**.
+- URLs locais verificadas: `http://127.0.0.1:4203/` (componentes reais, APIs em memória e dados fictícios), ativação, pausa geral, assumir atendimento, Escape e retorno do foco; viewport 1280×720 sem rolagem horizontal. Verificação visual móvel não realizada.
+- URLs de destino, não revalidadas como publicação deste incremento: `https://jornada-ai-conecta.lovable.app/caixa-de-entrada`, `/agente-supervisionado`, `/api/version`; editor original `https://lovable.dev/projects/36345211-2616-42f7-bb9e-e78a9d00ca22`.
+- MCP/catálogo: não alterado; este recurso reutiliza funções autenticadas internas e o worker existente. Não cria ferramenta MCP de envio.
+
+### Causa e correção
+
+O recebimento geral já existia, mas o envio era exclusivamente supervisionado. Um simples botão visual não criaria autorização persistente nem evitaria duplicações. O novo controle grava versão, instante de início, política, canais e responsável no servidor; o worker revalida tudo antes de despachar. Aprovação humana não é falsificada: registros automáticos têm origem e autorização próprias e `approved_by` nulo.
+
+O controle vale para novas mensagens elegíveis de toda a organização da sessão. Não reprocessa histórico, não retoma contatos assumidos/pausados e não ignora DND/recusa. Só textos comerciais `approved_owner` da biblioteca V03 entram na geração automática. Biblioteca local: 25 registros aptos a esta seleção e cinco apenas supervisionados. Não é autonomia clínica nem o motor completo V03.
+
+A revisão também corrigiu: projeção que ocultava bloqueios automáticos no Histórico; tentativa de aprovar proposta automática como humana; reconciliação sem rota fixada; ausência do par de números no histórico WhatsApp nativo; eco de saída que chegava antes de gravar o recibo e pausava indevidamente a sessão. A observação desse eco aguarda brevemente a persistência e repete a leitura canônica, sem repetir o envio nem avançar o cursor antes da conclusão.
+
+### Persistência, configuração e aplicação
+
+Aplicar SQL `20261117160000_commercial_agent_global_automation.sql` antes de `20261117170000_commercial_agent_automation_queue.sql`, depois publicar o código. Drizzle 0029/0030 são espelhos: não executar em duplicidade. Migrações aditivas, RLS e RPC anterior preservados, automação desligada. Nenhuma configuração de produção foi alterada.
+
+Nomes reutilizados, sem valores: `COMMERCIAL_AGENT_ENABLED`, `COMMERCIAL_AGENT_SEND_ENABLED`, `COMMERCIAL_AGENT_DISCOVERY_ENABLED`, `COMMERCIAL_AGENT_ENCRYPTION_KEY`, `COMMERCIAL_AGENT_WORKER_SECRET`, `COMMERCIAL_AGENT_AI_PROVIDER`, `COMMERCIAL_AGENT_MODEL`, `IZABEL_KNOWLEDGE_BUCKET`, `GHL_PRIVATE_TOKEN`, `GHL_LOCATION_ID`, `LOVABLE_API_KEY` ou `OPENAI_API_KEY`. Não foi criada chave. Estado do cron/cursor, segredo, canal, biblioteca e vínculos atuais deve ser confirmado no projeto original antes de ligar.
+
+### Validação e pendências
+
+Implementado: **sim, localmente**. Testado localmente: **sim**, testes com provedores falsos e PostgreSQL temporário isolado. Publicado: **não nesta etapa**. Verificado de ponta a ponta com pacientes/provedor/modelo real: **não**.
+
+Regressão final: **1.148/1.148 testes em 36 arquivos aprovados**, com PostgreSQL nativo temporário e provedores falsos; `tsc --noEmit` aprovado. ESLint de 41 arquivos alterados: zero erros, três avisos Fast Refresh. O formato do arquivo gerado Supabase foi preservado; a regra Prettier acusa divergências e as demais regras passaram separadamente, sem declarar lint global verde. Build cliente/servidor aprovado; bibliotecas privadas não encontradas nos 44 arquivos públicos examinados por comparação de 14 trechos longos. Impeccable aplicado; detector dos sete arquivos UI retornou `[]`. As verificações numéricas finais constam no documento da entrega.
+
+A operação externa ainda exige validação do worker e do canal, inventário de emissores concorrentes GHL/n8n/Zaptos e teste inequívoco de envio/recibo/segunda resposta/pausa. A decisão de não mesclar os cadastros final 7009 permanece; o teste Felipe Santos continua dependente do roteamento Zaptos já apontado. A publicação deste código não resolve por si só essa identidade externa.
+
+Detalhes, limites, testes e aplicação: `docs/IZABEL_GLOBAL_AUTOMATION_2026-11-17.md`. Nenhuma chave, conteúdo privado da biblioteca ou registro de paciente foi incluído nos documentos.
+
+## 17/11/2026 ~22:30 UTC — Izabel global (46 arquivos) integrada na prévia, NÃO publicada
+
+Base 6dfb88e, hashes 46/46 OK. Migrações 0029 (when 1794954385800) e 0030 (when 1794954505405) aplicadas uma vez cada pela ferramenta oficial; 0027/0028 intocadas. Automação global OFF (version 0). Gates: tsc, build, ESLint dirigido, diff-check, vitest 1725/1725; PG *.db não executado (initdb indisponível). 5/5 sintéticos automáticos OK com handoff/opt-out. Detalhes em docs/IZABEL_GLOBAL_AUTOMATION_2026-11-17.md. Publicação pendente (Dr. João). E2E com paciente pendente; roteamento Zaptos pendente; sem mescla final7009.

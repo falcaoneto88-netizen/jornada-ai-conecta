@@ -23,6 +23,7 @@ import {
   type ManualScope,
 } from "./core";
 import { resolveInboxRoute, sameRoute, type InboxRoute, type SmsChannels } from "./inbox-route";
+import { automationReason } from "./automation";
 import { POLICY_HASH, replyHash, seal, sha, unseal } from "./providers.server";
 import type { InboxAttachment } from "./inbox-media";
 import type { AttendanceDraftDispatch } from "../attendance-draft.server";
@@ -135,6 +136,13 @@ export type Dependencies = {
   encryptionKey: string;
   enabled: boolean;
   sendEnabled: boolean;
+  /** Separately authorized global automation. Absent means strictly supervised. */
+  automation?: {
+    policyHash: string;
+    generate(s: Snapshot): Promise<DraftPayload>;
+    writeEnabled(): Promise<boolean>;
+    configuredProviderId(): Promise<string | null>;
+  };
   now?: () => number;
   bindAttendanceDraft?(input: AttendanceDraftDispatch): Promise<void>;
   readInboxReview?(scope: InboxReviewScope): Promise<InboxReviewRows>;
@@ -148,7 +156,7 @@ export class CommercialAgent {
     if (!this.d.enabled) return { status: "disabled" };
     // Only canonical server-side discovery supplies this metadata. It is not
     // part of the callback Event or the persisted deduplication identity.
-    return this.d.store.command("ingress", org, {
+    return this.d.store.command(this.d.automation ? "automation_ingress" : "ingress", org, {
       ...eventSchema.parse(event),
       ...(observedAt === undefined ? {} : { observedAt }),
     });
@@ -192,7 +200,11 @@ export class CommercialAgent {
       const unsupportedChannel = !config.allowed_channels.includes(latest.channel);
       if (unsupportedChannel && config.receive_all_contacts !== true)
         throw new AgentError("unsupported_channel");
-      // Safety events do not need an external model call; still never auto-send.
+      const automatic =
+        this.d.automation &&
+        this.d.sendEnabled &&
+        automationReason(config, snapshot, this.now(), this.d.automation.policyHash) === null;
+      // Safety events never auto-send, even while the general switch is on.
       let payload: DraftPayload;
       if (snapshot.dnd || safety.optOut || safety.handoff || safety.urgent) {
         payload = {
@@ -226,13 +238,33 @@ export class CommercialAgent {
             optOut: false,
           },
         };
-      } else payload = await this.d.generate(snapshot);
+      } else
+        payload = await (automatic
+          ? this.d.automation!.generate(snapshot)
+          : this.d.generate(snapshot));
       if (unsupportedChannel) payload.decision.flags.push("unsupported_action");
       if (latest.attachments > 0) payload.decision.flags.push("unsupported_attachment");
       if (checkReply(payload.decision.reply).length)
         payload.decision.flags.push("unsupported_action");
+      if (
+        automatic &&
+        payload.generationMode === "automatic" &&
+        !payload.decision.handoff &&
+        !payload.decision.optOut &&
+        !payload.decision.flags.length
+      ) {
+        const route = await this.inboxRoute(
+          snapshot,
+          await this.d.automation!.configuredProviderId(),
+        );
+        if (route.ok) payload.snapshot = { ...payload.snapshot, route: route.route };
+        else {
+          payload.decision.flags.push("unsupported_action");
+          payload.decision.handoff = true;
+        }
+      }
       payload.decision.flags = [...new Set(payload.decision.flags)];
-      return await this.d.store.command("ready", org, {
+      const ready = await this.d.store.command<{ status: string; id?: string }>("ready", org, {
         id: job.id,
         lease: job.lease,
         payload: seal(payload, this.d.encryptionKey, `${org}:${job.id}`),
@@ -242,14 +274,165 @@ export class CommercialAgent {
         outputTokens: payload.outputTokens,
         flags: payload.decision.flags,
         observedAt,
-        pause: payload.decision.handoff || payload.decision.optOut,
+        pause:
+          payload.decision.handoff ||
+          payload.decision.optOut ||
+          Boolean(automatic && payload.decision.flags.length),
         optOut: payload.decision.optOut,
       });
+      if (
+        automatic &&
+        ready.status === "ready" &&
+        ready.id &&
+        !payload.decision.handoff &&
+        !payload.decision.optOut &&
+        !payload.decision.flags.length
+      ) {
+        try {
+          const delivery = await this.automaticSend(org, ready.id, config.automation_version!);
+          return { ...ready, automation: delivery };
+        } catch (error) {
+          // The draft is durable already. Do not retry generation/POST or run fail() on a ready job.
+          const code = error instanceof AgentError ? error.code : "automation_failed";
+          try {
+            await this.d.store.command("automation_block", org, { draftId: ready.id, code });
+          } catch {
+            return { ...ready, automation: { state: "blocked", code: "storage_unavailable" } };
+          }
+          return { ...ready, automation: { state: "blocked", code } };
+        }
+      }
+      return ready;
     } catch (e) {
       const code = e instanceof AgentError ? e.code : "processing_failed";
       await this.d.store.command("fail", org, { id: job.id, lease: job.lease, code });
       return { status: "failed", code };
     }
+  }
+  /** Machine authorization has its own ledger operation; never impersonates a human approval. */
+  async automaticSend(org: string, draftId: string, automationVersion: number) {
+    const automatic = this.d.automation;
+    if (!automatic || !this.d.enabled || !this.d.sendEnabled || !this.d.provider.sendManual)
+      throw new AgentError("automation_disabled");
+    const row = await this.d.store.command<DraftRow>("automation_detail", org, { draftId });
+    if (row.organization_id !== org || row.state !== "pending")
+      throw new AgentError("version_conflict");
+    const payload = unseal<DraftPayload>(
+      row.payload,
+      this.d.encryptionKey,
+      `${org}:${row.event_id}`,
+    );
+    if (
+      payload.policyHash !== automatic.policyHash ||
+      payload.generationMode !== "automatic" ||
+      !payload.sourceRecordIds?.length ||
+      replyHash(payload) !== row.reply_hash
+    )
+      throw new AgentError("draft_stale");
+    const config = await this.d.store.command<Settings>("settings", org);
+    if (config.automation_version !== automationVersion) throw new AgentError("version_conflict");
+    if (
+      config.organization_id !== org ||
+      payload.snapshot.event.contactId !== row.contact_id ||
+      payload.snapshot.event.conversationId !== row.conversation_id ||
+      payload.snapshot.event.messageId !== row.message_id ||
+      row.location_id !== config.location_id
+    )
+      throw new AgentError("scope_mismatch");
+    const preliminary = automationReason(
+      config,
+      payload.snapshot,
+      this.now(),
+      automatic.policyHash,
+    );
+    if (preliminary) throw new AgentError(preliminary);
+    const current = await this.d.provider.history(payload.snapshot.event);
+    const fresh = automationReason(config, current, this.now(), automatic.policyHash);
+    if (fresh) throw new AgentError(fresh);
+    const latest = current.messages.at(-1)!;
+    const reason = checkSend({
+      enabled: this.d.enabled,
+      sendEnabled: this.d.sendEnabled,
+      writeEnabled: await automatic.writeEnabled(),
+      allowed: true,
+      paused: row.paused ?? true,
+      optOut:
+        (row.opt_out ?? true) ||
+        payload.decision.optOut ||
+        current.messages.some(
+          (message) => message.direction === "inbound" && classifySafety(message.text).optOut,
+        ),
+      dnd: current.dnd || payload.snapshot.dnd,
+      expired:
+        !Number.isFinite(Date.parse(row.expires_at)) || Date.parse(row.expires_at) <= this.now(),
+      historyChanged:
+        row.contact_version !== row.session_version ||
+        current.historyHash !== payload.snapshot.historyHash,
+      channel: latest.channel,
+      inboundAgeMs: this.now() - Date.parse(latest.at),
+      flags: [
+        ...payload.decision.flags,
+        ...checkReply(payload.decision.reply),
+        ...(payload.decision.handoff ? ["human_requested"] : []),
+        ...(latest.attachments > 0 ? ["unsupported_attachment"] : []),
+      ],
+    });
+    if (reason) throw new AgentError(reason);
+    const route = await this.inboxRoute(current, await automatic.configuredProviderId());
+    if (!route.ok) throw new AgentError(route.code);
+    if (!payload.snapshot.route || !sameRoute(payload.snapshot.route as InboxRoute, route.route))
+      throw new AgentError("route_changed");
+    const input = {
+      draftId,
+      version: row.version,
+      replyHash: row.reply_hash,
+      automationVersion,
+      policyHash: automatic.policyHash,
+      channel: latest.channel,
+      inboundAt: latest.at,
+    };
+    const claimed = await this.d.store.command<DraftRow & { dispatch_id: string }>(
+      "automation_start",
+      org,
+      input,
+    );
+    try {
+      await this.d.store.command("automation_check", org, {
+        draftId,
+        dispatchId: claimed.dispatch_id,
+        automationVersion,
+        policyHash: automatic.policyHash,
+      });
+    } catch {
+      await this.d.store.command("finish_send", org, {
+        draftId,
+        dispatchId: claimed.dispatch_id,
+        state: "rejected",
+        code: "dispatch_blocked",
+        messageId: null,
+      });
+      throw new AgentError("dispatch_blocked");
+    }
+    let result: Awaited<ReturnType<Provider["send"]>>;
+    try {
+      // Reuse the route-pinned transport (including Zaptos/SMS), not the manual approval path.
+      result = await this.d.provider.sendManual(
+        { ...current, route: route.route },
+        payload.decision.reply,
+      );
+    } catch {
+      result = { state: "unknown", code: "send_unknown", messageId: null };
+    }
+    try {
+      await this.d.store.command("finish_send", org, {
+        draftId,
+        dispatchId: claimed.dispatch_id,
+        ...result,
+      });
+    } catch {
+      throw new AgentError("send_unknown");
+    }
+    return result;
   }
   async list(org: string, actor: string) {
     const r = await this.d.store.command<{
@@ -1202,21 +1385,18 @@ export class CommercialAgent {
   }
   async reconcile(org: string, actor: string, input: { draftId: string; messageId: string }) {
     const row = await this.d.store.command<DraftRow>("detail", org, input, actor);
-    if (
-      !["unknown", "sending"].includes(row.state) ||
-      !row.approved_at ||
-      !this.d.provider.verifyReceipt
-    )
+    if (!["unknown", "sending"].includes(row.state) || !row.approved_at)
       throw new AgentError("reconcile_blocked");
     const p = unseal<DraftPayload>(row.payload, this.d.encryptionKey, `${org}:${row.event_id}`);
-    if (
-      !(await this.d.provider.verifyReceipt(
-        p.snapshot,
-        p.decision.reply,
-        input.messageId,
-        row.approved_at,
-      ))
-    )
+    if (replyHash(p) !== row.reply_hash) throw new AgentError("reconcile_blocked");
+    const verifyReceipt =
+      p.generationMode === "automatic"
+        ? p.snapshot.route
+          ? this.d.provider.verifyManualReceipt?.bind(this.d.provider)
+          : undefined
+        : this.d.provider.verifyReceipt?.bind(this.d.provider);
+    if (!verifyReceipt) throw new AgentError("reconcile_blocked");
+    if (!(await verifyReceipt(p.snapshot, p.decision.reply, input.messageId, row.approved_at)))
       throw new AgentError("receipt_not_verified");
     return this.d.store.command<{ status: string }>("reconcile", org, input, actor);
   }

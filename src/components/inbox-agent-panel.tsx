@@ -86,6 +86,8 @@ function blockedReason(view: AgentView, item: AgentItem, props: InboxAgentPanelP
   if (item.state !== "pending")
     return "Esta sugestão já foi tratada. Consulte o registro na auditoria.";
   if (!content) return "Conteúdo indisponível ou removido pelo prazo de retenção.";
+  if (content.generationMode === "automatic" || item.dispatch_origin === "automatic")
+    return "Este registro pertence ao atendimento automático da Izabel. Para responder como equipe, assuma o atendimento e prepare uma nova resposta.";
   if (view.session.opt_out || item.opt_out || content.decision.optOut)
     return "O contato pediu a interrupção das mensagens. A sugestão permanece bloqueada.";
   if (content.snapshot.dnd)
@@ -382,7 +384,7 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
         <div className="mt-3 space-y-2">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">Treinamento {izabelMetadata.knowledgeVersion}</Badge>
-            <Badge variant="outline">{izabelMetadata.name} · núcleo textual supervisionado</Badge>
+            <Badge variant="outline">{izabelMetadata.name} · base de atendimento</Badge>
           </div>
           {view && (
             <>
@@ -392,15 +394,15 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
                   : view.session?.paused
                     ? "Com a equipe humana · agente pausado"
                     : !view.enabled || view.settings.mode !== "supervised"
-                      ? "Agente desativado"
+                      ? "Recebimento da Izabel desativado"
                       : view.session
-                        ? "Agente supervisionado · sem pausa registrada"
+                        ? "Sem pausa humana registrada neste atendimento"
                         : "Sem estado de supervisão registrado para este contato"}
               </p>
               <p>
                 {view.sendEnabled
-                  ? "Aprovação humana obrigatória antes de enviar."
-                  : "Envio do agente desativado."}
+                  ? "As sugestões usadas neste campo exigem revisão e envio pelo atendente."
+                  : "Envio de sugestões supervisionadas desativado."}
                 {view.session?.opt_out ? " A recusa permanece registrada." : ""}
               </p>
               {view.items[0] && (
@@ -415,10 +417,11 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
             </>
           )}
           <p>
-            A redação contextual da {izabelMetadata.name} e o agente supervisionado usam os textos
-            elegíveis da V03. Mídias e textos com condições ainda não verificadas ficam de fora. As
-            sugestões anteriores mantêm sua origem e precisam ser geradas novamente para usar a base
-            atual. A revisão humana continua obrigatória.
+            A redação contextual da {izabelMetadata.name} usa os textos elegíveis da V03. Mídias e
+            textos com condições ainda não verificadas ficam de fora. As sugestões anteriores mantêm
+            sua origem e precisam ser geradas novamente para usar a base atual. Sugestões
+            supervisionadas exigem revisão; o atendimento automático é controlado pelo botão geral
+            da Izabel.
           </p>
         </div>
       </details>

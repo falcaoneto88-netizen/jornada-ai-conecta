@@ -81,6 +81,15 @@ function fixture() {
 }
 
 describe("leitura da supervisão no Atendimento", () => {
+  it("preserva a origem automática na projeção enviada ao Meu Chat", async () => {
+    const f = fixture();
+    f.row.dispatch_origin = "automatic";
+    const result = await f.agent.inboxReview(org, "synthetic-actor", scope);
+    expect(result.items[0]?.dispatch_origin).toBe("automatic");
+    expect(f.provider.send).not.toHaveBeenCalled();
+    expect(f.generate).not.toHaveBeenCalled();
+  });
+
   it("consulta o escopo exato e mostra estado real, sem geração, envio ou mutação", async () => {
     const f = fixture();
     const result = await f.agent.inboxReview(org, "synthetic-actor", scope);
@@ -183,6 +192,8 @@ describe("leitura da supervisão no Atendimento", () => {
       draftId: "synthetic-draft",
     });
     const limit = calls.findIndex(([method]) => method === "limit");
+    const draftProjection = calls.find(([method]) => method === "select");
+    expect(draftProjection?.[1][0]).toContain("dispatch_origin");
     expect(calls.slice(0, limit)).toEqual(
       expect.arrayContaining([
         ["eq", ["organization_id", org]],

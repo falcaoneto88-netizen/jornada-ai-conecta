@@ -184,6 +184,8 @@ export function CommercialAgentQueue({
       !view.sendEnabled ||
       !item ||
       !item.content ||
+      item.content.generationMode === "automatic" ||
+      item.dispatch_origin === "automatic" ||
       !sendAllowed(item) ||
       item.state !== "pending" ||
       item.paused ||
@@ -260,11 +262,11 @@ export function CommercialAgentQueue({
               {demo
                 ? "Demonstração com dados fictícios"
                 : view.enabled
-                  ? "Supervisionado"
-                  : "Agente desativado"}
+                  ? "Fila da equipe"
+                  : "Recebimento desativado"}
             </Badge>
             <Badge variant="outline">
-              {view.sendEnabled ? "Aprovação obrigatória" : "Envio desativado"}
+              {view.sendEnabled ? "Sugestões com revisão" : "Envio de sugestões desativado"}
             </Badge>
             {!focused && view.settings?.receive_all_contacts && (
               <details className="text-sm text-muted-foreground">
@@ -273,24 +275,25 @@ export function CommercialAgentQueue({
                 </summary>
                 <p className="mt-2 max-w-prose">
                   Recebimento geral{" "}
-                  {view.enabled && view.settings.mode === "supervised" ? "ativo" : "desativado"}.
-                  Novas mensagens individuais desta clínica entram para revisão. Respostas sugeridas
-                  nos canais:{" "}
+                  {view.enabled && view.settings.mode === "supervised" ? "ativo" : "desativado"}. A
+                  fila reúne sugestões para revisão, pendências da equipe e registros de
+                  atendimento. Canais recebidos:{" "}
                   {view.settings.allowed_channels.join(", ") || "nenhum canal autorizado"}. Outros
-                  canais exigem revisão manual. O envio de sugestões da IA continua restrito a{" "}
+                  canais exigem revisão manual. A aprovação de sugestões nesta fila está restrita a{" "}
                   {view.settings.allowed_contacts.length}{" "}
                   {view.settings.allowed_contacts.length === 1
                     ? "contato autorizado"
                     : "contatos autorizados"}
                   .
                   {view.settings.manual_send_all_contacts &&
-                    " A equipe pode escrever e enviar manualmente aos contatos recebidos pelo canal homologado."}
+                    " A equipe pode escrever e enviar manualmente aos contatos recebidos pelo canal homologado."}{" "}
+                  O atendimento automático é controlado pelo botão geral da Izabel.
                 </p>
               </details>
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Revise uma conversa por vez. Aprovar uma resposta envia a mensagem.
+            Revise as sugestões encaminhadas à equipe. Aprovar uma resposta aqui envia a mensagem.
           </p>
           {demo && (
             <p className="mt-2 text-sm font-medium">
@@ -657,6 +660,14 @@ export function CommercialAgentQueue({
                 A base de atendimento mudou desde esta sugestão. Este texto não pode ser aprovado.
               </p>
             )}
+            {(row.content?.generationMode === "automatic" || row.dispatch_origin === "automatic") &&
+              row.state === "pending" && (
+                <p role="status" className="mt-4 text-sm font-medium">
+                  Este registro é do atendimento automático da Izabel e não pode ser aprovado como
+                  sugestão supervisionada. Para responder como equipe, assuma o atendimento e
+                  prepare uma nova resposta.
+                </p>
+              )}
             {row.session_version !== undefined && row.contact_version !== row.session_version && (
               <p role="status" className="mt-4 text-sm font-medium">
                 A conversa mudou desde esta sugestão. Atualize o histórico antes de responder; esta

@@ -19,7 +19,7 @@ export async function readInboxReviewRows(
   let drafts = client
     .from("commercial_agent_drafts")
     .select(
-      "id,organization_id,event_id,contact_id,conversation_id,location_id,message_id,state,version,contact_version,payload,reply_hash,expires_at,created_at,result_message_id,error_code",
+      "id,organization_id,event_id,contact_id,conversation_id,location_id,message_id,state,version,contact_version,payload,reply_hash,expires_at,created_at,result_message_id,error_code,dispatch_origin",
     )
     .eq("organization_id", scope.organizationId)
     .eq("location_id", scope.locationId)

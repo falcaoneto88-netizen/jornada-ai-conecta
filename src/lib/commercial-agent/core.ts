@@ -45,7 +45,7 @@ export type Snapshot = {
   dnd: boolean;
   name: string;
   historyHash: string;
-  /** Só a caixa de entrada fixa a rota; os outros fluxos não a usam. */
+  /** Caixa de entrada e despacho automático fixam e revalidam esta rota. */
   route?: {
     channel?: "SMS" | "IG" | "FB" | "WhatsApp";
     providerId: string | null;
@@ -62,6 +62,8 @@ export type DraftPayload = {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  generationMode?: "supervised" | "automatic";
+  sourceRecordIds?: string[];
 };
 export type DraftRow = {
   id: string;
@@ -80,6 +82,7 @@ export type DraftRow = {
   created_at: string;
   result_message_id: string | null;
   approved_at?: string | null;
+  dispatch_origin?: "supervised" | "automatic";
   error_code: string | null;
   paused?: boolean;
   opt_out?: boolean;
@@ -95,6 +98,11 @@ export type Settings = {
   receive_since?: string | null;
   receive_cursor_until?: string | null;
   manual_send_all_contacts?: boolean;
+  automation_enabled?: boolean;
+  automation_version?: number;
+  automation_since?: string | null;
+  automation_policy_hash?: string | null;
+  automation_channels?: string[];
 };
 export type ManualScope = { locationId: string; contactId: string; conversationId: string };
 export type ManualConversation = ManualScope & {

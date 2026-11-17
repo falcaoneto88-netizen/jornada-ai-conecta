@@ -110,13 +110,13 @@ export async function agentWorker(request: Request) {
     const store = createStore(supabaseAdmin as unknown as Parameters<typeof createStore>[0]);
     await store.command("purge", org);
     // Discover both directions first: human intervention must invalidate old drafts
-    // even when no workflow notification was delivered. This never sends a reply.
+    // even when no workflow notification was delivered. Discovery itself never sends.
     const discovery = await observerPilot(org, location);
     const settings = await store.command<Settings>("settings", org);
     const agent = runtime(location, org);
     if (settings?.receive_all_contacts !== true) return json(await agent.work(org));
-    // Drain a bounded batch without sending. Existing SQL leases and the monthly
-    // generation ceiling apply to every job, including overlapping cron runs.
+    // Drain a bounded batch. work() sends only under a separately activated global
+    // automation epoch; otherwise it only drafts. SQL leases and generation limits remain.
     const deadline = Date.now() + 45_000;
     let jobs = 0;
     let lastStatus = "idle";

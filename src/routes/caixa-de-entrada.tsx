@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { GhlInbox } from "@/components/ghl-inbox";
+import { IzabelGlobalControl } from "@/components/izabel-global-control";
 import "@/components/supervision-art-direction.css";
 import "@/components/inbox-art-direction.css";
 import { AppShell } from "@/components/app-shell";
@@ -25,6 +26,7 @@ import { aiSupport, type AnaliseIA } from "@/lib/ai.functions";
 import { ghlProxy } from "@/lib/ghl.functions";
 import { canalLabel, intencaoLabel, type Conversation } from "@/lib/demo-data";
 import { useContactos, useConversas, useLigacaoGhl, useModoDados } from "@/lib/repo";
+import { useOrganizacao } from "@/lib/organization";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/caixa-de-entrada")({
@@ -75,8 +77,26 @@ function CaixaEntrada() {
         description="Conversas e respostas consultadas no GoHighLevel"
         workspace
       >
-        <GhlInbox targetContactId={search.contact} targetConversationId={search.conversation} />
+        <ConnectedInbox contact={search.contact} conversation={search.conversation} />
       </AppShell>
+    </div>
+  );
+}
+
+function ConnectedInbox({
+  contact,
+  conversation,
+}: {
+  contact?: string | undefined;
+  conversation?: string | undefined;
+}) {
+  const org = useOrganizacao();
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      {org.data && <IzabelGlobalControl organizationId={org.data.organizacao.id} />}
+      <div className="min-h-0 flex-1">
+        <GhlInbox targetContactId={contact} targetConversationId={conversation} />
+      </div>
     </div>
   );
 }

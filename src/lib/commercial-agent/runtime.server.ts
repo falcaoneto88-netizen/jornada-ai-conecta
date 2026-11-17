@@ -2,7 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resolverAcesso } from "../ghl.functions";
 import { AgentError } from "./core";
-import { configuredGenerator, HighLevel } from "./providers.server";
+import {
+  AUTOMATION_POLICY_HASH,
+  configuredAutomaticGenerator,
+  configuredGenerator,
+  HighLevel,
+} from "./providers.server";
 import { CommercialAgent, type Store } from "./service.server";
 import { bindAttendanceDraftDispatch } from "../attendance-draft.server";
 import { readInboxReviewRows } from "./inbox-review.server";
@@ -16,7 +21,11 @@ export function createStore(client: Rpc): Store {
   return {
     async command<T>(op: string, org: string, data: Record<string, unknown> = {}, actor?: string) {
       const r = await client.rpc(
-        op.startsWith("manual_") ? "commercial_agent_manual_command" : "commercial_agent_command",
+        op.startsWith("automation_")
+          ? "commercial_agent_automation_command"
+          : op.startsWith("manual_")
+            ? "commercial_agent_manual_command"
+            : "commercial_agent_command",
         {
           _op: op,
           _org: org,
@@ -53,6 +62,26 @@ export function runtime(locationId: string, organizationId: string) {
     encryptionKey: key,
     enabled: process.env["COMMERCIAL_AGENT_ENABLED"] === "true",
     sendEnabled: process.env["COMMERCIAL_AGENT_SEND_ENABLED"] === "true",
+    ...(process.env["COMMERCIAL_AGENT_DISCOVERY_ENABLED"] === "true"
+      ? {
+          automation: {
+            policyHash: AUTOMATION_POLICY_HASH,
+            generate: configuredAutomaticGenerator(process.env, fetch, {
+              organizationId,
+              locationId,
+            }),
+            writeEnabled: async () => {
+              const { data, error } = await supabaseAdmin
+                .from("ghl_connections")
+                .select("write_enabled")
+                .eq("organization_id", organizationId)
+                .maybeSingle();
+              return !error && data?.write_enabled === true;
+            },
+            configuredProviderId: () => configuredSmsProvider(organizationId),
+          },
+        }
+      : {}),
     bindAttendanceDraft: (input) =>
       bindAttendanceDraftDispatch(supabaseAdmin as unknown as Rpc, key, input),
     readInboxReview: (scope) => {

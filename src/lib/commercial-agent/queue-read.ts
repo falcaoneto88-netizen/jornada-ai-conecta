@@ -33,6 +33,9 @@ export type AgentQueueItem = Omit<DraftRow, "payload"> & {
   channel: string | null;
   category: QueueCategory;
   policyCurrent: boolean;
+  dispatch_origin?: "supervised" | "automatic";
+  automation_authorized_by?: string | null;
+  automation_authorized_at?: string | null;
 };
 export type AgentQueuePage = {
   settings: Settings;

@@ -18,6 +18,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { InboxBookingPanel } from "@/components/inbox-booking-panel";
+import { IzabelTakeoverControl } from "@/components/izabel-takeover-control";
 import { InboxIzabelPanel, type IzabelDraftExpectation } from "@/components/inbox-izabel-panel";
 import {
   InboxAgentPanel,
@@ -1404,6 +1405,11 @@ function ConversaReal({
               </Button>
             </div>
           </div>
+          <IzabelTakeoverControl
+            organizationId={organizationId}
+            contactId={conversa.contactId}
+            conversationId={conversa.id}
+          />
           <details className="mt-2 text-xs text-muted-foreground">
             <summary className="cursor-pointer">Detalhes da conversa</summary>
             <p className="mt-2 break-all">

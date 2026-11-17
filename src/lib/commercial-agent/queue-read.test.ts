@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { queuePageSchema, manualQueueSchema, type QueuePageRequest } from "./queue-read";
 import { readAgentQueuePage, readManualQueuePage } from "./queue-read.server";
-import { POLICY_HASH, replyHash, seal } from "./providers.server";
+import { AUTOMATION_POLICY_HASH, POLICY_HASH, replyHash, seal } from "./providers.server";
 import type { DraftPayload } from "./core";
 
 const org = "00000000-0000-4000-8000-000000000001";
@@ -70,6 +70,9 @@ function fixture() {
     contact_name: "Ana Fictícia Atualizada",
     category: "review",
     approved_by: "sensitive-unused-actor",
+    dispatch_origin: "supervised" as "supervised" | "automatic",
+    automation_authorized_by: null as string | null,
+    automation_authorized_at: null as string | null,
   };
   const result = {
     settings: {
@@ -95,7 +98,7 @@ describe("fila paginada de supervisão: fronteira de leitura", () => {
   it("passa filtros, página e escopo autenticado à projeção SQL sem RPC de comando", async () => {
     const f = fixture();
     const result = await readAgentQueuePage(f.client, scope, input, f.config);
-    expect(f.client.rpc).toHaveBeenCalledExactlyOnceWith("commercial_agent_queue_read", {
+    expect(f.client.rpc).toHaveBeenCalledExactlyOnceWith("commercial_agent_queue_read_v2", {
       _org: org,
       _location: scope.locationId,
       _actor: scope.actorId,
@@ -106,6 +109,7 @@ describe("fila paginada de supervisão: fronteira de leitura", () => {
       _page_size: 25,
       _as_of: input.asOf,
       _policy_hash: POLICY_HASH,
+      _automation_policy_hash: AUTOMATION_POLICY_HASH,
     });
     expect(result.pagination).toMatchObject({ page: 2, total: 68, totalPages: 3, hasMore: true });
     expect(result.items[0]).toMatchObject({
@@ -180,6 +184,94 @@ describe("fila paginada de supervisão: fronteira de leitura", () => {
       content: null,
       contactName: "Ana Fictícia Atualizada",
     });
+  });
+  it("preserva fonte e política automática corrente na fila da equipe sem representar aprovação humana", async () => {
+    const f = fixture();
+    f.payload.generationMode = "automatic";
+    f.payload.sourceRecordIds = ["SYNTHETIC_APPROVED"];
+    f.payload.policyHash = AUTOMATION_POLICY_HASH;
+    f.payload.decision.flags = ["missing_policy"];
+    f.payload.decision.handoff = true;
+    f.row.policy_hash = AUTOMATION_POLICY_HASH;
+    f.row.category = "team";
+    f.row.payload = seal(f.payload, key, `${org}:test-event`);
+    f.row.reply_hash = replyHash(f.payload);
+    const result = await readAgentQueuePage(
+      f.client,
+      scope,
+      { ...input, page: 1, category: "team" },
+      f.config,
+    );
+    expect(result.items[0]).toMatchObject({
+      policyCurrent: true,
+      category: "team",
+      approved_at: null,
+      dispatch_origin: "supervised", // It has not been dispatched at all.
+      automation_authorized_by: null,
+      content: {
+        generationMode: "automatic",
+        sourceRecordIds: ["SYNTHETIC_APPROVED"],
+        decision: { handoff: true },
+      },
+    });
+    expect(result.items[0]).not.toHaveProperty("approved_by");
+  });
+  it("mantém origem e autorização de execução automática incerta para auditoria", async () => {
+    const f = fixture();
+    f.payload.generationMode = "automatic";
+    f.payload.sourceRecordIds = ["SYNTHETIC_APPROVED"];
+    f.payload.policyHash = AUTOMATION_POLICY_HASH;
+    f.row.policy_hash = AUTOMATION_POLICY_HASH;
+    f.row.state = "unknown";
+    f.row.category = "uncertain";
+    f.row.dispatch_origin = "automatic";
+    f.row.automation_authorized_by = "00000000-0000-4000-8000-000000000003";
+    f.row.automation_authorized_at = "2026-11-12T09:58:00Z";
+    f.row.payload = seal(f.payload, key, `${org}:test-event`);
+    f.row.reply_hash = replyHash(f.payload);
+    const result = await readAgentQueuePage(
+      f.client,
+      scope,
+      { ...input, page: 1, category: "uncertain" },
+      f.config,
+    );
+    expect(result.items[0]).toMatchObject({
+      policyCurrent: true,
+      approved_at: null,
+      dispatch_origin: "automatic",
+      automation_authorized_by: f.row.automation_authorized_by,
+      automation_authorized_at: f.row.automation_authorized_at,
+    });
+  });
+  it("recusa projeção que tenta colocar geração automática na aprovação humana", async () => {
+    const f = fixture();
+    f.payload.generationMode = "automatic";
+    f.payload.sourceRecordIds = ["SYNTHETIC_APPROVED"];
+    f.payload.policyHash = AUTOMATION_POLICY_HASH;
+    f.row.policy_hash = AUTOMATION_POLICY_HASH;
+    f.row.payload = seal(f.payload, key, `${org}:test-event`);
+    f.row.reply_hash = replyHash(f.payload);
+    await expect(readAgentQueuePage(f.client, scope, input, f.config)).rejects.toThrow(
+      "scope_mismatch",
+    );
+    f.row.payload = "";
+    await expect(readAgentQueuePage(f.client, scope, input, f.config)).rejects.toThrow(
+      "scope_mismatch",
+    );
+  });
+  it("detecta troca da evidência automática mesmo com cifra válida", async () => {
+    const f = fixture();
+    f.payload.generationMode = "automatic";
+    f.payload.sourceRecordIds = ["SYNTHETIC_APPROVED"];
+    f.payload.policyHash = AUTOMATION_POLICY_HASH;
+    f.row.policy_hash = AUTOMATION_POLICY_HASH;
+    f.row.category = "team";
+    f.row.reply_hash = replyHash(f.payload);
+    f.payload.sourceRecordIds = ["DIFFERENT_SOURCE"];
+    f.row.payload = seal(f.payload, key, `${org}:test-event`);
+    await expect(
+      readAgentQueuePage(f.client, scope, { ...input, page: 1, category: "team" }, f.config),
+    ).rejects.toThrow("scope_mismatch");
   });
   it("não apresenta evento ignorado como falha mesmo se a projeção estiver incorreta", async () => {
     const f = fixture();
