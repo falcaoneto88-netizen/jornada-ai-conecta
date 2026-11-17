@@ -747,3 +747,13 @@ Limites operacionais:
   | PT opt-out | ok, 200, stop, 7572/471 (380), 4,7s, handover | ok, 200, completed, 6155/62, 1,4s, optOut+handoff |
   | EN clínica individual | ok, 200, stop, 7580/472 (349), 5,4s, handover, sem recomendação de tratamento | ok, 200, completed, 6165/85, 1,3s, clinical+urgent+handoff |
 - Estado: implementado ✔ · testado local ✔ · prévia ✔ (10/10) · publicado ✘ (aguarda revisão independente).
+
+### Izabel V03 — publicação (relato do Dr. João, 17/11/2026; registo documental)
+- Verificação independente (relatada): origin/main dec898f7474c7a49dd9621416e8f8a2397166ae0 contém os 3 arquivos exatos do complemento; authfix 7388296 intacto. Build, tsc, ESLint e diff-check locais passaram; 156 testes do complemento.
+- Publicação feita e conferida pelo Dr. João pela interface. GET público /api/version em 2026-11-17T14:58:31.539Z: build jornada-izabel-v03-20261117.1, izabel.knowledgeVersion=V03, scope=supervised_text_subset, fullProtocol=false, media=false, release=null. Como release=null, o SHA publicado NÃO é afirmado por este endpoint.
+- Sessão autenticada em /agente-supervisionado: "Treinamento V03 · núcleo textual", revisão humana obrigatória e histórico de 230 itens preservado.
+- Meu Chat, contato de teste autorizado: "Preparar resposta" continua desativado — a última mensagem recebida elegível é uma mensagem antiga do Instagram, com a janela encerrada. Nenhum rascunho novo foi preparado em produção e nada foi enviado.
+- Os 10 testes sintéticos reais (5 Meu Chat + 5 fila) foram feitos na prévia e NÃO são E2E com paciente.
+- Problema conhecido: o roteamento Zaptos continua à espera do fornecedor; os cadastros ficam separados, por decisão do utilizador.
+- Configuração referida apenas pelo nome: IZABEL_KNOWLEDGE_BUCKET, LOVABLE_API_KEY (sem valores; nenhuma credencial nova).
+- Estado: implementado ✔ · testado local/prévia ✔ · publicado ✔ (build jornada-izabel-v03-20261117.1) · **E2E com paciente PENDENTE**.
