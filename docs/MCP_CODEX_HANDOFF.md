@@ -1,5 +1,18 @@
 # Jornada AI — integração e handoff Codex
 
+## RESUMO ATUAL — 17/11/2026 22:38 UTC: Izabel global PUBLICADA com automação DESLIGADA
+
+- Publicação feita pelo Codex pela interface no projeto original; a revisão conferida antes do clique foi 2c7569fd654280245c4f966126141fbc6abc53cd. O Lovable confirmou "Seu site foi atualizado".
+- GET público /api/version às 2026-11-17T22:38:43.215Z: build jornada-izabel-global-20261117.1; izabelGlobalAutomation=1; supervisionQueueRead=2; knowledgeVersion=V03; automaticScope=approved_owner_text_subset; automaticActivation=organization_opt_in_new_inbound_only; release=null (o endpoint não prova o SHA publicado).
+- UI autenticada verificada após publicar em /agente-supervisionado e /caixa-de-entrada: Izabel automática desligada, botão "Ativar em todo o Meu Chat", supervisão com Histórico 230 e Ligação GHL validada. Ninguém clicou em ativar e não houve envio.
+- O Codex reproduziu a revisão final 2c7569f num checkout isolado: tsc, build e 19/19 testes (inbox-review.test.ts e inbox-route.test.ts) passaram. Duas revisões técnicas independentes não encontraram bloqueio para publicar com a automação OFF. As contagens anteriores ficam como estão, sem somar suítes sobrepostas.
+- Revisão final: types.ts regenerado pela plataforma (dispatch_origin: string) + validação estrita fail-closed em inbox-review.server.ts.
+- Migrações 0029 e 0030 aplicadas uma única vez cada, variante Drizzle. O espelho Supabase da 0030 mantém begin/commit; a variante aplicada usa a transação da ferramenta. Não são iguais byte a byte.
+- Estado: implementado ✔ · testado local e prévia ✔ · publicado com UI autenticada ✔ · E2E com paciente (envio, recibo, segunda resposta, intervenção e pausa) ✘.
+- Cron não verificável pelo papel disponível; o cursor do observer foi visto a avançar. Emissores externos ainda precisam de conferência operacional. A identidade Zaptos final7009 continua pendente, com cadastros separados.
+- Histórico anterior preservado abaixo.
+
+
 Data: 2026-09-21. Projeto ORIGINAL: `36345211-2616-42f7-bb9e-e78a9d00ca22`.
 
 ## Revisões e limites da evidência

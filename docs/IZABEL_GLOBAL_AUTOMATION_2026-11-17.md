@@ -1,5 +1,18 @@
 # Izabel em todo o Meu Chat — 17/11/2026
 
+## RESUMO ATUAL — 17/11/2026 22:38 UTC: Izabel global PUBLICADA com automação DESLIGADA
+
+- Publicação feita pelo Codex pela interface no projeto original; a revisão conferida antes do clique foi 2c7569fd654280245c4f966126141fbc6abc53cd. O Lovable confirmou "Seu site foi atualizado".
+- GET público /api/version às 2026-11-17T22:38:43.215Z: build jornada-izabel-global-20261117.1; izabelGlobalAutomation=1; supervisionQueueRead=2; knowledgeVersion=V03; automaticScope=approved_owner_text_subset; automaticActivation=organization_opt_in_new_inbound_only; release=null (o endpoint não prova o SHA publicado).
+- UI autenticada verificada após publicar em /agente-supervisionado e /caixa-de-entrada: Izabel automática desligada, botão "Ativar em todo o Meu Chat", supervisão com Histórico 230 e Ligação GHL validada. Ninguém clicou em ativar e não houve envio.
+- O Codex reproduziu a revisão final 2c7569f num checkout isolado: tsc, build e 19/19 testes (inbox-review.test.ts e inbox-route.test.ts) passaram. Duas revisões técnicas independentes não encontraram bloqueio para publicar com a automação OFF. As contagens anteriores ficam como estão, sem somar suítes sobrepostas.
+- Revisão final: types.ts regenerado pela plataforma (dispatch_origin: string) + validação estrita fail-closed em inbox-review.server.ts.
+- Migrações 0029 e 0030 aplicadas uma única vez cada, variante Drizzle. O espelho Supabase da 0030 mantém begin/commit; a variante aplicada usa a transação da ferramenta. Não são iguais byte a byte.
+- Estado: implementado ✔ · testado local e prévia ✔ · publicado com UI autenticada ✔ · E2E com paciente (envio, recibo, segunda resposta, intervenção e pausa) ✘.
+- Cron não verificável pelo papel disponível; o cursor do observer foi visto a avançar. Emissores externos ainda precisam de conferência operacional. A identidade Zaptos final7009 continua pendente, com cadastros separados.
+- Histórico anterior preservado abaixo.
+
+
 ## Estado desta entrega
 
 Implementação **local**, com ativação **desligada por padrão**. Nenhuma migração, publicação, ativação, mensagem, contato, consulta ou workflow foi alterado em produção nesta entrega.
@@ -78,10 +91,10 @@ Pendente: aplicação/publicação desta revisão, verificação autenticada do 
 
 - Base conferida: 6dfb88e; 46/46 before_sha256 iguais; 46/46 contents com after_sha256 corretos. Código/docs/testes gravados exatos. Commit automático da plataforma ao aplicar migração: e0882ad.
 - Preflight (SELECT): commercial_agent_command e commercial_agent_queue_read presentes; commercial_agent_inbox.observed_at presente; objetos 0029/0030 ausentes; audit=6579 linhas; drafts invalidated 220 / pending 8 / rejected 1 / sent 1.
-- 0029 e 0030 aplicadas UMA vez cada via lov_database--migration (transação da ferramenta). Variante única: Drizzle; espelhos supabase/migrations gravados mas não executados (idênticos ao Drizzle). 0030 aplicada sem as linhas `begin;`/`commit;` (a ferramenta proíbe controle de transação e fornece a transação); demais linhas idênticas. Journal real: idx 29 when 1794954385800, idx 30 when 1794954505405 (candidatos 1794931200000/1794934800000 não usados); snapshots 0029/0030 gerados pela plataforma; entradas 0000–0028 preservadas. SQL gravado = pacote exceto newline final (restaurada) e begin/commit da 0030.
+- 0029 e 0030 aplicadas UMA vez cada via lov_database--migration (transação da ferramenta). Variante única: Drizzle; espelhos supabase/migrations gravados mas não executados (o espelho 0030 mantém begin/commit; não são byte a byte iguais à variante aplicada). 0030 aplicada sem as linhas `begin;`/`commit;` (a ferramenta proíbe controle de transação e fornece a transação); demais linhas idênticas. Journal real: idx 29 when 1794954385800, idx 30 when 1794954505405 (candidatos 1794931200000/1794934800000 não usados); snapshots 0029/0030 gerados pela plataforma; entradas 0000–0028 preservadas. SQL gravado = pacote exceto newline final (restaurada) e begin/commit da 0030.
 - types.ts: o gerado tipava dispatch_origin como string; mantido o conteúdo exato do pacote (união "supervised"|"automatic"), necessário para o tsc.
 - Pós-aplicação (SELECT): automation_enabled=false, version=0, canais vazios, since/ator/policy_hash nulos; 230/230 drafts dispatch_origin=supervised; estados inalterados; audit=6579 (índice criado sem gravar linhas). RPCs commercial_agent_automation_command e commercial_agent_queue_read_v2: SECURITY DEFINER, search_path="", EXECUTE só postgres/service_role. RLS ativa em settings/drafts/audit, sem novas policies. n8n: bridge_enabled/live_send/channel_verified inalterados.
-- Gates: tsc OK; vite build OK; ESLint nos 41 TS/TSX do pacote (types.ts excluído) 0 erros, 3 avisos fast-refresh; git diff --check OK; vitest 1725/1725 em 45 arquivos (commercial-agent, izabel, UI, n8n; sem *.db). NÃO executados: 9 arquivos *.db.test.ts (234 testes) — initdb falha no sandbox; os 9 arquivos PG / 234 testes não foram repetidos no Lovable. (Correção 17/11 22:40 UTC: os 1148 testes locais em 36 arquivos relatados pelo Dr. João incluem unitários, UI e PG — NÃO são 1148 testes de banco.)
+- Gates: tsc OK; vite build OK; ESLint nos 41 TS/TSX do pacote (types.ts excluído) 0 erros, 3 avisos fast-refresh; git diff --check OK; vitest 1725/1725 em 45 arquivos (commercial-agent, izabel, UI, n8n; sem *.db). NÃO executados: 9 arquivos *.db.test.ts (234 testes) — initdb falha no sandbox; os 9 arquivos PG / 234 testes não foram repetidos no Lovable. (Correção 17/11 22:40 UTC: os 1148 testes locais em 36 arquivos executados localmente pelo Codex/revisão técnica incluem unitários, UI e PG — NÃO são 1148 testes de banco.)
 - Geração sintética direta (configuredAutomaticGenerator, loader privado real, escopo f07ab3be/ok2UHC2QMZsd8UHsAgEa; sem worker/evento/fila/persistência/envio), modelo openai/gpt-5.4-mini, modo automatic, todas com fontes approved_owner:
   - PT comercial: ok, 4913/109 tokens, 4 fontes, handoff=true (flags commercial_conflict, unsupported_action), 1,6 s.
   - FR sem fonte: ok, 4913/79, handoff=true (missing_policy), 1,0 s.
@@ -94,7 +107,7 @@ Pendente: aplicação/publicação desta revisão, verificação autenticada do 
 
 ## Casos sintéticos positivos — 17/11/2026 ~22:38 UTC (prévia; NÃO publicado)
 
-Comparação independente relatada pelo Dr. João sobre 6eae29d: 42/46 exatos; diferenças só nos 2 documentos, journal real, envelope transacional da 0030 e snapshots gerados. Código e guardas não alterados.
+Comparação independente (Codex/revisão técnica) sobre 6eae29d: 42/46 exatos; diferenças só nos 2 documentos, journal real, envelope transacional da 0030 e snapshots gerados. Código e guardas não alterados.
 
 Gerador automático real direto (configuredAutomaticGenerator, loader privado real, mesmo escopo; sem worker/fila/persistência/envio), openai/gpt-5.4-mini:
 - PT saudação simples: ok, flags [], handoff=false, optOut=false; 2 fontes approved_owner; 4904/64 tokens; 0,96 s.
