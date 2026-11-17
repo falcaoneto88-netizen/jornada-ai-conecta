@@ -721,3 +721,14 @@ Limites operacionais:
 - ACK ambíguo vira pendência humana, sem efeito automático.
 - Callbacks duplicados podem manter timers ativos no n8n, mas o ledger (claims únicos/idempotência) impede duplicação de efeito.
 - Nenhuma execução antiga foi repetida; nenhuma mensagem enviada nem consulta criada por esta verificação.
+
+## Izabel V03 — integração na prévia (17/11/2026, ~14:50 UTC)
+
+- Base `738829628973348ed1f9b9db8b482d091dc277e4`; 26/26 arquivos conferidos (before_sha256 e after_sha256) e gravados exatos; recuperação de senha em `__root.tsx`/`reset-password.tsx` preservada (não faz parte do pacote). Sem migrações. Build preparado `jornada-izabel-v03-20261117.1` — **não publicado**.
+- Configuração: `IZABEL_KNOWLEDGE_BUCKET=izabel-knowledge` gravada como segredo do servidor (sem credenciais novas).
+- Storage: bucket `izabel-knowledge` privado (public=false) no mesmo backend do cliente administrativo; objeto `organizations/f07ab3be-…/locations/ok2UHC2QMZsd8UHsAgEa/izabel/V03/text-only-v1.json`, 21503 bytes. Vínculo persistido org f07ab3be ↔ location ok2UHC2QMZsd8UHsAgEa conferido (desde 08/09/2026).
+- Loader real (prévia/sandbox): download privado OK, SHA256 3a376149… conferido, 30 registos elegíveis aceites pelo esquema. Biblioteca fora de src/public/commits/bundle (só path e hash no bundle do servidor).
+- Gates: 743/743 (Izabel, izabel-reply, commercial-agent incl. providers-v03/lovable-provider/runtime-scope/observer/http/policy-staleness, painel e rota) + 748/748 regressões n8n/identidade; tsc, ESLint dirigido (0 erros, 1 aviso fast-refresh), diff-check e build OK. Suítes `*.db.test.ts` (incl. service.db) e PG **não executadas** (sem runtime).
+- Respostas sintéticas Meu Chat (google/gemini-2.5-flash, sem paciente, sem envio, sem fila): FR dúvida sem fonte OK (sem inventar, alerta de confirmação); PT opt-out OK (handover, sem abordagem comercial); EN clínica individual OK numa execução. **Bloqueio:** PT consulta comercial e EN adiamento falharam (`erro_ia`) — `finish_reason=length`: ~957 de 1000 `max_tokens` consumidos por raciocínio, JSON truncado. Requer ajuste no pacote (ex.: limite maior ou raciocínio desligado) antes de publicar.
+- Fila supervisionada (openai/gpt-5.4-mini, reasoning none): coberta só por testes unitários; sem geração real.
+- Estado: local ✔ / prévia ✔ parcial (bloqueio acima) / publicado ✘. Autonomia não ativada.

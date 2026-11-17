@@ -90,3 +90,4 @@
 # Roadmap
 - [x] Aguardar complemento DND case-insensitive (Dr. João) antes de publicar n8n runtime policy
 - [x] Publicar só após complemento e gates
+- [ ] Izabel V03: integrada na prévia (local ✔, prévia parcial); bloqueio max_tokens no Meu Chat; publicar só após revisão do Dr. João
