@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "../components/ui/sonner";
 import { FronteiraIdentidade } from "../lib/identidade";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { supabase } from "../integrations/supabase/client";
 
 
 function NotFoundComponent() {
@@ -134,6 +135,16 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
+
+  // Link de recuperação aberto fora de /reset-password (ex.: redirecionado à raiz): leva ao formulário.
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((evento) => {
+      if (evento === "PASSWORD_RECOVERY" && window.location.pathname !== "/reset-password") {
+        void router.navigate({ to: "/reset-password", replace: true });
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, [router]);
 
   return (
     <QueryClientProvider client={queryClient}>

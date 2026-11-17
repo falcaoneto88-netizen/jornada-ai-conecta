@@ -29,11 +29,14 @@ function RedefinirSenha() {
   const [senha, setSenha] = useState("");
   const [confirmar, setConfirmar] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [linkInvalido, setLinkInvalido] = useState(false);
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((evento) => {
       if (evento === "PASSWORD_RECOVERY") setPronto(true);
     });
+    const params = new URLSearchParams(window.location.hash.slice(1) || window.location.search);
+    if (params.get("error") || params.get("error_code")) setLinkInvalido(true);
     if (window.location.hash.includes("type=recovery")) setPronto(true);
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) setPronto(true);
@@ -72,8 +75,9 @@ function RedefinirSenha() {
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
           {!pronto ? (
             <p className="text-sm text-muted-foreground">
-              Abra esta página pelo link recebido por e-mail. Se o link expirou, peça um novo em “Esqueci a
-              palavra-passe”.
+              {linkInvalido
+                ? "Este link já foi usado ou expirou. Cada link funciona uma só vez: peça um novo em “Esqueci a palavra-passe” e abra apenas o e-mail mais recente."
+                : "Abra esta página pelo link recebido por e-mail. Se o link expirou, peça um novo em “Esqueci a palavra-passe”."}
             </p>
           ) : (
             <form onSubmit={guardar} className="space-y-4">
