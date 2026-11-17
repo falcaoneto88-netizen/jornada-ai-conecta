@@ -204,6 +204,13 @@
       "when": 1794846035259,
       "tag": "0028_n8n_strict_confirmation_production",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794954385800,
+      "tag": "0029_commercial_agent_global_automation",
+      "breakpoints": true
     }
   ]
 }

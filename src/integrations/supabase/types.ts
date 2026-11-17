@@ -1005,11 +1005,16 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          automation_authorized_at: string | null
+          automation_authorized_by: string | null
+          automation_channel: string | null
+          automation_version: number | null
           contact_id: string
           contact_version: number
           conversation_id: string
           created_at: string
           dispatch_id: string | null
+          dispatch_origin: string
           error_code: string | null
           event_id: string
           expires_at: string
@@ -1030,11 +1035,16 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          automation_authorized_at?: string | null
+          automation_authorized_by?: string | null
+          automation_channel?: string | null
+          automation_version?: number | null
           contact_id: string
           contact_version: number
           conversation_id: string
           created_at?: string
           dispatch_id?: string | null
+          dispatch_origin?: string
           error_code?: string | null
           event_id: string
           expires_at?: string
@@ -1055,11 +1065,16 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          automation_authorized_at?: string | null
+          automation_authorized_by?: string | null
+          automation_channel?: string | null
+          automation_version?: number | null
           contact_id?: string
           contact_version?: number
           conversation_id?: string
           created_at?: string
           dispatch_id?: string | null
+          dispatch_origin?: string
           error_code?: string | null
           event_id?: string
           expires_at?: string
@@ -1296,6 +1311,13 @@ export type Database = {
         Row: {
           allowed_channels: string[]
           allowed_contacts: string[]
+          automation_channels: string[]
+          automation_enabled: boolean
+          automation_enabled_at: string | null
+          automation_enabled_by: string | null
+          automation_policy_hash: string | null
+          automation_since: string | null
+          automation_version: number
           location_id: string
           manual_send_all_contacts: boolean
           mode: string
@@ -1308,6 +1330,13 @@ export type Database = {
         Insert: {
           allowed_channels?: string[]
           allowed_contacts?: string[]
+          automation_channels?: string[]
+          automation_enabled?: boolean
+          automation_enabled_at?: string | null
+          automation_enabled_by?: string | null
+          automation_policy_hash?: string | null
+          automation_since?: string | null
+          automation_version?: number
           location_id: string
           manual_send_all_contacts?: boolean
           mode?: string
@@ -1320,6 +1349,13 @@ export type Database = {
         Update: {
           allowed_channels?: string[]
           allowed_contacts?: string[]
+          automation_channels?: string[]
+          automation_enabled?: boolean
+          automation_enabled_at?: string | null
+          automation_enabled_by?: string | null
+          automation_policy_hash?: string | null
+          automation_since?: string | null
+          automation_version?: number
           location_id?: string
           manual_send_all_contacts?: boolean
           mode?: string
@@ -2949,6 +2985,10 @@ export type Database = {
       claim_site_lead_welcome: { Args: { _submission: string }; Returns: Json }
       claim_site_lead_welcome_v2: {
         Args: { _source: string; _submission: string }
+        Returns: Json
+      }
+      commercial_agent_automation_command: {
+        Args: { _actor?: string; _data?: Json; _op: string; _org: string }
         Returns: Json
       }
       commercial_agent_command: {
