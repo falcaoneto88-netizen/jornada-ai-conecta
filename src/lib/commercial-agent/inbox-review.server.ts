@@ -37,7 +37,12 @@ export async function readInboxReviewRows(
   ]);
   if (rows.error || session.error) throw new AgentError("storage_unavailable");
   return {
-    items: (rows.data ?? []).slice(0, 30),
+    // The database CHECK constraint limits dispatch_origin; generated types expose it as text.
+    items: (rows.data ?? []).slice(0, 30).map((row) => {
+      if (row.dispatch_origin !== "supervised" && row.dispatch_origin !== "automatic")
+        throw new AgentError("storage_unavailable");
+      return { ...row, dispatch_origin: row.dispatch_origin };
+    }),
     session: session.data,
     truncated: (rows.data?.length ?? 0) > 30,
   };
