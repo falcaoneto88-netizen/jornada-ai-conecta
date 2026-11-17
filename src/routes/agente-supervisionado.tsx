@@ -71,9 +71,10 @@ function AgentPage() {
             {!scope && (
               <div className="mt-6 border-t pt-5">
                 <p className="text-sm text-muted-foreground">
-                  A Izabel prepara respostas com a base V02 no Meu Chat. O pacote novo de protocolos
-                  e imagens continua em homologação; esta fila preserva a triagem e a auditoria das
-                  sugestões supervisionadas.
+                  A Izabel prepara respostas com o núcleo textual V03 no Meu Chat e nesta fila.
+                  Mídias e textos com condições não verificadas continuam indisponíveis. Sugestões
+                  anteriores preservam sua versão; gere uma nova para usar a base atual. O atendente
+                  continua responsável pela revisão e pelo envio.
                 </p>
               </div>
             )}

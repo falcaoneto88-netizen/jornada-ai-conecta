@@ -87,13 +87,15 @@ describe("link específico de supervisão", () => {
     expect(screen.queryByText(/A Izabel prepara respostas/)).toBeNull();
   });
 
-  it("distingue a redação com V02 do pacote novo ainda em homologação", async () => {
+  it("distingue o núcleo textual V03 das capacidades ainda indisponíveis", async () => {
     mocks.list.mockResolvedValue({
       ok: true,
       data: { enabled: true, sendEnabled: false, items: [], errors: [] },
     });
     render(<Page />);
-    expect(screen.getByText(/A Izabel prepara respostas com a base V02 no Meu Chat/)).toBeTruthy();
+    expect(
+      screen.getByText(/A Izabel prepara respostas com o núcleo textual V03 no Meu Chat/),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Executar ensaio" })).toBeNull();
     await screen.findByText("Fila de revisão");
     expect(mocks.read).not.toHaveBeenCalled();

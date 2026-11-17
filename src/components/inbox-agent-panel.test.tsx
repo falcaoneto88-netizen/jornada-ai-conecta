@@ -133,8 +133,8 @@ describe("supervisão embutida no Atendimento", () => {
     expect(screen.getByText("Com a equipe humana · agente pausado")).toBeTruthy();
     expect(screen.getByText("Avaliação clínica necessária")).toBeTruthy();
     expect(screen.getByText("Envio do agente desativado.")).toBeTruthy();
-    expect(screen.getByText(/Base da sugestão: Treinamento V02 vigente/)).toBeTruthy();
-    expect(screen.getByText("Pacote Izabel · v1.0.0 · em homologação")).toBeTruthy();
+    expect(screen.getByText(/Base da sugestão: Treinamento V03 · núcleo textual/)).toBeTruthy();
+    expect(screen.getByText("Izabel · núcleo textual supervisionado")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /enviar|aprovar|copiar|retomar|assumir/i }),
     ).toBeNull();
@@ -415,7 +415,7 @@ describe("supervisão embutida no Atendimento", () => {
     ).toBeTruthy();
     const base = screen.getByText("Base e auditoria").closest("details")!;
     expect(base.open).toBe(false);
-    expect(screen.getByText("Pacote Izabel · v1.0.0 · em homologação").closest("details")).toBe(
+    expect(screen.getByText("Izabel · núcleo textual supervisionado").closest("details")).toBe(
       base,
     );
     expect(screen.getByText(/O contato está com DND/).closest("details")).toBeNull();

@@ -119,6 +119,7 @@ describe("recebimento geral separado do envio", () => {
     expect(await f.observer.observerPilot(org, locationId)).toMatchObject({ accepted: 1 });
     expect(f.discover).not.toHaveBeenCalled();
     expect(f.receive).toHaveBeenCalledWith(org, newEvent, observedAt);
+    expect(f.receiver).toHaveBeenCalledWith(locationId, org);
     expect(f.command).toHaveBeenLastCalledWith("receive_advance", org, {
       until: new Date(now).toISOString(),
     });

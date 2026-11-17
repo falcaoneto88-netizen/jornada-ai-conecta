@@ -257,7 +257,7 @@ export const labels: Record<string, string> = {
   rejected: "Rejeitada",
   invalidated: "Desatualizada",
   commercial_conflict: "Conflito com regra comercial — decisão humana",
-  missing_policy: "Regra não definida no V02",
+  missing_policy: "Informação não disponível na base atual — revisão humana",
   clinical: "Avaliação clínica necessária",
   urgent: "Possível urgência",
   human_requested: "Pessoa pediu atendimento humano",

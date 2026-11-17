@@ -42,14 +42,14 @@ export async function resolveAgentLocation(locationId: string) {
   if (error || !data) throw new AgentError("scope_mismatch");
   return data.organization_id;
 }
-export function runtime(locationId: string) {
+export function runtime(locationId: string, organizationId: string) {
   if (locationId !== process.env["GHL_LOCATION_ID"]) throw new AgentError("scope_mismatch");
   const key = process.env["COMMERCIAL_AGENT_ENCRYPTION_KEY"] ?? "";
   if (Buffer.from(key, "base64").length !== 32) throw new AgentError("encryption_not_configured");
   return new CommercialAgent({
     store: createStore(supabaseAdmin as unknown as Rpc),
     provider: new HighLevel(process.env["GHL_PRIVATE_TOKEN"] ?? "", locationId),
-    generate: configuredGenerator(process.env),
+    generate: configuredGenerator(process.env, fetch, { organizationId, locationId }),
     encryptionKey: key,
     enabled: process.env["COMMERCIAL_AGENT_ENABLED"] === "true",
     sendEnabled: process.env["COMMERCIAL_AGENT_SEND_ENABLED"] === "true",
@@ -72,7 +72,7 @@ export async function authenticatedAgent(
 ) {
   const scope = await authenticatedScope(ctx, org);
   return {
-    agent: runtime(scope.locationId),
+    agent: runtime(scope.locationId, scope.orgId),
     actor: ctx.userId,
     writeEnabled: scope.conn?.["write_enabled"] === true,
   };

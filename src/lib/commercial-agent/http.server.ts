@@ -48,7 +48,7 @@ export async function agentWebhook(request: Request) {
     // treats it only as a wake-up and fetches canonical IDs/dates with the cutoff.
     if (settings?.receive_all_contacts === true)
       return json(await observerContact(org, event.locationId, event.contactId), 202);
-    const result = await runtime(event.locationId).receive(org, event);
+    const result = await runtime(event.locationId, org).receive(org, event);
     return json(result, 202);
   } catch (e) {
     const code = e instanceof AgentError ? e.code : "invalid_event";
@@ -113,7 +113,7 @@ export async function agentWorker(request: Request) {
     // even when no workflow notification was delivered. This never sends a reply.
     const discovery = await observerPilot(org, location);
     const settings = await store.command<Settings>("settings", org);
-    const agent = runtime(location);
+    const agent = runtime(location, org);
     if (settings?.receive_all_contacts !== true) return json(await agent.work(org));
     // Drain a bounded batch without sending. Existing SQL leases and the monthly
     // generation ceiling apply to every job, including overlapping cron runs.

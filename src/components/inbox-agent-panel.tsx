@@ -381,10 +381,8 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
         </summary>
         <div className="mt-3 space-y-2">
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Treinamento V02</Badge>
-            <Badge variant="outline">
-              Pacote {izabelMetadata.name} · {izabelMetadata.versionLabel}
-            </Badge>
+            <Badge variant="outline">Treinamento {izabelMetadata.knowledgeVersion}</Badge>
+            <Badge variant="outline">{izabelMetadata.name} · núcleo textual supervisionado</Badge>
           </div>
           {view && (
             <>
@@ -409,7 +407,7 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
                 <p>
                   Base da sugestão:{" "}
                   {view.items[0].policyCurrent
-                    ? "Treinamento V02 vigente"
+                    ? "Treinamento V03 · núcleo textual"
                     : "versão anterior ou não confirmada"}
                   .
                 </p>
@@ -417,10 +415,10 @@ function ConnectedAgentPanel(props: InboxAgentPanelProps & { scope: string }) {
             </>
           )}
           <p>
-            A redação contextual da {izabelMetadata.name} e o agente supervisionado usam a base V02.
-            O pacote novo de protocolos e imagens continua em homologação e não foi ativado. A fila
-            geral mantém a triagem e a auditoria; rejeitar, pausar e retomar continuam disponíveis
-            na supervisão.
+            A redação contextual da {izabelMetadata.name} e o agente supervisionado usam os textos
+            elegíveis da V03. Mídias e textos com condições ainda não verificadas ficam de fora. As
+            sugestões anteriores mantêm sua origem e precisam ser geradas novamente para usar a base
+            atual. A revisão humana continua obrigatória.
           </p>
         </div>
       </details>

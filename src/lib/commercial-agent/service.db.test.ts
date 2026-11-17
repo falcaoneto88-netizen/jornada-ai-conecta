@@ -123,6 +123,21 @@ describe("fluxo supervisionado sobre PostgreSQL real e contatos fictícios", () 
     snapshot.historyHash = sha("changed");
     await expect(agent.approve(ORG, ACTOR, approval(d), true)).rejects.toThrow("draft_stale");
   });
+  it("proposta persistida com política anterior exige nova geração antes da aprovação", async () => {
+    generate.mockImplementationOnce(async (s: Snapshot): Promise<DraftPayload> => ({
+      snapshot: s,
+      policyHash: "synthetic-obsolete-v02-policy",
+      decision: { reply: "Resposta fictícia anterior.", flags: [], handoff: false, optOut: false },
+      model: "fixture",
+      inputTokens: 0,
+      outputTokens: 0,
+    }));
+    const d = await draft();
+    expect(d.content?.policyHash).not.toBe(POLICY_HASH);
+    await expect(agent.approve(ORG, ACTOR, approval(d), true)).rejects.toThrow("draft_stale");
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(provider.history).toHaveBeenCalledTimes(1);
+  });
   it("DND atualizado entre geração e aprovação bloqueia", async () => {
     const d = await draft();
     snapshot.dnd = true;

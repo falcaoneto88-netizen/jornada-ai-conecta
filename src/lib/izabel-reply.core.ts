@@ -23,6 +23,7 @@ export type IzabelReply = {
   handover: boolean;
 };
 export type IzabelReplyError =
+  | "knowledge_unavailable"
   | "forbidden"
   | "invalid_input"
   | "context_unavailable"
@@ -36,6 +37,8 @@ export type IzabelReplyResult =
   { ok: true; data: IzabelReply } | { ok: false; code: IzabelReplyError; message: string };
 export function izabelFailure(code: IzabelReplyError): IzabelReplyResult {
   const messages: Record<IzabelReplyError, string> = {
+    knowledge_unavailable:
+      "A base V03 da Izabel não pôde ser conferida para esta clínica. O seu rascunho foi preservado; peça à administração para verificar a configuração privada.",
     forbidden: "Sem permissão para preparar a resposta neste atendimento.",
     invalid_input: "Selecione uma conversa e um idioma válidos.",
     context_unavailable:
@@ -236,7 +239,7 @@ export function unsafeReply(text: string): boolean {
     /\[|\]|\{\{|\}\}|\bappointment\.|\bcontact\.|\blocation\.|\bpendente\s*:|<[^>]*>|https?:\/\/|\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/.test(
       text,
     ) ||
-    /\b(?:base operacional|v02|prompt|instrucoes internas|system message|ghl|lovable_api_key)\b/.test(
+    /\b(?:base operacional|v0[23]|prompt|instrucoes internas|system message|ghl|lovable_api_key)\b/.test(
       t,
     ) ||
     /\b\d{1,2}[:h]\d{2}\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|\b\d{1,2}\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b|\b(amanha|tomorrow|demain|manana|segunda.feira|terca.feira|quarta.feira|quinta.feira|sexta.feira|sabado|domingo|monday|tuesday|wednesday|thursday|friday|saturday|sunday|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|lunes|martes|miercoles|jueves|viernes)\b/.test(

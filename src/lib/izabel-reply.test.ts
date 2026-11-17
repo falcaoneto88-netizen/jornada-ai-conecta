@@ -16,7 +16,8 @@ import {
   type IzabelReplyDependencies,
 } from "./izabel-reply.server";
 
-const organizationId = "11111111-1111-4111-8111-111111111111";
+// Authorized static knowledge binding; all contact/message/appointment data below are synthetic.
+const organizationId = "f07ab3be-7419-4779-a901-ef71c5fc27f0";
 const otherOrg = "22222222-2222-4222-8222-222222222222";
 const now = Date.parse("2026-11-13T15:00:00Z");
 const input: IzabelReplyInput = {
@@ -55,7 +56,7 @@ function snapshot(text = "Olá, gostaria de saber sobre a minha consulta."): Sna
   return {
     event: {
       type: "InboundMessage",
-      locationId: "location",
+      locationId: "ok2UHC2QMZsd8UHsAgEa",
       contactId: "patient",
       conversationId: "conversation",
       messageId: "message",
@@ -92,13 +93,19 @@ function setup(data: unknown = draft, overrides: Partial<IzabelReplyDependencies
       }),
   );
   const deps: IzabelReplyDependencies = {
-    access: vi.fn(async () => ({ organizationId, locationId: "location" })),
+    access: vi.fn(async () => ({ organizationId, locationId: "ok2UHC2QMZsd8UHsAgEa" })),
     history: vi.fn(async () => snapshot()),
     attendance: vi.fn(async () => structuredClone(attendance)),
     appointment: vi.fn(async (_context, _scope, current) => ({
       context: structuredClone(current),
       verifiedAt: new Date(now).toISOString(),
     })),
+    knowledge: vi.fn(async () =>
+      JSON.stringify({
+        version: "V03",
+        records: [{ id: "SYNTHETIC_WELCOME", text: "Como posso ajudar?" }],
+      }),
+    ),
     apiKey: () => "test-key",
     fetch: fetchMock as typeof fetch,
     now: () => now,
@@ -123,6 +130,41 @@ describe("Izabel scoped drafting", () => {
     expect(deps.attendance).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it("blocks a valid session whose organization or location has no V03 binding", async () => {
+    for (const scope of [
+      { organizationId: otherOrg, locationId: "ok2UHC2QMZsd8UHsAgEa" },
+      { organizationId, locationId: "other-location" },
+    ]) {
+      const { deps, fetchMock } = setup(draft, { access: async () => scope });
+      expect(
+        await prepareIzabelReplyForSession(
+          session,
+          { ...input, organizationId: scope.organizationId },
+          deps,
+        ),
+      ).toMatchObject({ ok: false, code: "knowledge_unavailable" });
+      expect(deps.history).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  });
+  it("generates from the eligible V03 source, not the old V02 examples", async () => {
+    const { deps, fetchMock } = setup({ ...draft, text: "Como posso ajudar?" });
+    const result = await prepareIzabelReplyForSession(session, input, deps);
+    expect(result.ok).toBe(true);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const policy = request.messages[0].content;
+    expect(policy).toContain("REFERÊNCIA TEXTUAL V03 ELEGÍVEL");
+    expect(policy).toContain('"id":"SYNTHETIC_WELCOME"');
+    expect(policy).not.toContain("BASE V02");
+    expect(policy).not.toContain('"id":"ABATIMENTO_ORIGINAL"');
+    expect(policy).not.toContain('"id":"DURABILIDADE_ORIGINAL"');
+    expect(policy).not.toContain('"id":"PRECO_REFERENCIA"');
+    expect(policy).not.toContain('"id":"TRANSFERIR_6_4"');
+    expect(result.ok && result.data.sources.some((source) => source.label.includes("V03"))).toBe(
+      true,
+    );
+    expect(deps.fetch).toHaveBeenCalledTimes(1);
+  });
   it("denies a read-only/unbound session before contacting providers", async () => {
     const { deps, fetchMock } = setup(draft, { access: vi.fn(async () => null) });
     expect(await prepareIzabelReplyForSession(session, input, deps)).toMatchObject({
@@ -132,15 +174,26 @@ describe("Izabel scoped drafting", () => {
     expect(deps.history).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it("refuses to generate without verified private knowledge and never falls back to V02", async () => {
+    const { deps, fetchMock } = setup(draft, {
+      knowledge: async () => {
+        throw new Error("private details");
+      },
+    });
+    const result = await prepareIzabelReplyForSession(session, input, deps);
+    expect(result).toMatchObject({ ok: false, code: "knowledge_unavailable" });
+    expect(JSON.stringify(result)).not.toContain("private details");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("uses the existing GHL verifier: wrong contact in conversation fails before messages/model", async () => {
     const get = vi.fn(async () => ({
       ok: true as const,
       status: 200,
-      data: { id: "conversation", contactId: "other-patient", locationId: "location" },
+      data: { id: "conversation", contactId: "other-patient", locationId: "ok2UHC2QMZsd8UHsAgEa" },
     }));
     const { deps, fetchMock } = setup(draft, {
       history: (scope) =>
-        new HighLevel("test-key", "location", get, () => now).manualHistory(scope),
+        new HighLevel("test-key", "ok2UHC2QMZsd8UHsAgEa", get, () => now).manualHistory(scope),
     });
     expect(await prepareIzabelReplyForSession(session, input, deps)).toMatchObject({
       ok: false,
@@ -368,6 +421,10 @@ describe("Izabel scoped drafting", () => {
     "Este procedimento é sem riscos.",
     "Tome 5 mg desse medicamento.",
     "LOVABLE_API_KEY é uma instrução interna.",
+    "A base V03 recomenda a consulta.",
+    "A consulta é separada do procedimento.",
+    "A consulta será abatida do procedimento.",
+    "O investimento é de 1.600 €.",
   ])("rejects unsafe model output: %s", async (text) => {
     const { deps } = setup({ ...draft, text });
     expect(await prepareIzabelReplyForSession(session, input, deps)).toMatchObject({
@@ -446,7 +503,7 @@ describe("Izabel scoped drafting", () => {
 });
 
 describe("linked appointment provider evidence", () => {
-  const scope = { ...input, locationId: "location" };
+  const scope = { ...input, locationId: "ok2UHC2QMZsd8UHsAgEa" };
   function linked() {
     const row = {
       id: attendance.nextAppointment!.id,
@@ -474,7 +531,7 @@ describe("linked appointment provider evidence", () => {
         event: {
           id: "booking",
           contactId: "patient",
-          locationId: "location",
+          locationId: "ok2UHC2QMZsd8UHsAgEa",
           calendarId: "calendar",
           startTime: attendance.nextAppointment!.startAt,
           endTime: attendance.nextAppointment!.endAt,
@@ -483,7 +540,7 @@ describe("linked appointment provider evidence", () => {
       },
     }));
     const provider = {
-      secrets: () => ({ token: "test-key", locationId: "location" }),
+      secrets: () => ({ token: "test-key", locationId: "ok2UHC2QMZsd8UHsAgEa" }),
       get,
       now: () => now,
     };
@@ -500,7 +557,7 @@ describe("linked appointment provider evidence", () => {
       ["is_demo", false],
     ]);
     expect(f.provider.get).toHaveBeenCalledWith(
-      expect.objectContaining({ locationId: "location" }),
+      expect.objectContaining({ locationId: "ok2UHC2QMZsd8UHsAgEa" }),
       "calendars/events/appointments/booking",
     );
     expect(result?.context.nextAppointment?.status).toBe("confirmed");
@@ -525,7 +582,7 @@ describe("linked appointment provider evidence", () => {
         event: {
           id: "booking",
           contactId: "other",
-          locationId: "location",
+          locationId: "ok2UHC2QMZsd8UHsAgEa",
           calendarId: "calendar",
           startTime: attendance.nextAppointment!.startAt,
           endTime: attendance.nextAppointment!.endAt,

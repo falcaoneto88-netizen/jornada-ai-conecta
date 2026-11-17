@@ -18,7 +18,10 @@ export type ObserverDependencies = {
   env: Record<string, string | undefined>;
   store: Store;
   config: GhlConfig;
-  receiver: (locationId: string) => {
+  receiver: (
+    locationId: string,
+    organizationId: string,
+  ) => {
     receive(org: string, event: Event, observedAt?: string): Promise<unknown>;
   };
   discover?: typeof discoverContactEvents;
@@ -106,7 +109,7 @@ export function createObserver(deps: ObserverDependencies) {
       discovered: rows.data.length,
     };
     if (rows.data.length) {
-      const receiver = deps.receiver(locationId);
+      const receiver = deps.receiver(locationId, org);
       for (const { event, observedAt } of rows.data) {
         const response = ingressSchema.safeParse(await receiver.receive(org, event, observedAt));
         if (!response.success) throw new AgentError("observer_ingress_invalid");
@@ -182,7 +185,7 @@ export function createObserver(deps: ObserverDependencies) {
     if (!events.length) return empty("idle");
 
     const result = { ...empty("observed"), discovered: events.length };
-    const receiver = deps.receiver(locationId);
+    const receiver = deps.receiver(locationId, org);
     for (const event of events) {
       // Keep discovery's chronological order. Store.ingress handles duplicates and human pauses.
       const ingress = ingressSchema.safeParse(await receiver.receive(org, event));

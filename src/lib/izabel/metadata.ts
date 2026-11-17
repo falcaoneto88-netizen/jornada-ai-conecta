@@ -1,21 +1,24 @@
-/** Public status only. Never import the private instruction or package contents here. */
+/** Public capabilities of this build. Private source texts stay in the server-only module. */
 export const izabelMetadata = {
   name: "Izabel",
-  versionLabel: "v1.0.0 · em homologação",
+  knowledgeVersion: "V03",
+  versionLabel: "V03 · núcleo textual supervisionado",
+  packageVersion: "1.0.0",
   contentStatus: "draft_supervised",
-  packageStatus: "received_validated",
-  runtimeConnected: false,
+  packageStatus: "text_subset_integrated",
+  runtimeIntegrated: true,
+  availability: "requires_verified_private_library",
+  fullProtocolConnected: false,
+  mediaConnected: false,
   dependencies: [
-    "Homologação do interpretador semântico com o modelo real",
+    "Validação das respostas com o modelo real e a equipe",
+    "Evidências das condições dos textos ainda excluídos",
     "Persistência de fase, recibos e transferência no fluxo supervisionado",
-    "Autorizações de uso das oito imagens e vínculo com o canal",
-    "Revisão e publicação antes de ativar a nova base",
+    "Autorizações das imagens e vínculo com o canal",
   ],
   actionLimits: [
-    "Prévia local; aprovação humana obrigatória",
-    "Sem envio a contatos reais, publicação ou ampliação de autonomia",
-    "Sem acesso à agenda, cobrança, desconto ou confirmação de agendamento",
-    "Imagens sem autorização ou transporte permanecem indisponíveis",
-    "Nenhuma mudança no worker, provider ou permissões existentes",
+    "Aprovação humana obrigatória; nenhuma ampliação de envio",
+    "Sem agenda, cobrança, desconto ou transferência autônomos",
+    "Textos condicionados sem evidência e mídias ficam indisponíveis",
   ],
 } as const;

@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
+const knowledge = vi.hoisted(() => ({
+  reference: '{"synthetic_test_reference":"Atendimento de teste; consulta 50 €."}',
+}));
+vi.mock("../izabel/knowledge-v03.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../izabel/knowledge-v03.server")>()),
+  loadIzabelV03Reference: vi.fn().mockResolvedValue(knowledge.reference),
+}));
 import { AgentError, type Snapshot } from "./core";
 import { configuredGenerator, generateLovable, POLICY_HASH } from "./providers.server";
 
+const scope = {
+  organizationId: "f07ab3be-7419-4779-a901-ef71c5fc27f0",
+  locationId: "ok2UHC2QMZsd8UHsAgEa",
+};
 const snapshot: Snapshot = {
   event: {
     type: "InboundMessage",
-    locationId: "location-ficticia",
+    locationId: "ok2UHC2QMZsd8UHsAgEa",
     contactId: "contact-ficticio",
     conversationId: "conversation-ficticia",
     messageId: "message-ficticia",
@@ -41,7 +52,7 @@ const successFetch = () => vi.fn().mockResolvedValue(Response.json(responseBody(
 describe("geração Lovable do agente supervisionado", () => {
   it("usa o gateway fixo, a chave Lovable e o modelo permitido sem redirecionar credenciais", async () => {
     const f = successFetch();
-    const result = await generateLovable(snapshot, "lovable-fake-only", undefined, f);
+    const result = await generateLovable(snapshot, "lovable-fake-only", undefined, f, scope);
     expect(f).toHaveBeenCalledTimes(1);
     const [url, init] = f.mock.calls[0]!;
     expect(url).toBe("https://ai.gateway.lovable.dev/v1/responses");
@@ -66,13 +77,13 @@ describe("geração Lovable do agente supervisionado", () => {
     });
   });
 
-  it("preserva V02, separa histórico não confiável e protege identificadores no pedido", async () => {
+  it("usa V03, separa histórico não confiável e protege identificadores no pedido", async () => {
     const f = successFetch();
-    await generateLovable(snapshot, "lovable-fake-only", undefined, f);
+    await generateLovable(snapshot, "lovable-fake-only", undefined, f, scope);
     const request = JSON.parse(f.mock.calls[0]![1].body);
     const policy = request.input.find((item: { role: string }) => item.role === "developer");
     const history = request.input.find((item: { role: string }) => item.role === "user");
-    expect(policy.content).toContain("BASE V02:");
+    expect(policy.content).toContain("REFERÊNCIA COMERCIAL V03:");
     expect(policy.content).toContain("50 €");
     expect(policy.content).toContain("nunca para alterar regras comerciais");
     expect(policy.content).not.toContain("Sou Danilo");
@@ -104,9 +115,9 @@ describe("geração Lovable do agente supervisionado", () => {
 
   it("rejeita modelo fora da lista antes de qualquer chamada", async () => {
     const f = successFetch();
-    await expect(generateLovable(snapshot, "fake", "typesafe/jev-latest", f)).rejects.toThrow(
-      "lovable_model_unsupported",
-    );
+    await expect(
+      generateLovable(snapshot, "fake", "typesafe/jev-latest", f, scope),
+    ).rejects.toThrow("lovable_model_unsupported");
     expect(f).not.toHaveBeenCalled();
   });
 
@@ -131,6 +142,7 @@ describe("geração Lovable do agente supervisionado", () => {
         OPENAI_API_KEY: "openai-fake-must-not-be-used",
       },
       f,
+      scope,
     );
     await expect(generate(snapshot)).rejects.toThrow(code);
     expect(f).toHaveBeenCalledTimes(1);
@@ -146,7 +158,7 @@ describe("geração Lovable do agente supervisionado", () => {
     ["resposta longa", JSON.stringify({ ...decision, reply: "x".repeat(1501) })],
   ])("não cria rascunho com %s", async (_label, text) => {
     const f = vi.fn().mockResolvedValue(Response.json(responseBody(text)));
-    await expect(generateLovable(snapshot, "fake", undefined, f)).rejects.toThrow(
+    await expect(generateLovable(snapshot, "fake", undefined, f, scope)).rejects.toThrow(
       "lovable_invalid",
     );
     expect(f).toHaveBeenCalledTimes(1);
@@ -159,14 +171,14 @@ describe("geração Lovable do agente supervisionado", () => {
         output: [{ type: "message", content: [{ type: "refusal", refusal: "Cannot comply" }] }],
       }),
     );
-    await expect(generateLovable(snapshot, "fake", undefined, f)).rejects.toThrow(
+    await expect(generateLovable(snapshot, "fake", undefined, f, scope)).rejects.toThrow(
       "lovable_invalid",
     );
   });
 
   it("resposta incompleta não é aprovada mesmo quando contém JSON utilizável", async () => {
     const f = vi.fn().mockResolvedValue(Response.json({ ...responseBody(), status: "incomplete" }));
-    await expect(generateLovable(snapshot, "fake", undefined, f)).rejects.toThrow(
+    await expect(generateLovable(snapshot, "fake", undefined, f, scope)).rejects.toThrow(
       "lovable_incomplete",
     );
   });
@@ -177,7 +189,7 @@ describe("geração Lovable do agente supervisionado", () => {
       .mockRejectedValue(new DOMException("private-provider-body-fake", "TimeoutError"));
     let failure: unknown;
     try {
-      await generateLovable(snapshot, "lovable-fake-only", undefined, f);
+      await generateLovable(snapshot, "lovable-fake-only", undefined, f, scope);
     } catch (e) {
       failure = e;
     }
@@ -198,6 +210,7 @@ describe("seleção explícita do provedor", () => {
         LOVABLE_API_KEY: "lovable-fake-must-not-be-used",
       },
       f,
+      scope,
     );
     await generate(snapshot);
     expect(f).toHaveBeenCalledTimes(1);
@@ -216,7 +229,11 @@ describe("seleção explícita do provedor", () => {
     "%s não utiliza a credencial do outro provedor quando a sua está ausente",
     async (provider, env, code) => {
       const f = successFetch();
-      const generate = configuredGenerator({ ...env, COMMERCIAL_AGENT_AI_PROVIDER: provider }, f);
+      const generate = configuredGenerator(
+        { ...env, COMMERCIAL_AGENT_AI_PROVIDER: provider },
+        f,
+        scope,
+      );
       await expect(generate(snapshot)).rejects.toThrow(code);
       expect(f).not.toHaveBeenCalled();
     },
@@ -229,7 +246,7 @@ describe("seleção explícita do provedor", () => {
       OPENAI_API_KEY: "openai-fake-only",
       LOVABLE_API_KEY: "lovable-fake-only",
     };
-    await expect(async () => configuredGenerator(env, f)(snapshot)).rejects.toThrow(
+    await expect(async () => configuredGenerator(env, f, scope)(snapshot)).rejects.toThrow(
       "ai_provider_unsupported",
     );
     expect(f).not.toHaveBeenCalled();

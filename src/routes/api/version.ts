@@ -8,7 +8,7 @@ import { createFileRoute } from "@tanstack/react-router";
  * de fora, qual a versão publicada. `release` é o identificador do ambiente,
  * quando existe.
  */
-const BUILD = "jornada-n8n-production-20261116.3";
+const BUILD = "jornada-izabel-v03-20261117.1";
 
 export const Route = createFileRoute("/api/version")({
   server: {
@@ -37,6 +37,13 @@ export const Route = createFileRoute("/api/version")({
               ghlWorkflowMonitoring: 1,
               inboxSupervisedReview: 1,
               supervisionQueueRead: 1,
+            },
+            izabel: {
+              knowledgeVersion: "V03",
+              scope: "supervised_text_subset",
+              availability: "requires_verified_private_library",
+              fullProtocol: false,
+              media: false,
             },
             release:
               typeof release === "string" && /^[0-9a-zA-Z._-]{4,64}$/.test(release)

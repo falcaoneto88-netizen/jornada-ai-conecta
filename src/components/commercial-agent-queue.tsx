@@ -1,3 +1,4 @@
+import { izabelMetadata } from "@/lib/izabel/metadata";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUpRight, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -252,7 +253,9 @@ export function CommercialAgentQueue({
       >
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Treinamento V02</Badge>
+            <Badge variant="outline">
+              Treinamento {izabelMetadata.knowledgeVersion} · núcleo textual
+            </Badge>
             <Badge>
               {demo
                 ? "Demonstração com dados fictícios"
