@@ -1014,7 +1014,7 @@ export type Database = {
           conversation_id: string
           created_at: string
           dispatch_id: string | null
-          dispatch_origin: "supervised" | "automatic"
+          dispatch_origin: string
           error_code: string | null
           event_id: string
           expires_at: string
@@ -1044,7 +1044,7 @@ export type Database = {
           conversation_id: string
           created_at?: string
           dispatch_id?: string | null
-          dispatch_origin?: "supervised" | "automatic"
+          dispatch_origin?: string
           error_code?: string | null
           event_id: string
           expires_at?: string
@@ -1074,7 +1074,7 @@ export type Database = {
           conversation_id?: string
           created_at?: string
           dispatch_id?: string | null
-          dispatch_origin?: "supervised" | "automatic"
+          dispatch_origin?: string
           error_code?: string | null
           event_id?: string
           expires_at?: string
