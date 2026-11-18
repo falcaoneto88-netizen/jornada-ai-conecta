@@ -10,6 +10,8 @@ export type DiscoveryGet = (
 ) => Promise<GhlResult<unknown>>;
 
 export type DiscoveryInput = { locationId: string; contactId: string; since: string };
+export type ContactWindowInput = DiscoveryInput & { until: string };
+export type DiscoveredContactEvent = { event: Event; observedAt: string };
 export type DiscoveryDependencies = {
   config: GhlConfig;
   call?: DiscoveryGet;
@@ -83,10 +85,30 @@ export async function discoverContactEvents(
   input: DiscoveryInput,
   dependencies: DiscoveryDependencies,
 ): Promise<Event[]> {
+  return (await discoverContactHistory(input, dependencies)).map(({ event }) => event);
+}
+
+/** A contact wake-up reads canonical conversation history, independent of export indexing. */
+export async function discoverContactEventsInWindow(
+  input: ContactWindowInput,
+  dependencies: DiscoveryDependencies,
+): Promise<DiscoveredContactEvent[]> {
+  if (typeof input.until !== "string") throw new AgentError("discovery_window_invalid");
+  return discoverContactHistory(input, dependencies, input.until);
+}
+
+async function discoverContactHistory(
+  input: DiscoveryInput,
+  dependencies: DiscoveryDependencies,
+  requestedUntil?: string,
+): Promise<DiscoveredContactEvent[]> {
   const now = (dependencies.now ?? Date.now)();
   const since = timestamp(input.since);
   if (typeof input.since !== "string" || since === null || !Number.isFinite(now) || since > now)
     throw new AgentError("discovery_since_invalid");
+  const until = requestedUntil === undefined ? now : timestamp(requestedUntil);
+  if (until === null || until < since || until > now)
+    throw new AgentError("discovery_window_invalid");
   if (
     !id.safeParse(input.locationId).success ||
     !id.safeParse(input.contactId).success ||
@@ -210,7 +232,7 @@ export async function discoverContactEvents(
         direction,
         kind,
         event:
-          ignored || at < since
+          ignored || at < since || at > until
             ? null
             : {
                 ...scope,
@@ -230,7 +252,7 @@ export async function discoverContactEvents(
           events[i]!.direction !== events[i - 1]!.direction
         )
           throw new AgentError("discovery_order_ambiguous");
-      return events.map((m) => m.event!);
+      return events.map((m) => ({ event: m.event!, observedAt: new Date(m.at).toISOString() }));
     }
     if (cursors.has(normalized.proximoCursor)) throw new AgentError("history_incomplete");
     cursors.add(normalized.proximoCursor);

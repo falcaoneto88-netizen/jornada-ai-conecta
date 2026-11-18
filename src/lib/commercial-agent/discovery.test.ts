@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { GHL_ORIGIN, GHL_VERSION, type GhlConfig, type GhlResult } from "../ghl.server";
 import { AgentError } from "./core";
-import { discoverContactEvents, type DiscoveryGet, type DiscoveryInput } from "./discovery.server";
+import {
+  discoverContactEvents,
+  discoverContactEventsInWindow,
+  type DiscoveryGet,
+  type DiscoveryInput,
+} from "./discovery.server";
 
 const input: DiscoveryInput = {
   locationId: "location-test",
@@ -48,8 +53,175 @@ function scenario(pages: unknown[] = [page([message])], overrides: Record<string
   });
   const run = (requested = input, cfg = config) =>
     discoverContactEvents(requested, { config: cfg, call, now });
-  return { call, run };
+  const runWindow = (requested = { ...input, until: new Date(now()).toISOString() }) =>
+    discoverContactEventsInWindow(requested, { config, call, now });
+  return { call, run, runWindow };
 }
+
+describe("descoberta do contato com janela e data canônica", () => {
+  it.each(["TYPE_INSTAGRAM", "TYPE_FACEBOOK"])(
+    "%s retorna apenas IDs e instantes canônicos em ordem cronológica",
+    async (messageType) => {
+      const earlier = { ...message, messageType, dateAdded: "2026-10-06T09:01:00-03:00" };
+      const later = {
+        ...earlier,
+        id: "outbound-social",
+        direction: "outbound",
+        dateAdded: "2026-10-06T12:02:00Z",
+      };
+      const { runWindow, call } = scenario([page([later], true, later.id), page([earlier])]);
+      expect(await runWindow()).toEqual([
+        {
+          event: {
+            type: "InboundMessage",
+            locationId: input.locationId,
+            contactId: input.contactId,
+            conversationId: conversation.id,
+            messageId: earlier.id,
+          },
+          observedAt: "2026-10-06T12:01:00.000Z",
+        },
+        {
+          event: {
+            type: "OutboundMessage",
+            locationId: input.locationId,
+            contactId: input.contactId,
+            conversationId: conversation.id,
+            messageId: later.id,
+          },
+          observedAt: "2026-10-06T12:02:00.000Z",
+        },
+      ]);
+      expect(
+        call.mock.calls.every(
+          ([, path, init]) => init.method === "GET" && !path.includes("export"),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("inclui os dois limites, exclui anteriores e posteriores e não prolonga until entre páginas", async () => {
+    const until = "2026-10-06T12:30:00.000Z";
+    const { runWindow } = scenario([
+      page(
+        [
+          { ...message, id: "after", dateAdded: "2026-10-06T12:30:00.001Z" },
+          { ...message, id: "until", dateAdded: until },
+        ],
+        true,
+        "until",
+      ),
+      page([
+        { ...message, id: "since", dateAdded: input.since },
+        { ...message, id: "before", dateAdded: "2026-10-06T11:59:59.999Z" },
+      ]),
+    ]);
+    expect((await runWindow({ ...input, until })).map(({ event }) => event.messageId)).toEqual([
+      "since",
+      "until",
+    ]);
+  });
+
+  it.each([
+    "",
+    "bad",
+    "2026-10-06",
+    "2026-10-06T12:30:00",
+    "2026-10-06T11:59:59Z",
+    "2026-10-06T13:00:00.001Z",
+  ])("nega until inválido antes de qualquer leitura: %s", async (until) => {
+    const { runWindow, call } = scenario();
+    await expect(runWindow({ ...input, until })).rejects.toThrow("discovery_window_invalid");
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it.each(["bad", "2026-10-06T13:00:00.001Z"])(
+    "nega data canônica inválida/futura: %s",
+    async (dateAdded) => {
+      await expect(scenario([page([{ ...message, dateAdded }])]).runWindow()).rejects.toThrow(
+        "discovery_timestamp_invalid",
+      );
+    },
+  );
+
+  it.each(["contactId", "locationId", "conversationId"])(
+    "recusa %s divergente até na última página",
+    async (field) => {
+      const f = scenario([
+        page([message], true, message.id),
+        page([{ ...message, id: "foreign-message", [field]: "foreign" }]),
+      ]);
+      await expect(f.runWindow()).rejects.toThrow("scope_mismatch");
+    },
+  );
+
+  it.each([
+    [`contacts/${input.contactId}`, { contact: { ...contact.contact, locationId: "foreign" } }],
+    ["conversations/search", { conversations: [conversation], total: 2 }],
+    [`conversations/${conversation.id}`, { ...conversation, contactId: "foreign" }],
+  ])("confere cadeia de identidade antes de mensagens %#", async (path, response) => {
+    const { runWindow, call } = scenario([], { [String(path)]: response });
+    await expect(runWindow()).rejects.toThrow(
+      path === "conversations/search" ? "discovery_conversations_ambiguous" : "scope_mismatch",
+    );
+    expect(call.mock.calls.some(([, requested]) => requested.endsWith("/messages"))).toBe(false);
+  });
+
+  it("deduplica sobreposição idêntica e conserva o mesmo observedAt na redescoberta", async () => {
+    const pages = [page([message, message], true, message.id), page([message])];
+    const first = await scenario(pages).runWindow();
+    expect(first).toHaveLength(1);
+    expect(await scenario(pages).runWindow()).toEqual(first);
+  });
+
+  it.each([
+    { direction: "outbound" },
+    { dateAdded: "2026-10-06T12:02:00Z" },
+    { messageType: "TYPE_FACEBOOK" },
+  ])("nega metadados conflitantes no mesmo ID %#", async (change) => {
+    await expect(
+      scenario([page([message, { ...message, ...change }])]).runWindow(),
+    ).rejects.toThrow("discovery_message_conflict");
+  });
+
+  it("recusa empate entre direções e ordena empates da mesma direção por ID", async () => {
+    await expect(
+      scenario([page([message, { ...message, id: "out", direction: "outbound" }])]).runWindow(),
+    ).rejects.toThrow("discovery_order_ambiguous");
+    expect(
+      (
+        await scenario([
+          page([
+            { ...message, id: "z" },
+            { ...message, id: "a" },
+          ]),
+        ]).runWindow()
+      ).map(({ event }) => event.messageId),
+    ).toEqual(["a", "z"]);
+  });
+
+  it.each([page([message], true), page([], true, "cursor"), page([message], true, "not-in-page")])(
+    "nega paginação incompleta %#",
+    async (response) => {
+      await expect(scenario([response]).runWindow()).rejects.toThrow("history_incomplete");
+    },
+  );
+
+  it("recusa ciclo de cursor e limite excedido sem devolver lote parcial", async () => {
+    const other = { ...message, id: "other", dateAdded: "2026-10-06T12:02:00Z" };
+    await expect(
+      scenario([
+        page([message], true, message.id),
+        page([other], true, other.id),
+        page([message], true, message.id),
+      ]).runWindow(),
+    ).rejects.toThrow("history_incomplete");
+    const pages = Array.from({ length: 20 }, (_, i) =>
+      page([{ ...message, id: `old-${i}`, dateAdded: "2026-10-05T12:00:00Z" }], true, `old-${i}`),
+    );
+    await expect(scenario(pages).runWindow()).rejects.toThrow("history_incomplete");
+  });
+});
 
 describe("descoberta autenticada de eventos do contato", () => {
   it("confirma identidade, recupera IDs reais, ordena inbound/outbound e só devolve metadados", async () => {

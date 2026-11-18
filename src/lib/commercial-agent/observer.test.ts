@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentError, type Event, type Settings } from "./core";
 import { GHL_ORIGIN, GHL_VERSION, type GhlConfig } from "../ghl.server";
 import type { Store } from "./service.server";
-import { discoverContactEvents } from "./discovery.server";
+import { discoverContactEvents, discoverContactEventsInWindow } from "./discovery.server";
 
 const production = vi.hoisted(() => ({ command: vi.fn(), receive: vi.fn(), runtime: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
@@ -57,6 +57,7 @@ function fixture(changes: Partial<Settings> = {}) {
   const receiver = vi.fn(() => ({ receive }));
   const discover = vi.fn().mockResolvedValue([event]);
   const discoverLocation = vi.fn().mockResolvedValue([]);
+  const discoverContactWindow = vi.fn().mockResolvedValue([]);
   const call = vi.fn();
   const deps = {
     env,
@@ -65,6 +66,7 @@ function fixture(changes: Partial<Settings> = {}) {
     receiver,
     discover,
     discoverLocation,
+    discoverContactWindow,
     call,
     now: () => now,
   };
@@ -76,6 +78,7 @@ function fixture(changes: Partial<Settings> = {}) {
     receiver,
     discover,
     discoverLocation,
+    discoverContactWindow,
     call,
     observer: createObserver(deps),
   };
@@ -131,14 +134,15 @@ describe("recebimento geral separado do envio", () => {
 
   it("callback de contato novo usa filtro canônico e não avança o cursor global", async () => {
     const f = fixture(broad);
-    f.discoverLocation.mockResolvedValue([{ event: newEvent, observedAt }]);
+    f.discoverContactWindow.mockResolvedValue([{ event: newEvent, observedAt }]);
     await f.observer.observerContact(org, locationId, newEvent.contactId);
-    expect(f.discoverLocation.mock.calls[0]?.[0]).toEqual({
+    expect(f.discoverContactWindow.mock.calls[0]?.[0]).toEqual({
       locationId,
       contactId: newEvent.contactId,
       since: new Date(since).toISOString(),
       until: new Date(now).toISOString(),
     });
+    expect(f.discoverLocation).not.toHaveBeenCalled();
     expect(f.command).toHaveBeenCalledTimes(1);
   });
 
@@ -157,7 +161,7 @@ describe("recebimento geral separado do envio", () => {
     { ...newEvent, contactId: "other-contact" },
   ])("todo o lote deve pertencer ao callback antes do primeiro ingresso", async (badEvent) => {
     const f = fixture(broad);
-    f.discoverLocation.mockResolvedValue([
+    f.discoverContactWindow.mockResolvedValue([
       { event: newEvent, observedAt },
       { event: badEvent, observedAt },
     ]);
@@ -235,6 +239,189 @@ describe("recebimento geral separado do envio", () => {
   );
 });
 afterEach(() => vi.unstubAllEnvs());
+
+describe("callback geral com histórico canônico do contato", () => {
+  const broad = {
+    receive_all_contacts: true,
+    receive_since: since,
+    receive_cursor_until: "2026-10-06T12:59:00Z",
+    allowed_contacts: [],
+  };
+
+  it.each(["TYPE_INSTAGRAM", "TYPE_FACEBOOK"])(
+    "%s é recebido pelo callback mesmo quando o export do polling está vazio",
+    async (messageType) => {
+      const f = fixture(broad);
+      const { call, row } = canonicalReads();
+      call.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        data: { messages: { messages: [{ ...row, messageType }], nextPage: false } },
+      });
+      const observer = createObserver({
+        ...f.deps,
+        discoverContactWindow: discoverContactEventsInWindow,
+        call,
+      });
+      expect(await observer.observerPilot(org, locationId)).toMatchObject({ status: "idle" });
+      expect(f.discoverLocation).toHaveBeenCalledTimes(1);
+      f.command.mockClear();
+      expect(await observer.observerContact(org, locationId, contactId)).toEqual({
+        status: "observed",
+        discovered: 1,
+        accepted: 1,
+        duplicates: 0,
+        ownMessages: 0,
+      });
+      expect(f.receive.mock.calls).toEqual([[org, event, "2026-10-06T12:01:00.000Z"]]);
+      expect(
+        call.mock.calls.every(
+          ([, path, init]) => init.method === "GET" && !path.includes("export"),
+        ),
+      ).toBe(true);
+      expect(f.command.mock.calls).toEqual([["settings", org]]);
+      expect(f.discoverLocation).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(f.receive.mock.calls)).not.toContain(row.body);
+    },
+  );
+
+  it("redescoberta entrega os mesmos IDs e datas à deduplicação durável sem mover cursor", async () => {
+    const f = fixture(broad);
+    const observedAt = "2026-10-06T12:01:00.000Z";
+    f.discoverContactWindow.mockResolvedValue([{ event, observedAt }]);
+    f.receive
+      .mockResolvedValueOnce({ status: "accepted" })
+      .mockResolvedValueOnce({ status: "duplicate" });
+    await f.observer.observerContact(org, locationId, contactId);
+    expect(await f.observer.observerContact(org, locationId, contactId)).toMatchObject({
+      accepted: 0,
+      duplicates: 1,
+    });
+    expect(f.receive.mock.calls).toEqual([
+      [org, event, observedAt],
+      [org, event, observedAt],
+    ]);
+    expect(f.command.mock.calls).toEqual([
+      ["settings", org],
+      ["settings", org],
+    ]);
+    expect(f.discoverLocation).not.toHaveBeenCalled();
+  });
+
+  it.each(["storage_unavailable", "receipt_pending"])(
+    "interrompe ingresso em %s sem mover cursor ou inventar recibo",
+    async (code) => {
+      const f = fixture(broad);
+      f.discoverContactWindow.mockResolvedValue([
+        { event, observedAt: "2026-10-06T12:01:00.000Z" },
+        { event: { ...event, messageId: "later" }, observedAt: "2026-10-06T12:02:00.000Z" },
+      ]);
+      f.receive.mockRejectedValueOnce(new AgentError(code));
+      await expect(f.observer.observerContact(org, locationId, contactId)).rejects.toThrow(code);
+      expect(f.receive).toHaveBeenCalledTimes(1);
+      expect(f.command.mock.calls).toEqual([["settings", org]]);
+    },
+  );
+
+  it("falha na última página impede persistência da primeira", async () => {
+    const f = fixture(broad);
+    const { call, row } = canonicalReads();
+    call.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { messages: { messages: [row], nextPage: true, lastMessageId: row.id } },
+    });
+    call.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      code: "server_error",
+      message: "private",
+    });
+    const observer = createObserver({
+      ...f.deps,
+      discoverContactWindow: discoverContactEventsInWindow,
+      call,
+    });
+    await expect(observer.observerContact(org, locationId, contactId)).rejects.toThrow(
+      "ghl_read_failed",
+    );
+    expect(f.receive).not.toHaveBeenCalled();
+    expect(f.receiver).not.toHaveBeenCalled();
+    expect(f.command.mock.calls).toEqual([["settings", org]]);
+  });
+
+  it("captura o relógio uma vez e recusa mensagem futura na última página", async () => {
+    const f = fixture(broad);
+    const clock = vi
+      .fn()
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + 60_000);
+    const { call, row } = canonicalReads();
+    call.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { messages: { messages: [row], nextPage: true, lastMessageId: row.id } },
+    });
+    call.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: {
+        messages: {
+          messages: [{ ...row, id: "future", dateAdded: new Date(now + 1).toISOString() }],
+          nextPage: false,
+        },
+      },
+    });
+    const observer = createObserver({
+      ...f.deps,
+      discoverContactWindow: discoverContactEventsInWindow,
+      call,
+      now: clock,
+    });
+    await expect(observer.observerContact(org, locationId, contactId)).rejects.toThrow(
+      "discovery_timestamp_invalid",
+    );
+    expect(clock).toHaveBeenCalledTimes(1);
+    expect(f.receive).not.toHaveBeenCalled();
+    expect(f.command.mock.calls).toEqual([["settings", org]]);
+  });
+
+  it("preserva ordem de inbound/outbound e contagem own_message sem inferir autoria", async () => {
+    const f = fixture(broad);
+    const { call, row } = canonicalReads();
+    const outgoing = {
+      ...row,
+      id: "outgoing",
+      dateAdded: "2026-10-06T12:02:00Z",
+      direction: "outbound",
+    };
+    call.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { messages: { messages: [outgoing, row], nextPage: false } },
+    });
+    f.receive
+      .mockResolvedValueOnce({ status: "accepted" })
+      .mockResolvedValueOnce({ status: "own_message" });
+    const observer = createObserver({
+      ...f.deps,
+      discoverContactWindow: discoverContactEventsInWindow,
+      call,
+    });
+    expect(await observer.observerContact(org, locationId, contactId)).toMatchObject({
+      accepted: 1,
+      ownMessages: 1,
+    });
+    expect(f.receive.mock.calls).toEqual([
+      [org, event, "2026-10-06T12:01:00.000Z"],
+      [
+        org,
+        { ...event, messageId: outgoing.id, type: "OutboundMessage" },
+        "2026-10-06T12:02:00.000Z",
+      ],
+    ]);
+  });
+});
 
 describe("observer supervisionado", () => {
   it.each([

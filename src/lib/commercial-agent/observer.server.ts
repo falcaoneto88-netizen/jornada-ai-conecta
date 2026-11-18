@@ -2,7 +2,11 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { GHL_ORIGIN, GHL_VERSION, type GhlConfig } from "../ghl.server";
 import { AgentError, eventSchema, id, type Event } from "./core";
-import { discoverContactEvents, type DiscoveryGet } from "./discovery.server";
+import {
+  discoverContactEvents,
+  discoverContactEventsInWindow,
+  type DiscoveryGet,
+} from "./discovery.server";
 import { discoverLocationEvents } from "./location-discovery.server";
 import { createStore, runtime } from "./runtime.server";
 import type { Store } from "./service.server";
@@ -25,6 +29,7 @@ export type ObserverDependencies = {
     receive(org: string, event: Event, observedAt?: string): Promise<unknown>;
   };
   discover?: typeof discoverContactEvents;
+  discoverContactWindow?: typeof discoverContactEventsInWindow;
   discoverLocation?: typeof discoverLocationEvents;
   call?: DiscoveryGet;
   now?: () => number;
@@ -79,20 +84,26 @@ export function createObserver(deps: ObserverDependencies) {
         ? Math.max(Date.parse(since.data), Date.parse(cursor) - 10 * 60_000)
         : Date.parse(since.data);
     const until = new Date(now).toISOString();
+    const input = { locationId, since: new Date(lower).toISOString(), until };
+    const dependencies = {
+      config: deps.config,
+      ...(deps.call ? { call: deps.call } : {}),
+      now: () => now,
+    };
+    // Export indexing can lag behind the canonical conversation history. A signed
+    // contact wake-up uses the existing exact-contact reader, with verified dates.
+    // General polling keeps its export path and only it advances the global cursor.
+    const discovered =
+      requestedContact === undefined
+        ? await (deps.discoverLocation ?? discoverLocationEvents)(input, dependencies)
+        : await (deps.discoverContactWindow ?? discoverContactEventsInWindow)(
+            { ...input, contactId: requestedContact },
+            dependencies,
+          );
     const rows = z
       .array(z.object({ event: eventSchema, observedAt: z.iso.datetime({ offset: true }) }))
       .max(40_000)
-      .safeParse(
-        await (deps.discoverLocation ?? discoverLocationEvents)(
-          {
-            locationId,
-            since: new Date(lower).toISOString(),
-            until,
-            ...(requestedContact !== undefined ? { contactId: requestedContact } : {}),
-          },
-          { config: deps.config, ...(deps.call ? { call: deps.call } : {}), now: () => now },
-        ),
-      );
+      .safeParse(discovered);
     if (!rows.success) throw new AgentError("discovery_history_invalid");
     if (
       rows.data.some(
