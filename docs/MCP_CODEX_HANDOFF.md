@@ -845,3 +845,29 @@ Nomes preservados, sem valores secretos: `COMMERCIAL_AGENT_ENABLED`, `COMMERCIAL
 **Estado:** implementado ✔ · testado localmente ✔ · publicado pela interface ✔ · **verificado de ponta a ponta ✘, aguardando teste novo do usuário**, solicitado às 21:30 da Bahia. Na última leitura, a entrada própria mais recente continuava sendo a de `00:09:34Z`, anterior à publicação. Não houve replay de evento antigo, envio manual, alteração de cadastro/mesclagem, remoção de tag ou relaxamento de RLS nesta correção. Confirmar entrada nova, execução do relé, proposta, envio e recibo/entrega individualmente no Instagram e no Messenger antes de declarar os dois canais operacionais.
 
 Relatório completo local: `outputs/IZABEL_SOCIAL_CHANNELS_VALIDATION_2026-11-17/CORRECAO_RECEBIMENTO_SOCIAL.md` no workspace, com hashes, comandos, capturas e limites. Este complemento e o relatório são documentação posterior à publicação de quatro arquivos; não fazem parte do commit de código remoto acima.
+
+## 18/11/2026 00:45 UTC — Instagram validado com resposta automática entregue; Messenger pendente
+
+Complemento exclusivamente documental posterior às etapas anteriores. Nenhuma alteração de código, banco, configuração, variável de ambiente ou envio; nenhuma nova publicação nesta etapa.
+
+### Fatos conferidos neste teste
+
+- Teste próprio do usuário, identidade fornecida explicitamente: contato `81nlEHjA6GFbx1u6GeLd`, conversa `mEESQVZLG30YCndZY9Jk`, location `ok2UHC2QMZsd8UHsAgEa`, organização `f07ab3be-7419-4779-a901-ef71c5fc27f0`.
+- Entrada Instagram `4pNdi11ajgptmLfcsG0E` recebida em `2026-11-18T00:41:30.027Z`, depois do corte da automação versão 3.
+- Relé GHL executado às `00:41:35Z` com HTTP 202: `status=observed`, `discovered=2`, `accepted=2`, `duplicates=0`.
+- Fila `dcdde8f4-c853-41e5-8ce8-1c937612459d` processada; rascunho `b18725c7-6f59-412e-b9b5-c830f7cb4af4` em `sent`, origem automática, sem flags de bloqueio.
+- Despacho `8f7c642f-6480-489a-b287-965731530335`; mensagem de resultado `bbmHHB1MUrQYduVFfXTh` gravada às `00:42:06.320Z`.
+- `GET` autenticado da mensagem, feito pelo coordenador, confirmou `status=delivered`, `TYPE_INSTAGRAM`, mesmo contato, conversa e location. A diferença entre entrada e resposta foi de `36,293s`; esse número **não** é medida de leitura no aparelho do usuário.
+- Referência de política persistida `374e230aa879c3a24d6259f9ca80e652cd5ecaef6c44ebcbfa72714b7a6db22a`, igual à das configurações da organização e à política automática V03 publicada. `automation_version=3` é só a terceira ativação da automação e não comprova sozinho a versão do treinamento.
+- Exatamente um rascunho e um despacho para este evento; nenhum envio manual, nenhuma pausa, nenhum opt-out.
+- `state=ready` com `lease_until` residual na fila é estado final normal segundo o SQL do worker, não tarefa pendente: não reprocessar nem reinjetar o evento.
+
+### Estado validado e limites
+
+- Instagram: fluxo de ponta a ponta de uma saudação **entregue** validado neste teste, com aceite do GHL e `delivered` confirmado por leitura autenticada.
+- Confirmação humana de recebimento no aparelho foi solicitada e ainda não devolvida. Continuidade de conversa e agendamento completo não foram testados.
+- Messenger continua pendente: exige nova mensagem própria e conversa identificada.
+- Ambiguidade visual registrada, sem correção nesta etapa: a interface da Jornada ainda mostra um aviso genérico de revisão manual junto do histórico já enviado, o que pode sugerir pendência onde não há.
+- Nenhum dado clínico, segredo, valor de credencial ou texto privado de biblioteca foi copiado para este documento.
+
+Relatório local: `outputs/IZABEL_SOCIAL_CHANNELS_VALIDATION_2026-11-17/INSTAGRAM_E2E_ENTREGUE_2026-11-17.md` no workspace.
