@@ -91,3 +91,8 @@
 - [x] Aguardar complemento DND case-insensitive (Dr. João) antes de publicar n8n runtime policy
 - [x] Publicar só após complemento e gates
 - [ ] Izabel V03: integrada na prévia (local ✔, prévia parcial); bloqueio max_tokens no Meu Chat; publicar só após revisão do Dr. João
+
+## 2026-11-18 00:30 UTC
+- [x] Publicar revisão 4628fdad (patch observer/discovery) — autorizado, sem edição de código/banco/flags
+- [ ] Confirmar publicação por metadados (published_at); /api/version é marcador estático, não prova deploy
+- [ ] Teste E2E IG/FB: pendente — usuário enviará novo teste próprio após gatilhos GHL salvos; não ingerir/reprocessar manualmente
