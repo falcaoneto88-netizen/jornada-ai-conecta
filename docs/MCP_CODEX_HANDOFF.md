@@ -17,6 +17,14 @@ Este complemento prevalece sobre os estados históricos abaixo. Estado desta rev
 
 Validação local desta correção: 1026 testes de agente/Izabel/interface aprovados em 25 arquivos, build de produção aprovado; 28 testes SQL em PostgreSQL isolado aprovados (escopo, categoria, retenção e ausência de replay). Contagens sobrepostas não foram somadas. A revisão adicional encontrou e corrigiu preservação de canais na revalidação e guarda numérica fora do contexto financeiro; verificação final: 324 testes focados de provider/política aprovados, 44 de controle/interface aprovados, TypeScript sem erros e ESLint dos arquivos alterados aprovado.
 
+**Estado real no projeto original (20/11/2026, após aplicação):**
+
+- Patch aplicado pelo editor no commit `7ec6ab1`; migração 0031 aplicada uma única vez pela ferramenta oficial Cloud, registrada no commit `40d04ee` (journal idx 31 e snapshot sem mudança de schema). Não reaplicar.
+- Espelho Drizzle gerado pela ferramenta sem `begin;`/`commit;` e sem quebra de linha final, blob `29439c0e0079960d3d11175d13c8b841315e3884`; espelho Supabase blob `808bd1747ec6c514ac80083c3c2e1717fc70b145`. Apenas o envelope difere; corpo SQL idêntico. Teste de equivalência normalizada ajustado para comparar sem o envelope transacional.
+- Função `commercial_agent_queue_read_v2` e ACL verificadas após aplicar: função única, SECURITY DEFINER, `search_path` vazio, EXECUTE só para postgres/service_role.
+- No Lovable: tsc, ESLint dos arquivos alterados e build aprovados; 393 testes focados e 819 do agente aprovados. Testes SQL indisponíveis nesse ambiente (sem PostgreSQL local de testes); os 28 já passaram no PostgreSQL isolado do coordenador.
+- Publicação, revalidação da nova política e retomada da conversa conferida ainda pendentes. Nenhum novo E2E automático declarado.
+
 Configurações existentes preservadas, sem valores: credenciais GHL, flags de escrita/automação, configuração do provider e armazenamento privado V03. Nenhum contato, oportunidade, calendário ou workflow GHL foi reconstruído. Próximo passo operacional: aplicar a migração de leitura, publicar o patch, revalidar versão para canais já autorizados, retomar apenas a conversa conferida e comprovar o próximo turno automático quando chegar nova mensagem legítima.
 
 ## RESUMO ATUAL — 17/11/2026 22:38 UTC: Izabel global PUBLICADA com automação DESLIGADA

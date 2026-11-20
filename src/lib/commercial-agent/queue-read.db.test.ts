@@ -606,14 +606,22 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
     },
   );
 
-  it("mantém a correção aditiva e idêntica nos dois espelhos sem escrita de dados", () => {
+  it("mantém a correção aditiva equivalente nos dois envelopes sem escrita de dados", () => {
     const migration = readFileSync(
       "supabase/migrations/20261120180000_commercial_agent_pending_handoffs.sql",
       "utf8",
     );
+    // The deployed Drizzle runner owns its transaction; Supabase retains an explicit envelope.
+    const withoutTransaction = (sql: string) =>
+      sql
+        .replace(/^\s*begin;\s*/i, "")
+        .replace(/\s*commit;\s*$/i, "")
+        .trim();
     expect(
-      readFileSync("drizzle/migrations/0031_commercial_agent_pending_handoffs.sql", "utf8"),
-    ).toBe(migration);
+      withoutTransaction(
+        readFileSync("drizzle/migrations/0031_commercial_agent_pending_handoffs.sql", "utf8"),
+      ),
+    ).toBe(withoutTransaction(migration));
     expect(migration).toContain("create or replace function public.commercial_agent_queue_read_v2");
     expect(migration).not.toMatch(/\b(?:insert into|update public|delete from|alter table)\b/i);
   });
