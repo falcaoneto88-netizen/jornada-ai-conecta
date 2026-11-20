@@ -1,8 +1,8 @@
 # Jornada AI — integração e handoff Codex
 
-## 20/11/2026 — Continuidade da Izabel: diagnóstico e correção preparada
+## 20/11/2026 — Continuidade da Izabel: correção aplicada, publicada e revalidada; E2E automático pendente
 
-Este complemento prevalece sobre os estados históricos abaixo. Estado desta revisão: **implementado e testado localmente; aplicação, publicação e revalidação da nova política ainda pendentes de conferência**.
+Este complemento prevalece sobre os estados históricos abaixo. Estado desta revisão: **implementado ✔ · testado ✔ · migração aplicada ✔ · publicado ✔ · política revalidada ✔ · E2E automático desta correção ✘ (aguardando nova entrada legítima)**.
 
 - Base remota conferida: `f42cb0f27aaeac31d85a9d0f84e7f40b1c39ce21`. Publicação anterior identificada: `4628fdad3fc5f621f725291ef7f1b87d2c667cf3`, 18/11/2026 00:27 UTC. `/api/version` é marcador estático com `release: null`, não prova o SHA do deploy.
 - Leituras autenticadas no projeto original, organização e location já documentadas: automação habilitada, canais SMS/IG/FB, política V03 anterior consistente e observer avançando. Não se confirmou indisponibilidade geral de GHL ou do motor.
@@ -25,7 +25,18 @@ Validação local desta correção: 1026 testes de agente/Izabel/interface aprov
 - No Lovable: tsc, ESLint dos arquivos alterados e build aprovados; 393 testes focados e 819 do agente aprovados. Testes SQL indisponíveis nesse ambiente (sem PostgreSQL local de testes); os 28 já passaram no PostgreSQL isolado do coordenador.
 - Publicação, revalidação da nova política e retomada da conversa conferida ainda pendentes. Nenhum novo E2E automático declarado.
 
-Configurações existentes preservadas, sem valores: credenciais GHL, flags de escrita/automação, configuração do provider e armazenamento privado V03. Nenhum contato, oportunidade, calendário ou workflow GHL foi reconstruído. Próximo passo operacional: aplicar a migração de leitura, publicar o patch, revalidar versão para canais já autorizados, retomar apenas a conversa conferida e comprovar o próximo turno automático quando chegar nova mensagem legítima.
+**Publicação, revalidação e triagem (20/11/2026, leitura posterior):**
+
+1. Código conferido antes da publicação: `1177fdea009de4332921c06eb4edc88af61c7552`. A UI confirmou "Seu site foi atualizado"; metadados `has_unpublished_changes=false` e `published_at` 20/11 15:18:59.772 no fuso exibido da sessão (18:18:59.772Z). `/api/version` mantém `release: null` e a ferramenta de publicação não devolve SHA: o SHA publicado **não** foi retornado pelo backend.
+2. Settings: automação versão 4, `automation_since` 2026-11-20T18:19:43.908Z, canais FB/IG/SMS preservados, policy hash `2dc18ac2682f8f31269974b9df0c2c7e7fa5f5b22dc24f2c52b903c95bc3e64f`. Auditoria 7094 (ativação) e 7095 (retomada, 18:20:20.352Z). Sessão `Erb6s6Sx8zLwY3BukRAX`: versão 13, sem pausa, sem opt-out. Envio manual `FdFtMIem7sNw841d1Iio` com `delivered` confirmado no GHL; sem replay.
+3. Teste próprio: entrada `MIh67mnEQQpFtXRa3MKo` (18:22:23.678Z) chegou com sessão pausada — fila `350cd970-849b-4175-9427-502ed42fdc49` `ignored`, 0 tentativas, 0 rascunhos, 0 despachos; auditoria `human_paused` 7100. Retomada 7101 às 18:25:43.554Z; sessão versão 7, `paused=false`, `opt_out=false`; aguardando NOVA entrada. Causa da pausa de 19/11 **indeterminada**: o anexo `KrTGGoagBaf8l4Y9d4jX` gerou rascunho com `unsupported_attachment`, e houve também saída manual `HFSqIYWCmPpuQkiObW1Y`. Pelo código, ambos os caminhos podem pausar: o comando `ready` grava `paused` quando a decisão tem handoff/optOut (ou flags no modo automático), e a ingestão de `OutboundMessage` externo pausa a sessão. O valor de handoff está só no payload cifrado e a auditoria não registra contato, o que limita a causalidade. Não atribuir a pausa ao operador nem afirmar que rascunho com flag não pausa.
+4. Triagem independente no GHL às 18:26 UTC (9 conversas candidatas, até 5 mensagens cada): 4 já terminavam com saída, 2 eram interações sociais, 3 precisam de triagem da equipe (procedimento; financeiro/clínico; pedido genérico dependente de anexo). Sem retomada em massa. As 621 sessões pausadas **não** equivalem a 621 clientes sem resposta. Encaminhamentos preservados e agora visíveis em Com a equipe.
+5. Os 28 testes SQL locais foram reexecutados pelo coordenador com o envelope final e passaram. O smoke test do gerador automático real com snapshot sintético produziu a orientação canônica sem flags (fonte `PRECO_INICIAL`); é prova de geração, não de entrega.
+
+Próximo passo operacional: aplicação e publicação já concluídas. Validar o próximo turno automático com nova entrada legítima após a retomada (entrada, rascunho, despacho e entrega individualmente) e fazer a triagem individual das conversas candidatas pela equipe, sem retomada em massa.
+
+Configurações existentes preservadas, sem valores: credenciais GHL, flags de escrita/automação, configuração do provider e armazenamento privado V03. Nenhum contato, oportunidade, calendário ou workflow GHL foi reconstruído.
+
 
 ## RESUMO ATUAL — 17/11/2026 22:38 UTC: Izabel global PUBLICADA com automação DESLIGADA
 
