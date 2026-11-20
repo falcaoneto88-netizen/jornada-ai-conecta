@@ -48,6 +48,8 @@ const budgetSource = {
 };
 const budgetReference = JSON.stringify({ records: [{ record: budgetSource }] });
 const budgetReply = "O orçamento do procedimento só é definido em consulta.";
+const procedureBudgetQuestion = "Qual o valor da harmonização de glúteos?";
+const completeBudgetReply = `${budgetReply} Posso explicar como funciona a consulta?`;
 const snapshot: Snapshot = {
   event: {
     type: "InboundMessage",
@@ -260,6 +262,29 @@ describe.each(["openai", "lovable"] as const)("automatic commercial provider %s"
     },
   );
 
+  it("sends the complete sourced PT example and permits its neutral budget decision", async () => {
+    knowledge.load.mockResolvedValue(budgetReference);
+    const decision = {
+      reply: completeBudgetReply,
+      flags: [],
+      handoff: false,
+      optOut: false,
+      sourceRecordIds: [budgetSource.id],
+    };
+    const f = vi.fn().mockResolvedValue(response(decision));
+    const payload = await generator(provider, f)(inbound(procedureBudgetQuestion));
+    const request = JSON.parse(f.mock.calls[0]![1].body);
+    expect(request.input[0].content).toContain(JSON.stringify(decision));
+    expect(request.input[0].content).toContain(
+      "A ausência de um preço aprovado, por si só, não acrescenta commercial_conflict nem handoff",
+    );
+    expect(JSON.parse(request.input[1].content).ultimaMensagem.texto).toBe(procedureBudgetQuestion);
+    expect(payload).toMatchObject({
+      sourceRecordIds: [budgetSource.id],
+      decision: { reply: completeBudgetReply, flags: [], handoff: false, optOut: false },
+    });
+  });
+
   it.each(["Gostaria de saber o valor pra 200 mls", "Gostaria de saber o valor para cinquenta ml"])(
     "uses the quantity source without endorsing an inbound quantity: %s",
     async (text) => {
@@ -382,6 +407,10 @@ describe.each(["openai", "lovable"] as const)("automatic commercial provider %s"
     { flags: ["commercial_conflict"] },
     { flags: ["clinical"] },
     { flags: ["missing_policy"] },
+    { flags: ["human_requested"] },
+    { flags: ["urgent"] },
+    { flags: ["unsupported_attachment"] },
+    { flags: ["unsupported_action"] },
     { handoff: true },
     { optOut: true },
   ] satisfies Array<Partial<Decision>>)(
@@ -393,9 +422,9 @@ describe.each(["openai", "lovable"] as const)("automatic commercial provider %s"
         vi
           .fn()
           .mockResolvedValue(
-            response({ reply: budgetReply, sourceRecordIds: [budgetSource.id], ...hold }),
+            response({ reply: completeBudgetReply, sourceRecordIds: [budgetSource.id], ...hold }),
           ),
-      )(inbound("Qual o valor?"));
+      )(inbound(procedureBudgetQuestion));
       expect(payload.decision).toMatchObject({ ...hold, handoff: true });
     },
   );

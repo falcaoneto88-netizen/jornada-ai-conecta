@@ -150,4 +150,25 @@ describe("automatic V03 private knowledge selection", () => {
     );
     expect(IZABEL_V03_AUTOMATION_POLICY).toContain("O servidor decide");
   });
+
+  it("bounds the neutral budget example to eligible evidence and no independent hold", () => {
+    const expected = {
+      reply:
+        "O orçamento do procedimento só é definido em consulta. Posso explicar como funciona a consulta?",
+      flags: [],
+      handoff: false,
+      optOut: false,
+      sourceRecordIds: ["PRECO_INICIAL"],
+    };
+    expect(IZABEL_V03_AUTOMATION_POLICY).toContain(JSON.stringify(expected));
+    expect(IZABEL_V03_AUTOMATION_POLICY).toContain(
+      "com PRECO_INICIAL presente na referência approved_owner e sem outro impedimento",
+    );
+    expect(IZABEL_V03_AUTOMATION_POLICY).toContain(
+      "não autoriza omitir uma flag ou handoff justificados",
+    );
+    expect(IZABEL_V03_AUTOMATION_POLICY).toContain(
+      "Não copia a fonte do exemplo se ela não estiver na referência elegível",
+    );
+  });
 });
