@@ -218,6 +218,13 @@
       "when": 1794954505405,
       "tag": "0030_commercial_agent_automation_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795198444183,
+      "tag": "0031_commercial_agent_pending_handoffs",
+      "breakpoints": true
     }
   ]
 }
