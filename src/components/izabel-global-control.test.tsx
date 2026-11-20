@@ -37,6 +37,60 @@ afterEach(() => {
 });
 
 describe("global Izabel control", () => {
+  it("revalidates a changed policy only after explicit confirmation with the current version", async () => {
+    api.read.mockResolvedValue(ok(initial({ enabled: true, policyCurrent: false })));
+    render(<IzabelGlobalControl organizationId="org-a" />);
+    await screen.findByText("Izabel ativada · ação necessária");
+    expect(api.save).not.toHaveBeenCalled();
+    fireEvent.click(button("Revalidar versão da Izabel"));
+    await screen.findByRole("dialog");
+    expect(
+      screen.getByText(/Atendimentos pausados e mensagens anteriores não serão retomados/),
+    ).toBeTruthy();
+    expect(api.save).not.toHaveBeenCalled();
+    fireEvent.click(button("Confirmar nova versão"));
+    await waitFor(() =>
+      expect(api.save).toHaveBeenCalledExactlyOnceWith({
+        data: { organizationId: "org-a", enabled: true, expectedVersion: 4 },
+      }),
+    );
+    await screen.findByText("Izabel automática ativada no Meu Chat");
+  });
+
+  it("canceling policy revalidation restores focus without authorizing anything", async () => {
+    api.read.mockResolvedValue(ok(initial({ enabled: true, policyCurrent: false })));
+    render(<IzabelGlobalControl organizationId="org-a" />);
+    await screen.findByText("Izabel ativada · ação necessária");
+    fireEvent.click(button("Revalidar versão da Izabel"));
+    fireEvent.keyDown(await screen.findByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(button("Revalidar versão da Izabel")));
+    expect(api.save).not.toHaveBeenCalled();
+  });
+
+  it.each([{ activationBlock: "write_disabled" }, { channels: [] }])(
+    "blocks policy revalidation when activation prerequisites fail: %j",
+    async (overrides) => {
+      api.read.mockResolvedValue(
+        ok(initial({ enabled: true, policyCurrent: false, ...overrides })),
+      );
+      render(<IzabelGlobalControl organizationId="org-a" />);
+      await screen.findByText("Izabel ativada · ação necessária");
+      expect(button("Revalidar versão da Izabel").disabled).toBe(true);
+      expect(button("Pausar em todo o chat").disabled).toBe(false);
+      expect(api.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not expose revalidation to a non-manager", async () => {
+    api.read.mockResolvedValue(
+      ok(initial({ enabled: true, policyCurrent: false, canManage: false })),
+    );
+    render(<IzabelGlobalControl organizationId="org-a" />);
+    await screen.findByText("Izabel ativada · ação necessária");
+    expect(screen.queryByRole("button", { name: "Revalidar versão da Izabel" })).toBeNull();
+    expect(api.save).not.toHaveBeenCalled();
+  });
+
   it("reads the organization without enabling any operation on mount or refresh", async () => {
     render(<IzabelGlobalControl organizationId="org-a" />);
     expect(screen.getByText("Estado da Izabel por verificar")).toBeTruthy();

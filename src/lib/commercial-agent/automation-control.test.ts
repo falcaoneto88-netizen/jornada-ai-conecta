@@ -69,6 +69,97 @@ describe("controle global autenticado", () => {
       "actor",
     );
   });
+  it("ativação inicial usa os canais permitidos atuais sem herdar uma autorização antiga", async () => {
+    settings.allowed_channels = ["SMS", "IG", "FB"];
+    settings.automation_channels = ["SMS"];
+    await changeAutomation(deps, { enabled: true, expectedVersion: 0 });
+    expect(command).toHaveBeenLastCalledWith(
+      "automation_set",
+      org,
+      expect.objectContaining({ channels: ["SMS", "IG", "FB"] }),
+      "actor",
+    );
+  });
+  it("revalida a política de SMS sem ampliar para IG e FB adicionados à configuração", async () => {
+    Object.assign(settings, {
+      allowed_channels: ["SMS", "IG", "FB"],
+      automation_enabled: true,
+      automation_version: 3,
+      automation_channels: ["SMS"],
+      automation_policy_hash: "b".repeat(64),
+    });
+    expect(await readAutomation(deps)).toMatchObject({
+      channels: ["SMS"],
+      policyCurrent: false,
+      activationBlock: null,
+    });
+    await changeAutomation(deps, { enabled: true, expectedVersion: 3 });
+    expect(verifyKnowledge).toHaveBeenCalledOnce();
+    expect(command).toHaveBeenLastCalledWith(
+      "automation_set",
+      org,
+      {
+        enabled: true,
+        expectedVersion: 3,
+        policyHash: deps.policyHash,
+        channels: ["SMS"],
+      },
+      "actor",
+    );
+  });
+  it("preserva os três canais já autorizados ao revalidar uma política", async () => {
+    Object.assign(settings, {
+      allowed_channels: ["SMS", "IG", "FB", "WhatsApp"],
+      automation_enabled: true,
+      automation_version: 3,
+      automation_channels: ["SMS", "IG", "FB"],
+      automation_policy_hash: "b".repeat(64),
+    });
+    await changeAutomation(deps, { enabled: true, expectedVersion: 3 });
+    expect(command).toHaveBeenLastCalledWith(
+      "automation_set",
+      org,
+      expect.objectContaining({ channels: ["SMS", "IG", "FB"] }),
+      "actor",
+    );
+  });
+  it.each([
+    { authorized: ["SMS", "IG", "FB"], allowed: ["SMS", "FB"] },
+    { authorized: ["SMS"], allowed: ["IG", "FB"] },
+    { authorized: ["SMS", "Email"], allowed: ["SMS", "Email"] },
+    { authorized: ["SMS", "SMS"], allowed: ["SMS"] },
+    { authorized: [], allowed: ["SMS", "IG", "FB"] },
+  ])("bloqueia revalidação se os canais anteriores não são válidos: %j", async (channels) => {
+    Object.assign(settings, {
+      allowed_channels: channels.allowed,
+      automation_enabled: true,
+      automation_version: 3,
+      automation_channels: channels.authorized,
+      automation_policy_hash: "b".repeat(64),
+    });
+    expect(await readAutomation(deps)).toMatchObject({ activationBlock: "unsupported_channel" });
+    await expect(changeAutomation(deps, { enabled: true, expectedVersion: 3 })).rejects.toThrow(
+      "unsupported_channel",
+    );
+    expect(command.mock.calls.some(([op]) => op === "automation_set")).toBe(false);
+    expect(verifyKnowledge).not.toHaveBeenCalled();
+  });
+  it("mantém a pausa disponível mesmo após um canal autorizado ser removido", async () => {
+    Object.assign(settings, {
+      allowed_channels: ["SMS"],
+      automation_enabled: true,
+      automation_version: 3,
+      automation_channels: ["SMS", "IG"],
+    });
+    await changeAutomation(deps, { enabled: false, expectedVersion: 3 });
+    expect(command).toHaveBeenLastCalledWith(
+      "automation_set",
+      org,
+      expect.objectContaining({ enabled: false, channels: ["SMS"] }),
+      "actor",
+    );
+    expect(verifyKnowledge).not.toHaveBeenCalled();
+  });
   it.each(["role", "version", "runtime", "write", "receipt", "library"])(
     "recusa ativação inválida: %s",
     async (kind) => {

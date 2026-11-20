@@ -1,5 +1,24 @@
 # Jornada AI — integração e handoff Codex
 
+## 20/11/2026 — Continuidade da Izabel: diagnóstico e correção preparada
+
+Este complemento prevalece sobre os estados históricos abaixo. Estado desta revisão: **implementado e testado localmente; aplicação, publicação e revalidação da nova política ainda pendentes de conferência**.
+
+- Base remota conferida: `f42cb0f27aaeac31d85a9d0f84e7f40b1c39ce21`. Publicação anterior identificada: `4628fdad3fc5f621f725291ef7f1b87d2c667cf3`, 18/11/2026 00:27 UTC. `/api/version` é marcador estático com `release: null`, não prova o SHA do deploy.
+- Leituras autenticadas no projeto original, organização e location já documentadas: automação habilitada, canais SMS/IG/FB, política V03 anterior consistente e observer avançando. Não se confirmou indisponibilidade geral de GHL ou do motor.
+- A continuidade podia parar em dois pontos: guarda automática financeira classificava até a orientação neutra de orçamento em consulta como conflito; pausa persistente após encaminhamento/intervenção mantém novos eventos ignorados até retomada explícita. O código também usava `human_paused` para toda entrada numa sessão já pausada; esse código não comprova um clique humano.
+- A fila escondia um encaminhamento pendente em Histórico quando nova entrada invalidava o rascunho. Migração aditiva `0031_commercial_agent_pending_handoffs.sql` / espelho Supabase `20261120180000_commercial_agent_pending_handoffs.sql` corrige só a projeção de leitura: encaminhamento sinalizado mais recente permanece em Com a equipe. Não revalida rascunhos, não retoma sessões, não reprocessa eventos, não altera acesso/RLS e preserva o limite de conteúdo de sete dias. Aplicar uma única variante.
+- Provider automático passa a aceitar exclusivamente a orientação canônica de orçamento em consulta em PT/FR/EN, com fonte privada elegível `PRECO_INICIAL` ou `QUANTIDADE`. Preço de consulta, ofertas, pagamento, crédito, desconto, dose/diagnóstico e demais flags continuam exigindo equipe. Política supervisionada permanece intacta. A política automática muda de hash e exige revalidação pelo controle autenticado existente.
+- Controle global inclui revalidação da nova versão, sem ampliar os canais previamente autorizados. Preserva compare-and-swap, papéis, verificação da biblioteca, pausas e corte para novas entradas; não recupera retroativamente clientes em espera.
+- Loader privado conferido por leitura no Lovable: V03 íntegro, armazenamento privado, 30 registros, 25 elegíveis para texto automático; PRECO_INICIAL e QUANTIDADE presentes, approved_owner/commercial/guards vazios. Nenhum segredo nem texto privado foi incluído no patch.
+- Foto operacional de 20/11 às 18:01 UTC: 625 sessões, 621 pausadas; **não equivale a 621 clientes esperando**. Pelo histórico local recebido, 49 tinham última entrada posterior à última saída, 350 última saída posterior/igual, 52 só entrada, 170 só saída. Não é reconciliação completa do CRM. Não houve retomada em massa.
+- Na conversa indicada pelo usuário, uma resposta contextual foi enviada manualmente pelo Meu Chat às 18:03:51 UTC; leitura independente do GHL confirmou `delivered`, Instagram e mesma conversa. Não foi reenviada depois do timeout visual. Isso valida esse envio humano, não um novo turno automático da correção.
+- Falha isolada `history_invalid` de 18/11 permanece separada desta causa: o log não registra o campo inválido; nenhuma alteração especulativa foi aplicada.
+
+Validação local desta correção: 1026 testes de agente/Izabel/interface aprovados em 25 arquivos, build de produção aprovado; 28 testes SQL em PostgreSQL isolado aprovados (escopo, categoria, retenção e ausência de replay). Contagens sobrepostas não foram somadas. A revisão adicional encontrou e corrigiu preservação de canais na revalidação e guarda numérica fora do contexto financeiro; verificação final: 324 testes focados de provider/política aprovados, 44 de controle/interface aprovados, TypeScript sem erros e ESLint dos arquivos alterados aprovado.
+
+Configurações existentes preservadas, sem valores: credenciais GHL, flags de escrita/automação, configuração do provider e armazenamento privado V03. Nenhum contato, oportunidade, calendário ou workflow GHL foi reconstruído. Próximo passo operacional: aplicar a migração de leitura, publicar o patch, revalidar versão para canais já autorizados, retomar apenas a conversa conferida e comprovar o próximo turno automático quando chegar nova mensagem legítima.
+
 ## RESUMO ATUAL — 17/11/2026 22:38 UTC: Izabel global PUBLICADA com automação DESLIGADA
 
 - Publicação feita pelo Codex pela interface no projeto original; a revisão conferida antes do clique foi 2c7569fd654280245c4f966126141fbc6abc53cd. O Lovable confirmou "Seu site foi atualizado".

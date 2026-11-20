@@ -16,11 +16,21 @@ export type AutomationControlDeps = {
 const channelsFor = (settings: Settings) => [
   ...new Set(settings.allowed_channels.filter((c) => ["SMS", "WhatsApp", "IG", "FB"].includes(c))),
 ];
+// Revalidating policy must not broaden the channels shown in the existing authorization.
+const activationChannels = (settings: Settings) =>
+  settings.automation_enabled ? [...(settings.automation_channels ?? [])] : channelsFor(settings);
 function activationBlock(settings: Settings, deps: AutomationControlDeps) {
   if (!deps.runtimeReady) return "automation_not_configured";
   if (!deps.writeEnabled || settings.mode !== "supervised") return "send_disabled";
   if (!settings.receive_all_contacts) return "automation_receipt_required";
-  if (!channelsFor(settings).length) return "unsupported_channel";
+  const allowed = channelsFor(settings);
+  const requested = activationChannels(settings);
+  if (
+    !requested.length ||
+    new Set(requested).size !== requested.length ||
+    requested.some((channel) => !allowed.includes(channel))
+  )
+    return "unsupported_channel";
   return null;
 }
 function publicState(settings: StateRow, deps: AutomationControlDeps): AutomationState {
@@ -76,7 +86,7 @@ export async function changeAutomation(
       enabled: input.enabled,
       expectedVersion: input.expectedVersion,
       policyHash: deps.policyHash,
-      channels: channelsFor(settings),
+      channels: input.enabled ? activationChannels(settings) : channelsFor(settings),
     },
     deps.actorId,
   );

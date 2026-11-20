@@ -41,6 +41,13 @@ const source = {
   note: "Synthetic fixture only.",
 };
 const reference = JSON.stringify({ records: [{ record: source }] });
+const budgetSource = {
+  ...source,
+  id: "PRECO_INICIAL",
+  text: "Synthetic budget reference: an assessment in consultation is required. No prices.",
+};
+const budgetReference = JSON.stringify({ records: [{ record: budgetSource }] });
+const budgetReply = "O orçamento do procedimento só é definido em consulta.";
 const snapshot: Snapshot = {
   event: {
     type: "InboundMessage",
@@ -189,6 +196,241 @@ describe.each(["openai", "lovable"] as const)("automatic commercial provider %s"
       vi.fn().mockResolvedValue(response({ flags: ["clinical"] })),
     )(snapshot);
     expect(clinical.decision.handoff).toBe(true);
+  });
+
+  it("does not classify the number in a sourced nonfinancial address as a price", async () => {
+    const addressSource = {
+      ...source,
+      id: "SYNTHETIC_ADDRESS",
+      text: "O endereço fictício de teste é Rua Exemplo, 10.",
+    };
+    knowledge.load.mockResolvedValue(JSON.stringify({ records: [{ record: addressSource }] }));
+    const reply = "O endereço fictício de teste é Rua Exemplo, 10.";
+    const payload = await generator(
+      provider,
+      vi.fn().mockResolvedValue(response({ reply, sourceRecordIds: [addressSource.id] })),
+    )(inbound("Qual é o endereço?"));
+    expect(payload.decision).toEqual({ reply, flags: [], handoff: false, optOut: false });
+  });
+
+  it.each([
+    "Qual o preço do procedimento?",
+    "Quanto custa?",
+    "Quanto é?",
+    "Quanto fica?",
+    "How much?",
+    "Combien ?",
+  ])("holds a bare numeric quote when the current request is financial: %s", async (text) => {
+    const payload = await generator(
+      provider,
+      vi.fn().mockResolvedValue(response({ reply: "50" })),
+    )(inbound(text));
+    expect(payload.decision.flags).toContain("commercial_conflict");
+    expect(payload.decision.handoff).toBe(true);
+  });
+
+  it.each([
+    ["Qual o valor do procedimento?", budgetReply],
+    ["Qual o orçamento?", `${budgetReply} Posso explicar como funciona a consulta?`],
+    [
+      "Quel est le prix du traitement ?",
+      "Le devis du traitement est défini uniquement en consultation.",
+    ],
+    [
+      "Combien coûte le traitement ?",
+      "Le devis du traitement est défini uniquement en consultation. Puis-je expliquer comment se déroule la consultation ?",
+    ],
+    [
+      "How much does the procedure cost?",
+      "The procedure quote is determined only during a consultation.",
+    ],
+    [
+      "What is the procedure price?",
+      "The procedure quote is determined only during a consultation. May I explain how the consultation works?",
+    ],
+  ])(
+    "continues a sourced informational budget question without quoting: %s",
+    async (text, reply) => {
+      knowledge.load.mockResolvedValue(budgetReference);
+      const payload = await generator(
+        provider,
+        vi.fn().mockResolvedValue(response({ reply, sourceRecordIds: [budgetSource.id] })),
+      )(inbound(text));
+      expect(payload.decision).toEqual({ reply, flags: [], handoff: false, optOut: false });
+    },
+  );
+
+  it.each(["Gostaria de saber o valor pra 200 mls", "Gostaria de saber o valor para cinquenta ml"])(
+    "uses the quantity source without endorsing an inbound quantity: %s",
+    async (text) => {
+      knowledge.load.mockResolvedValue(
+        JSON.stringify({ records: [{ record: { ...budgetSource, id: "QUANTIDADE" } }] }),
+      );
+      const payload = await generator(
+        provider,
+        vi
+          .fn()
+          .mockResolvedValue(response({ reply: budgetReply, sourceRecordIds: ["QUANTIDADE"] })),
+      )(inbound(text));
+      expect(payload.decision.flags).toEqual([]);
+      expect(payload.decision.handoff).toBe(false);
+      expect(payload.decision.reply).not.toMatch(/\d|ml|€|euros/i);
+    },
+  );
+
+  it.each([
+    "Qual o preço da consulta?",
+    "Confirma o valor do procedimento?",
+    "O valor é 50 euros?",
+    "Qual o custo da avaliação?",
+    "Qual o valor com desconto?",
+    "Qual o valor? Posso parcelar?",
+    "Qual o valor com crédito?",
+    "Qual o valor e a forma de pagamento?",
+    "Qual o valor à vista?",
+    "Qual o valor no cartão de débito?",
+    "Qual o valor de entrada ou sinal?",
+    "Qual o valor? Há reembolso?",
+    "Qual o valor? Manda IBAN ou MB WAY",
+    "Quel est le prix de la consultation ?",
+    "Quel est le prix avec remise ?",
+    "Quel est le prix et le mode de paiement ?",
+    "Quel est le prix en espèces ?",
+    "Quel est le prix avec carte ?",
+    "Quel est le prix avec remboursement ?",
+    "What is the appointment fee?",
+    "What is the price with a discount?",
+    "What is the price in installments?",
+    "What is the price and payment method?",
+    "What is the price with cash?",
+    "What is the price by card?",
+    "What is the price with a deposit?",
+    "What is the price with a refund?",
+    "Qual o preço, is it free?",
+    "Qual o valor da oferta?",
+  ])("keeps financial terms and consultation prices with the team: %s", async (text) => {
+    knowledge.load.mockResolvedValue(budgetReference);
+    const reply = text.startsWith("Quel")
+      ? "Le devis du traitement est défini uniquement en consultation."
+      : text.startsWith("What")
+        ? "The procedure quote is determined only during a consultation."
+        : budgetReply;
+    const payload = await generator(
+      provider,
+      vi.fn().mockResolvedValue(response({ reply, sourceRecordIds: [budgetSource.id] })),
+    )(inbound(text));
+    expect(payload.decision.flags).toContain("commercial_conflict");
+    expect(payload.decision.handoff).toBe(true);
+  });
+
+  it.each([
+    `Olá! ${budgetReply}`,
+    `${budgetReply} A consulta custa 50 euros.`,
+    `${budgetReply} O investimento é de cinquenta.`,
+    `${budgetReply} É grátis.`,
+    `${budgetReply} Temos desconto.`,
+    `${budgetReply} Aceitamos cartão.`,
+    `${budgetReply} Vou reservar um horário.`,
+    `${budgetReply} Pode pagar 50.`,
+    `${budgetReply} Qual é seu nome?`,
+    `${budgetReply} Posso explicar como funciona a consulta? Posso explicar como funciona a consulta?`,
+    `${budgetReply} May I explain how the consultation works?`,
+    "The procedure quote is determined only during a consultation.",
+  ])(
+    "does not exempt any extra financial claim, action or unapproved wording: %s",
+    async (reply) => {
+      knowledge.load.mockResolvedValue(budgetReference);
+      const payload = await generator(
+        provider,
+        vi.fn().mockResolvedValue(response({ reply, sourceRecordIds: [budgetSource.id] })),
+      )(inbound("Qual o valor do procedimento?"));
+      expect(payload.decision.flags).toContain("commercial_conflict");
+      expect(payload.decision.handoff).toBe(true);
+    },
+  );
+
+  it.each([[], [source.id], ["UNKNOWN_SOURCE"], [budgetSource.id, "UNKNOWN_SOURCE"]])(
+    "does not send a budget deferral without complete eligible citations: %j",
+    async (...ids) => {
+      knowledge.load.mockResolvedValue(
+        JSON.stringify({ records: [{ record: source }, { record: budgetSource }] }),
+      );
+      const payload = await generator(
+        provider,
+        vi.fn().mockResolvedValue(response({ reply: budgetReply, sourceRecordIds: ids })),
+      )(inbound("Qual o valor?"));
+      expect(payload.decision.flags.length).toBeGreaterThan(0);
+      expect(payload.decision.handoff).toBe(true);
+    },
+  );
+
+  it.each(["draft_supervised", "human_only", "conditional_review"])(
+    "rejects an ineligible budget source with status %s before model I/O",
+    async (status) => {
+      knowledge.load.mockResolvedValue(
+        JSON.stringify({ records: [{ record: { ...budgetSource, status } }] }),
+      );
+      const f = vi.fn();
+      await expect(generator(provider, f)(inbound("Qual o valor?"))).rejects.toThrow(
+        "knowledge_unavailable",
+      );
+      expect(f).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { flags: ["commercial_conflict"] },
+    { flags: ["clinical"] },
+    { flags: ["missing_policy"] },
+    { handoff: true },
+    { optOut: true },
+  ] satisfies Array<Partial<Decision>>)(
+    "preserves an existing hold on a safe deferral: %j",
+    async (hold) => {
+      knowledge.load.mockResolvedValue(budgetReference);
+      const payload = await generator(
+        provider,
+        vi
+          .fn()
+          .mockResolvedValue(
+            response({ reply: budgetReply, sourceRecordIds: [budgetSource.id], ...hold }),
+          ),
+      )(inbound("Qual o valor?"));
+      expect(payload.decision).toMatchObject({ ...hold, handoff: true });
+    },
+  );
+
+  it.each([
+    ["Qual o valor? Quero falar com um humano", 0, "human_requested"],
+    ["Qual o valor? Estou com falta de ar", 0, "urgent"],
+    ["Qual o valor?", 1, "unsupported_attachment"],
+  ] as const)(
+    "retains independent safeguards on a sourced deferral: %s",
+    async (text, attachments, flag) => {
+      knowledge.load.mockResolvedValue(budgetReference);
+      const payload = await generator(
+        provider,
+        vi
+          .fn()
+          .mockResolvedValue(response({ reply: budgetReply, sourceRecordIds: [budgetSource.id] })),
+      )(inbound(text, attachments));
+      expect(payload.decision.flags).toContain(flag);
+      expect(payload.decision.handoff).toBe(true);
+    },
+  );
+
+  it("keeps unclear or mixed-language budget requests for review", async () => {
+    knowledge.load.mockResolvedValue(budgetReference);
+    for (const text of ["???", "Qual o valor, what is the price?"]) {
+      const payload = await generator(
+        provider,
+        vi
+          .fn()
+          .mockResolvedValue(response({ reply: budgetReply, sourceRecordIds: [budgetSource.id] })),
+      )(inbound(text));
+      expect(payload.decision.flags).toContain("commercial_conflict");
+      expect(payload.decision.handoff).toBe(true);
+    }
   });
 
   it("does not permit invented V03 financial relationships", async () => {

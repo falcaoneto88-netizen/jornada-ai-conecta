@@ -45,6 +45,7 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
       createdAt?: string;
       name?: string;
       automaticDispatch?: boolean;
+      messageId?: string;
     } = {},
   ) {
     const organization = options.organization ?? org;
@@ -52,6 +53,7 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
     const eventId = randomUUID(),
       draftId = randomUUID();
     const created = options.createdAt ?? new Date(startedAt - 3600_000).toISOString();
+    const messageId = options.messageId ?? `message-${contact}`;
     await db.query(
       "insert into contacts(organization_id,ghl_contact_id,full_name,is_demo) values($1,$2,$3,false) on conflict do nothing",
       [organization, contact, options.name ?? contact],
@@ -70,10 +72,10 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
           locationId: location,
           contactId: contact,
           conversationId: `conversation-${contact}`,
-          messageId: `message-${contact}`,
+          messageId,
         }),
         contact,
-        `message-${contact}`,
+        messageId,
         created,
       ],
     );
@@ -86,7 +88,7 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
         contact,
         `conversation-${contact}`,
         location,
-        `message-${contact}`,
+        messageId,
         options.contactVersion ?? 1,
         options.state ?? "pending",
         options.empty ? "" : "synthetic-not-decrypted",
@@ -183,6 +185,12 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
     await db.exec(
       readFileSync(
         "supabase/migrations/20261117170000_commercial_agent_automation_queue.sql",
+        "utf8",
+      ),
+    );
+    await db.exec(
+      readFileSync(
+        "supabase/migrations/20261120180000_commercial_agent_pending_handoffs.sql",
         "utf8",
       ),
     );
@@ -440,14 +448,192 @@ describe.skipIf(!databaseAvailable)("projeção SQL isolada da fila", () => {
     const result = await read({ category: "history", query: "unaudited-invalidated" });
     expect(result.counts).toEqual({ review: 0, team: 0, uncertain: 0, history: 1 });
   });
-  it("mantém espelhos SQL idênticos e não cria mudanças de permissão sobre tabelas", () => {
+
+  it("mantém o handoff sinalizado visível após nova entrada e não retoma nem reprocessa pela leitura", async () => {
+    const contactId = "flagged-handoff-followup";
+    const command = async (
+      operation: string,
+      data: Record<string, unknown>,
+      actorId: string | null = null,
+    ) => {
+      const response = await db.query<{ result: Record<string, unknown> }>(
+        "select commercial_agent_command($1,$2::uuid,$3::jsonb,$4::uuid) as result",
+        [operation, org, JSON.stringify(data), actorId],
+      );
+      return response.rows[0]!.result;
+    };
+    await db.query(
+      "update commercial_agent_settings set allowed_contacts=array_append(allowed_contacts,$2) where organization_id=$1",
+      [org, contactId],
+    );
+    const event = {
+      type: "InboundMessage",
+      locationId: "location-main",
+      contactId,
+      conversationId: "conversation-flagged-handoff-followup",
+      messageId: "message-flagged-handoff-original",
+      observedAt: new Date(startedAt - 120_000).toISOString(),
+    };
+    expect(await command("ingress", event)).toMatchObject({ status: "accepted" });
+    const job = await command("claim", {});
+    const prepared = await command("ready", {
+      id: job["id"],
+      lease: job["lease"],
+      payload: "synthetic-not-decrypted",
+      replyHash: "a".repeat(64),
+      policyHash: AUTOMATION_POLICY_HASH,
+      flags: ["commercial_conflict"],
+      observedAt: event.observedAt,
+      pause: true,
+      optOut: false,
+    });
+    expect(prepared).toMatchObject({ status: "ready" });
+    expect(
+      await command("ingress", {
+        ...event,
+        messageId: "message-flagged-handoff-followup",
+        observedAt: new Date(startedAt - 60_000).toISOString(),
+      }),
+    ).toMatchObject({ status: "accepted" });
+    const before = await db.query(
+      "select version,paused,opt_out from commercial_agent_sessions where organization_id=$1 and contact_id=$2",
+      [org, contactId],
+    );
+    const result = await read({ category: "team", query: contactId });
+    expect(result.counts).toEqual({ review: 0, team: 1, uncertain: 0, history: 0 });
+    expect(result.items[0]).toMatchObject({
+      id: prepared["id"],
+      state: "invalidated",
+      paused: true,
+      contact_version: 1,
+      session_version: 2,
+    });
+    expect(
+      await db.query(
+        "select version,paused,opt_out from commercial_agent_sessions where organization_id=$1 and contact_id=$2",
+        [org, contactId],
+      ),
+    ).toEqual(before);
+    expect(
+      (
+        await db.query(
+          "select state from commercial_agent_inbox where organization_id=$1 and message_id=$2",
+          [org, "message-flagged-handoff-followup"],
+        )
+      ).rows,
+    ).toEqual([{ state: "ignored" }]);
+
+    expect(await command("resume", { contactId, expectedVersion: 2 }, actor)).toMatchObject({
+      paused: false,
+      version: 3,
+    });
+    const released = await read({ category: "history", query: contactId });
+    expect(released.counts).toEqual({ review: 0, team: 0, uncertain: 0, history: 1 });
+    expect(
+      (
+        await db.query(
+          "select state from commercial_agent_inbox where organization_id=$1 and message_id=$2",
+          [org, "message-flagged-handoff-followup"],
+        )
+      ).rows,
+    ).toEqual([{ state: "ignored" }]);
+  });
+
+  it.each(["commercial_conflict", "unsupported_attachment", "clinical"])(
+    "preserva %s em Com a equipe após expirar ou mudar a política, sem liberar aprovação",
+    async (flag) => {
+      const contact = `flagged-visible-${flag}`;
+      await seedDraft(contact, {
+        state: "invalidated",
+        paused: true,
+        flags: [flag],
+        expired: true,
+        policy: "b".repeat(64),
+        contactVersion: 0,
+      });
+      const result = await read({ category: "team", query: contact });
+      expect(result.counts).toEqual({ review: 0, team: 1, uncertain: 0, history: 0 });
+      expect(result.items[0]).toMatchObject({ state: "invalidated", paused: true });
+    },
+  );
+
+  it("não ressuscita um handoff antigo após existir um rascunho posterior concluído", async () => {
+    const contact = "flagged-handoff-superseded";
+    await seedDraft(contact, {
+      state: "invalidated",
+      paused: true,
+      flags: ["commercial_conflict"],
+    });
+    await seedDraft(contact, {
+      messageId: "message-flagged-handoff-superseded-newer",
+      state: "sent",
+      createdAt: new Date(startedAt - 60_000).toISOString(),
+    });
+    const result = await read({ category: "history", query: contact });
+    expect(result.counts).toEqual({ review: 0, team: 0, uncertain: 0, history: 2 });
+  });
+
+  it.each(["sent", "rejected", "empty", "retained-too-long", "opt-out", "unpaused"])(
+    "não promove o registro sinalizado %s nem altera a pausa ou recusa",
+    async (kind) => {
+      const contact = `flagged-excluded-${kind}`;
+      await seedDraft(contact, {
+        state: ["sent", "rejected"].includes(kind) ? kind : "invalidated",
+        paused: kind !== "unpaused",
+        flags: ["commercial_conflict"],
+        empty: kind === "empty",
+        ...(kind === "retained-too-long"
+          ? { createdAt: new Date(startedAt - 8 * 86_400_000).toISOString() }
+          : {}),
+      });
+      if (kind === "opt-out")
+        await db.query(
+          "update commercial_agent_sessions set opt_out=true where organization_id=$1 and contact_id=$2",
+          [org, contact],
+        );
+      const before = await db.query(
+        "select version,paused,opt_out from commercial_agent_sessions where organization_id=$1 and contact_id=$2",
+        [org, contact],
+      );
+      const result = await read({ category: "history", query: contact });
+      expect(result.counts).toEqual({ review: 0, team: 0, uncertain: 0, history: 1 });
+      expect(
+        await db.query(
+          "select version,paused,opt_out from commercial_agent_sessions where organization_id=$1 and contact_id=$2",
+          [org, contact],
+        ),
+      ).toEqual(before);
+    },
+  );
+
+  it("mantém a correção aditiva e idêntica nos dois espelhos sem escrita de dados", () => {
+    const migration = readFileSync(
+      "supabase/migrations/20261120180000_commercial_agent_pending_handoffs.sql",
+      "utf8",
+    );
+    expect(
+      readFileSync("drizzle/migrations/0031_commercial_agent_pending_handoffs.sql", "utf8"),
+    ).toBe(migration);
+    expect(migration).toContain("create or replace function public.commercial_agent_queue_read_v2");
+    expect(migration).not.toMatch(/\b(?:insert into|update public|delete from|alter table)\b/i);
+  });
+
+  it("preserva o SQL da migração anterior nos dois envelopes transacionais", () => {
     const migration = readFileSync(
       "supabase/migrations/20261117170000_commercial_agent_automation_queue.sql",
       "utf8",
     );
+    // The deployed Drizzle runner owns its transaction; Supabase retains an explicit envelope.
+    const withoutTransaction = (sql: string) =>
+      sql
+        .replace(/^\s*begin;\s*/i, "")
+        .replace(/\s*commit;\s*$/i, "")
+        .trim();
     expect(
-      readFileSync("drizzle/migrations/0030_commercial_agent_automation_queue.sql", "utf8"),
-    ).toBe(migration);
+      withoutTransaction(
+        readFileSync("drizzle/migrations/0030_commercial_agent_automation_queue.sql", "utf8"),
+      ),
+    ).toBe(withoutTransaction(migration));
     expect(migration).not.toMatch(/\b(?:insert into|update public|delete from|alter table)\b/i);
   });
 });

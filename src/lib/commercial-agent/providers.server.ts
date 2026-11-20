@@ -34,6 +34,7 @@ import {
   loadIzabelV03AutomaticReference,
   IZABEL_V03_AUTOMATION_POLICY,
   IZABEL_V03_AUTOMATION_POLICY_MATERIAL,
+  IZABEL_V03_BUDGET_DEFERRALS,
 } from "../izabel/knowledge-v03.server";
 
 /** Derived by server session/binding; never taken from request content or contact fields. */
@@ -939,6 +940,50 @@ function automaticReferenceIds(reference: string): Set<string> {
   }
 }
 
+function financialText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+/** Only a complete, sourced informational deferral can bypass the broad guard.
+ * User text and model flags never grant this exception or remove another hold. */
+function permitsBudgetDeferral(
+  inbound: string,
+  reply: string,
+  sourceRecordIds: string[],
+  eligible: Set<string>,
+): boolean {
+  if (
+    !sourceRecordIds.some((id) => ["PRECO_INICIAL", "QUANTIDADE"].includes(id) && eligible.has(id))
+  )
+    return false;
+  const current = financialText(inbound);
+  if (/€|\$|\b(?:euros?|dollars?|reais|confirm\w*)\b/u.test(current)) return false;
+  // Consultation prices and financial conditions still require the team, even
+  // when the model responds with an otherwise harmless procedure deferral.
+  if (
+    /\b(?:consulta|consultation|appointment|assessment|evaluation|avaliacao|rendez.vous|descont\w*|discount\w*|reduc\w*|remise\w*|credit\w*|abat\w*|parcel\w*|installment\w*|instalment\w*|pag\w*|payment\w*|pay\w*|paid|paiement\w*|reembols\w*|refund\w*|rembours\w*|financ\w*|juros|interest|gratuit\w*|gratis|free|oferta\w*|offer\w*|offre\w*|promo\w*|deal\w*|a vista|cartao|debito|debit\w*|cash|cards?|carte|especes|dinheiro|deposit\w*|entrada|sinal|transfer\w*|virement\w*|banc\w*|banks?|iban|mb\s*way)\b/.test(
+      current,
+    )
+  )
+    return false;
+  // Only an explicit price/budget question in one supported language gets this
+  // exception. Ambiguous or mixed-language prompts retain the ordinary hold.
+  const languageMatches = [
+    /\b(?:precos?|valor(?:es)?|custos?|orcamentos?)\b|quanto custa|quanto e/,
+    /\b(?:prix|devis|tarifs?|couts?)\b|combien/,
+    /\b(?:prices?|pricing|costs?|quotes?|budget)\b|how much/,
+  ].map((pattern) => pattern.test(current));
+  if (languageMatches.filter(Boolean).length !== 1) return false;
+  const output = reply.trim().replace(/\s+/g, " ");
+  return IZABEL_V03_BUDGET_DEFERRALS.some(
+    ({ statement, question }, index) =>
+      languageMatches[index] && (output === statement || output === `${statement} ${question}`),
+  );
+}
+
 async function generateResponses(
   snapshot: Snapshot,
   key: string,
@@ -1042,20 +1087,22 @@ async function generateResponses(
         decision.flags = [...new Set([...decision.flags, "human_requested" as const])];
       if (signals.urgent) decision.flags = [...new Set([...decision.flags, "urgent" as const])];
       // Pending financial offers must never become automatic claims even when the
-      // model forgets its policy flag. The supervised policy remains unchanged.
+      // model forgets its policy flag. Bare numbers need financial context below:
+      // an approved address can contain a number without constituting a price.
+      // The supervised policy remains unchanged.
       if (
         /€|\$|\b(?:euros?|dollars?|reais|cents?|centimos?|cinquenta|fifty|cinquante)\b/i.test(
           decision.reply,
         )
       )
         decision.flags = [...new Set([...decision.flags, "commercial_conflict" as const])];
-      const financialContext = `${snapshot.messages.at(-1)?.text ?? ""}\n${decision.reply}`
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "");
+      const currentText = snapshot.messages.at(-1)?.text ?? "";
+      const financialContext = financialText(`${currentText}\n${decision.reply}`);
       if (
-        /\b(?:precos?|valor(?:es)?|custos?|pagamentos?|descontos?|parcelas?|parcelamento|investimento|price|pricing|costs?|payments?|discount|fees?|prix|paiement|tarifs?|cuanto|precio|pagos?|iban|mb way)\b|quanto custa|combien/i.test(
+        /\b(?:precos?|valor(?:es)?|custos?|orcamento\w*|devis|quotes?|budget\w*|pagamentos?|descontos?|credit\w*|abatimento|reembolso|refund\w*|rembours\w*|parcelas?|parcelamento|investimento|price|pricing|costs?|payments?|discount|fees?|prix|paiement|tarifs?|cuanto|precio|pagos?|gratis|gratuit\w*|free|iban|mb way)\b|quanto (?:custa|e|fica|sai)\b|how much\b|combien/i.test(
           financialContext,
-        )
+        ) &&
+        !permitsBudgetDeferral(currentText, decision.reply, automatic.sourceRecordIds, eligible)
       )
         decision.flags = [...new Set([...decision.flags, "commercial_conflict" as const])];
     }

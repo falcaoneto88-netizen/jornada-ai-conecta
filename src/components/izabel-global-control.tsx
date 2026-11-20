@@ -208,6 +208,29 @@ function ConnectedControl({ organizationId }: { organizationId: string }) {
           </h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {state?.canManage && state.enabled && !state.policyCurrent && (
+            <Button
+              ref={activationButton}
+              type="button"
+              size="sm"
+              className="min-h-10"
+              disabled={
+                pending ||
+                loading ||
+                unavailable ||
+                Boolean(state.activationBlock) ||
+                state.channels.length === 0
+              }
+              onClick={() => {
+                setActionError("");
+                setNotice("");
+                confirmationOpen.current = true;
+                setConfirmation(state);
+              }}
+            >
+              Revalidar versão da Izabel
+            </Button>
+          )}
           {state?.canManage &&
             (state.enabled ? (
               <Button
@@ -298,10 +321,15 @@ function ConnectedControl({ organizationId }: { organizationId: string }) {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Ativar a Izabel em todo o Meu Chat?</DialogTitle>
+            <DialogTitle>
+              {confirmation?.enabled
+                ? "Revalidar a versão da Izabel?"
+                : "Ativar a Izabel em todo o Meu Chat?"}
+            </DialogTitle>
             <DialogDescription>
-              Ela poderá enviar respostas em texto sem aprovação individual, para todas as novas
-              mensagens elegíveis desta clínica após a ativação.
+              {confirmation?.enabled
+                ? "A nova versão poderá responder sem aprovação individual às mensagens elegíveis recebidas após esta revalidação. Atendimentos pausados e mensagens anteriores não serão retomados automaticamente."
+                : "Ela poderá enviar respostas em texto sem aprovação individual, para todas as novas mensagens elegíveis desta clínica após a ativação."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
@@ -334,7 +362,7 @@ function ConnectedControl({ organizationId }: { organizationId: string }) {
                 if (confirmation) void change(true, confirmation.version);
               }}
             >
-              Ativar atendimento automático
+              {confirmation?.enabled ? "Confirmar nova versão" : "Ativar atendimento automático"}
             </Button>
           </DialogFooter>
         </DialogContent>
